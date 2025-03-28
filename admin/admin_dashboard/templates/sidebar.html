@@ -1,0 +1,194 @@
+{% load static %}
+<style>
+@media only screen and (min-width: 992px) {
+    .log-out {
+        display: none !important;
+    }
+}
+
+/* Active link styling */
+.nav-link.active {
+    background-color: purple !important;
+    color: white !important;
+}
+
+/* Ensuring icons and text inside active links are also white */
+.nav-link.active i,
+.nav-link.active p {
+    color: white !important;
+}
+</style>
+
+<div class="sidebar" data-color="purple" data-background-color="white" data-image="{% static 'img/sidebar-1.jpg' %}">
+    <div class="logo">
+        <a href="{% url 'dashboard'  %}" class="simple-text logo-normal">
+            Geeker Admin 
+        </a>
+    </div>
+
+    <div class="sidebar-wrapper">
+        <ul class="nav">
+            <li class="nav-item dashboard Dashboard li-elements-js" id="dashboard">
+                <a class="nav-link" id="dashboard-link" href="{% url 'dashboard' %}">
+                    <i class="material-icons">dashboard</i>
+                    <p class="dashboard-link">Dashboard</p>
+                </a>
+            </li>
+            <li class="nav-item section-permissions Permissions li-elements-js" id="section-permissions">
+                <a class="nav-link" id="section-permissions-link" href="{% url 'section-permissions' %}">
+                    <i class="material-icons">security</i>
+                    <p class="section-permissions-link">Permissions</p>
+                </a>
+            </li>
+            <li class="nav-item chatbot li-elements-js" id="chatbot">
+                <a class="nav-link" id="chatbot-link" href="{% url 'chatbot' %}">
+                    <i class="material-icons">chat</i>
+                    <p class="chatbot-link">Chat Bot</p>
+                </a>
+            </li>
+			<li class="nav-item prompt li-elements-js" id="prompt">
+                <a class="nav-link" id="prompt-link" href="{% url 'display_prompts' %}">
+                    <i class="material-icons">edit</i>
+                    <p class="prompt-link">Edit Prompt</p>
+                </a>
+            </li>
+			<li class="nav-item management li-elements-js" id="management">
+                <a class="nav-link" id="management-link" href="{% url 'user_management' %}">
+                    <i class="material-icons">management</i>
+                    <p class="management-link">User Management</p>
+                </a>
+            </li>
+            <li class="nav-item log-out">
+                <a class="nav-link" href="{% url 'logout' %}">
+                    <i class="fas fa-user"></i>
+                    <p class="log-out-link">Log Out</p>
+                </a>
+            </li>
+        </ul>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    function setActiveLink(linkId) {
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.classList.remove('active'); // Remove active from all links
+        });
+        const activeLink = document.getElementById(linkId);
+        if (activeLink) {
+            activeLink.classList.add('active'); // Add active class to the selected link
+        }
+    }
+
+    // Get current page URL
+    const currentUrl = window.location.pathname;
+
+    // Set active link based on current page
+    if (currentUrl === '{% url "dashboard" %}') {
+        setActiveLink('dashboard-link');
+    } else if (currentUrl === '{% url "section-permissions" %}') {
+        setActiveLink('section-permissions-link');
+    } else if (currentUrl === '{% url "chatbot" %}') {
+        setActiveLink('chatbot-link');
+    }
+});
+</script>
+
+<script type="text/javascript">
+	function hideAllElements(perm_list){
+		try{
+			let promise = new Promise((resolve,reject)=>{
+				$(".li-elements-js").each(async(index,ele)=>{
+				let permisssion_status = ele.id
+				if(!perm_list.includes(permisssion_status)){
+					ele.style.display = "none"
+				}
+				})
+				resolve(true)
+			})
+			return promise;
+		}
+		catch(err){
+			console.log("error in hideAllElements :::: ",err)
+		}
+	}
+	
+	async function handleUserPermissions(perm_list){
+		let elementHidden = await hideAllElements(perm_list)
+
+		$.getchildrenLength = function(){
+				return ($(this).css('display') != 'none')
+		}
+
+		if(elementHidden){
+			if($("#collapseExample").children().filter($.getchildrenLength).length < 1){
+			let parent_id = $("#collapseExample").attr("data-parent-id")
+			$("#"+parent_id).hide()
+			}
+
+			if($("#collapseServiceId").children().filter($.getchildrenLength).length < 1){
+				let parent_id =$("#collapseServiceId").attr("data-parent-id")
+				$("#"+parent_id).hide()
+			}
+
+			if($("#reportscollapseService").children().filter($.getchildrenLength).length < 1){
+				let parent_id =$("#reportscollapseService").attr("data-parent-id")
+				$("#"+parent_id).hide()
+			}
+
+			if($("#collapseInactiveCustomersId").children().filter($.getchildrenLength).length < 1){
+				let parent_id =$("#collapseInactiveCustomersId").attr("data-parent-id")
+				$("#"+parent_id).hide()
+			}
+		}
+	}
+	
+
+	$('.caret-down').css('display','block')
+	$('.caret-up').css('display','none')
+	$('.tech-Onboarding').on('click',function(){
+		if($(this).find('.caret-down').css('display') === 'block'){
+			$('.caret-down').css('display','none')
+			$('.caret-up').css('display','block')
+		}
+		else{
+			$('.caret-up').css('display','none')
+			$('.caret-down').css('display','block')
+		}
+	})
+
+	$('.all-requests').on('click',function(){
+		if($(this).find('.caret-down').css('display') === 'block'){
+			console.log("block caree")
+			$('.caret-down').css('display','none')
+			$('.caret-up').css('display','block')
+		}
+		else{
+			$('.caret-up').css('display','none')
+			$('.caret-down').css('display','block')
+		}
+	})
+	$('.reports').on('click',function(){
+		if($(this).find('.caret-down').css('display') === 'block'){
+			$('.caret-down').css('display','none')
+			$('.caret-up').css('display','block')
+		}
+		else{
+			$('.caret-up').css('display','none')
+			$('.caret-down').css('display','block')
+		}
+	})
+	
+	$('.inactive-customers').on('click',function(){
+		if($(this).find('.caret-down').css('display') === 'block'){
+			console.log("block caree")
+			$('.caret-down').css('display','none')
+			$('.caret-up').css('display','block')
+		}
+		else{
+			$('.caret-up').css('display','none')
+			$('.caret-down').css('display','block')
+		}
+	})
+	
+</script>
