@@ -1,7 +1,7 @@
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 import json
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 from openai import OpenAI
 import requests
 import bcrypt
@@ -253,3 +253,53 @@ def user_login(request):
     
     return render(request, 'user_login.html')
           
+def room_data_list(request):
+    # Fetch room data from the database
+    rooms = RoomData.objects.all()
+
+    # Pass the room data to the template
+    return render(request, 'room_data_list.html', {'rooms': rooms})
+
+def get_room_models(request):
+    room_models = RoomModel.objects.all()
+    room_model_list = [{"id": model.id, "name": model.room_model} for model in room_models]
+    return JsonResponse({"room_models": room_model_list})
+
+def add_room(request):
+    if request.method == 'POST':
+        room_number = request.POST.get('room')
+        floor = request.POST.get('floor')
+        king = request.POST.get('king')
+        double = request.POST.get('double')
+        exec_king = request.POST.get('exec_king')
+        bath_screen = request.POST.get('bath_screen')
+        left_desk = request.POST.get('left_desk')
+        right_desk = request.POST.get('right_desk')
+        to_be_renovated = request.POST.get('to_be_renovated')
+        room_model_id = request.POST.get('room_model')
+        description = request.POST.get('description')
+
+        # Assuming room_model is a ForeignKey
+        room_model = RoomModel.objects.get(id=room_model_id)
+        # Check if room number already exists
+        if RoomData.objects.filter(room=room_number).exists():
+            return JsonResponse({"error": "Room number already exists!"}, status=400)
+
+        try:
+            RoomData.objects.create(
+                room=room_number,
+                floor=floor,
+                king=king,
+                double=double,
+                exec_king=exec_king,
+                bath_screen=bath_screen,
+                left_desk=left_desk,
+                right_desk=right_desk,
+                to_be_renovated=to_be_renovated,
+                room_model=room_model.room_model,
+                room_model_id=room_model,
+                description=description
+            )
+            return JsonResponse({'success': 'Room added successfully'})
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
