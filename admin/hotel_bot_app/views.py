@@ -89,10 +89,11 @@ def chatbot_api(request):
         # Retrieve full chat history
         Table_identification = Prompt.objects.filter(prompt_number=1).values_list("description", flat=True).first()
         json_of_tables = Prompt.objects.filter(prompt_number=2).values_list("description", flat=True).first()
-
+        user_query_identification_prompt = Prompt.objects.filter(prompt_number=4).values_list("description", flat=True).first()
+        print('juicee ',user_query_identification_prompt + user_message)
         try:
             generic_or_not = gpt_call_json_func([
-                {'role': 'system', 'content': "Analyze the user's query to determine its intent. If the user is engaging in general conversation (e.g., greetings like 'hello' or 'how are you?'), respond accordingly. However, if the query relates to database columns, hotel-related,models,inventory,installation topics such as rooms or other services,id's, return 'room' as the output. Otherwise, continue the conversation naturally. donot ask questions" + '\n\n' + 'Here is my query\n' + user_message}
+                {'role': 'system', 'content': user_query_identification_prompt + user_message}
             ], gpt_model='gpt-4o',json_required=False)
             
             if generic_or_not=='room':
@@ -102,7 +103,7 @@ def chatbot_api(request):
                     {'role': 'system', 'content': Table_identification + '\n\n' + 'Here is my query\n' + user_message}
                 ], gpt_model='gpt-4-1106-preview')
                 bot_response = ast.literal_eval(response)
-                
+
                 extracted_values = extract_values(json_of_tables, bot_response['data'])
                 query_sql = json.loads(gpt_call_json_func([{'role': 'system', 'content': f'Generate an SQL query after logical thinking properly based on my query and return JSON with key "query". \nInstructions: always use LOWER in WHERE condition.\n\n4.Refer to the provided sample data to determine the correct columns to use. use client id which include data as \n\n User query:\ntell me qty receive for P115\n\nTable details:\nTable name is \'inventory\' and column name is Columns: \'id\' [serial4], \'item\' [text], \'client_id\' [text], \'qty_ordered\' [text], \'qty_received\' [text], \'quantity_installed\' [text], \'quantity_available\' [text].\n\n sample data for the columns are: 1,KS-JWM-113,P125,320,0,0,0\n\n'},{'role': 'assistant', 'content': '''{"query": "SELECT * FROM inventory WHERE LOWER(item) LIKE LOWER('P1%');"}'''}, {'role': 'user', 'content': '''dont you think but p115 is in client_id '''},{'role': 'assistant', 'content': '''{"query": "SELECT * FROM inventory WHERE LOWER(client_id) LIKE LOWER('P1%');"}'''},{'role': 'user', 'content': f'now carefully genrate for this Instructions: always use LOWER in WHERE condition.\n\n4.Refer to the provided sample data to determine the correct columns to use.\n\n User query:\n' + user_message + '\n\n'+'Table details:\n' + extracted_values}], gpt_model='gpt-4-1106-preview'))
       
@@ -113,12 +114,13 @@ def chatbot_api(request):
                         cursor.execute(query)
                         rows = cursor.fetchall()
                         return rows
-                
+                word_spaces_prompt = Prompt.objects.filter(prompt_number=3).values_list("description", flat=True).first()
+                print('word space format',word_spaces_prompt.format(query_sql['query']))
                 rows=fetch_data_from_sql(query_sql['query'])
                 if rows==[]:
                     print("empty rows ")
                     possible_words_query=json.loads(gpt_call_json_func([
-                    {'role': 'system', 'content': f"""write combination of spaces for the multiple words in sql query in like condition and provide me output in a json with key name 'query' and its values as query \n\nfor example :  apple will be like (appl e , app le ,ap ple a pple )\n\n here is my query \n {query_sql['query']}\n\n rememebr i want you to modify my query donot give me more than one in a list\n\n strictly remember i need atleast 4-10 words """}], gpt_model='gpt-4o'))
+                    {'role': 'system', 'content': word_spaces_prompt.format(query_sql['query'])}], gpt_model='gpt-4o'))
                     rows=fetch_data_from_sql(possible_words_query['query'])
                     print("new query made is  ......",possible_words_query['query'])
                     bot_message = f"The answer is {rows}"
