@@ -65,6 +65,7 @@ def extract_values(json_obj, keys):
     for key in keys:
         value = json_obj.get(key, None)
         table_selected+=f"Table name is '{key}' and column name is {value}\n\n"
+    print("table selected ,,,,,,",table_selected)
     return table_selected
 
 
@@ -123,11 +124,19 @@ def chatbot_api(request):
                     {'role': 'system', 'content': word_spaces_prompt.format(query_sql['query'])}], gpt_model='gpt-4o'))
                     rows=fetch_data_from_sql(possible_words_query['query'])
                     print("new query made is  ......",possible_words_query['query'])
-                    bot_message = f"The answer is {rows}"
 
+                    final_response=gpt_call_json_func([
+                    {'role': 'system', 'content': "user asked me a question and it seem we got a answer so you have to tell him \n here is the question: {}. here is the sql query made : {}\n\n and here is the output rows : '{}'\n\nif output is [] say sorry because found data".format(user_message,possible_words_query['query'],rows)}], gpt_model='gpt-4o',json_required=False)
                     
+                    print("user asked me a question and it seem we got a answer so you have to tell him \n here is the question: {}. here is the sql query made : {}\n\n and here is the output rows : '{}'\n\nif output is [] say sorry because found data".format(user_message,possible_words_query['query'],rows))
+                    
+                    bot_message=final_response
                 else:
-                    bot_message = f"The answer is {rows}"
+                    final_response=gpt_call_json_func([
+                    {'role': 'system', 'content': "user asked me a question and it seem we got a answer so you have to tell him \n here is the question: {}. here is the sql query made : {}\n\n and here is the output rows : '{}'\n\nif output is [] say sorry because found data".format(user_message,query_sql['query'],rows)}], gpt_model='gpt-4o',json_required=False)
+                    print("user asked me a question and it seem we got a answer so you have to tell him \n here is the question: {}. here is the sql query made : {}\n\n and here is the output rows : '{}'\n\nif output is [] say sorry because found data".format(user_message,query_sql['query'],rows))
+
+                    bot_message=final_response
             else:
                 bot_message = generic_or_not
         except Exception as e:
