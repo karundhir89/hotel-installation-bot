@@ -91,6 +91,8 @@ def chatbot_api(request):
         Table_identification = Prompt.objects.filter(prompt_number=1).values_list("description", flat=True).first()
         json_of_tables = Prompt.objects.filter(prompt_number=2).values_list("description", flat=True).first()
         user_query_identification_prompt = Prompt.objects.filter(prompt_number=4).values_list("description", flat=True).first()
+        finalised_response_prompt = Prompt.objects.filter(prompt_number=5).values_list("description", flat=True).first()
+        generate_sql_prompt = Prompt.objects.filter(prompt_number=6).values_list("description", flat=True).first()
         print('juicee ',user_query_identification_prompt + user_message)
         try:
             generic_or_not = gpt_call_json_func([
@@ -106,19 +108,20 @@ def chatbot_api(request):
                 bot_response = ast.literal_eval(response)
 
                 extracted_values = extract_values(json_of_tables, bot_response['data'])
-                query_sql = json.loads(gpt_call_json_func([{'role': 'system', 'content': f'''Generate an SQL query after proper  thinking properly based on my query and then return JSON with key "query". \nInstructions:  1.always use LOWER in WHERE condition.\n\n2.Refer to the provided sample data to determine the correct columns to use. use client id which include data like P117 (only 4 letter) and use item column which include data like 'KS-JWM-121-SUITEC (more than 4 characters)'\n3.\n\nUser query:\n''' + user_message + '\n\n'+'Table details:\n' + extracted_values}], gpt_model='gpt-4o'))
+                query_sql = json.loads(gpt_call_json_func([{'role': 'system', 'content': generate_sql_prompt.format(user_message,extracted_values)}], gpt_model='gpt-4o'))
                 print()
-                print("sql query:::::::",query_sql)
                 def fetch_data_from_sql(query):
                 # Execute SQL query
+                    print("sql query :::::;",query)
                     with connection.cursor() as cursor:
                         cursor.execute(query)
                         rows = cursor.fetchall()
+                        print("rows fetched .....",rows)
                         return rows
                 word_spaces_prompt = Prompt.objects.filter(prompt_number=3).values_list("description", flat=True).first()
-                print('word space format',word_spaces_prompt.format(query_sql['query']))
                 rows=fetch_data_from_sql(query_sql['query'])
                 if rows==[]:
+                    print('word space format',word_spaces_prompt.format(query_sql['query']))
                     print("empty rows ")
                     possible_words_query=json.loads(gpt_call_json_func([
                     {'role': 'system', 'content': word_spaces_prompt.format(query_sql['query'])}], gpt_model='gpt-4o'))
@@ -126,15 +129,15 @@ def chatbot_api(request):
                     print("new query made is  ......",possible_words_query['query'])
 
                     final_response=gpt_call_json_func([
-                    {'role': 'system', 'content': "user asked me a question and it seem we got a answer so you have to tell him \n here is the question: {}. here is the sql query made : {}\n\n and here is the output rows : '{}'\n\nif output is [] say sorry because found data".format(user_message,possible_words_query['query'],rows)}], gpt_model='gpt-4o',json_required=False)
+                    {'role': 'system', 'content': finalised_response_prompt.format(user_message,possible_words_query['query'],rows)}], gpt_model='gpt-4o',json_required=False)
                     
-                    print("user asked me a question and it seem we got a answer so you have to tell him \n here is the question: {}. here is the sql query made : {}\n\n and here is the output rows : '{}'\n\nif output is [] say sorry because found data".format(user_message,possible_words_query['query'],rows))
+                    print(finalised_response_prompt.format(user_message,possible_words_query['query'],rows))
                     
                     bot_message=final_response
                 else:
                     final_response=gpt_call_json_func([
-                    {'role': 'system', 'content': "user asked me a question and it seem we got a answer so you have to tell him \n here is the question: {}. here is the sql query made : {}\n\n and here is the output rows : '{}'\n\nif output is [] say sorry because found data".format(user_message,query_sql['query'],rows)}], gpt_model='gpt-4o',json_required=False)
-                    print("user asked me a question and it seem we got a answer so you have to tell him \n here is the question: {}. here is the sql query made : {}\n\n and here is the output rows : '{}'\n\nif output is [] say sorry because found data".format(user_message,query_sql['query'],rows))
+                    {'role': 'system', 'content': finalised_response_prompt.format(user_message,query_sql['query'],rows)}], gpt_model='gpt-4o',json_required=False)
+                    print(finalised_response_prompt.format(user_message,query_sql['query'],rows))
 
                     bot_message=final_response
             else:

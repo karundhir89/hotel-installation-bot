@@ -24,10 +24,10 @@ class Inventory(models.Model):
     id = models.AutoField(primary_key=True)  # Serial (Auto-increment)
     item = models.TextField(null=True, blank=True)
     client_id = models.TextField(null=True, blank=True)
-    qty_ordered = models.TextField(null=True, blank=True)
-    qty_received = models.TextField(null=True, blank=True)
-    quantity_installed = models.TextField(null=True, blank=True)
-    quantity_available = models.TextField(null=True, blank=True)
+    qty_ordered = models.IntegerField(null=True, blank=True)
+    qty_received = models.IntegerField(null=True, blank=True)
+    quantity_installed = models.IntegerField(null=True, blank=True)
+    quantity_available = models.IntegerField(null=True, blank=True)
 
     class Meta:
         db_table = 'inventory'  # Ensure this matches the actual table name in PostgreSQL
