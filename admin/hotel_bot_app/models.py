@@ -91,6 +91,7 @@ class Schedule(models.Model):
     floor_closes = models.DateTimeField(null=True, blank=True)  # Changed to DateTimeField
     floor_opens = models.DateTimeField(null=True, blank=True)  # Changed to DateTimeField
 
+
     class Meta:
         db_table = 'schedule'  # Ensures it maps to the existing table
 
