@@ -73,27 +73,23 @@ class Schedule(models.Model):
     id = models.AutoField(primary_key=True)
     phase = models.TextField(null=True, blank=True)
     floor = models.TextField(null=True, blank=True)
-    production_starts = models.TextField(null=True, blank=True)
-    production_ends = models.TextField(null=True, blank=True)
-    shipping_depature = models.TextField(null=True, blank=True)
-    shipping_arrival = models.TextField(null=True, blank=True)
-    custom_clearing_starts = models.TextField(null=True, blank=True)
-    custom_clearing_ends = models.TextField(null=True, blank=True)
-    arrive_on_site = models.TextField(null=True, blank=True)
-    pre_work_starts = models.TextField(null=True, blank=True)
-    pre_work_ends = models.TextField(null=True, blank=True)
-    install_starts = models.TextField(null=True, blank=True)
+    production_starts = models.DateTimeField(null=True, blank=True)
+    production_ends = models.DateTimeField(null=True, blank=True)
+    shipping_depature = models.DateTimeField(null=True, blank=True)
+    shipping_arrival = models.DateTimeField(null=True, blank=True)
+    custom_clearing_starts = models.DateTimeField(null=True, blank=True)
+    custom_clearing_ends = models.DateTimeField(null=True, blank=True)
+    arrive_on_site = models.DateTimeField(null=True, blank=True)
+    pre_work_starts = models.DateTimeField(null=True, blank=True)
+    pre_work_ends = models.DateTimeField(null=True, blank=True)
+    install_starts = models.DateTimeField(null=True, blank=True)
+    install_ends = models.DateTimeField(null=True, blank=True)  # Keep as DateTimeField
     
-    # Fix for double underscore issue
-    install_ends = models.TextField(null=True, blank=True, db_column="install_ends")
-    
-    # Fix for trailing underscore issue
-    post_work_starts = models.TextField(null=True, blank=True, db_column="post_work_starts")
-    
-    post_work_ends = models.TextField(null=True, blank=True)
-    floor_completed = models.TextField(null=True, blank=True)
-    floor_closes = models.TextField(null=True, blank=True)
-    floor_opens = models.TextField(null=True, blank=True)
+    post_work_starts = models.DateTimeField(null=True, blank=True)  # Changed to DateTimeField
+    post_work_ends = models.DateTimeField(null=True, blank=True)  # Changed to DateTimeField
+    floor_completed = models.DateTimeField(null=True, blank=True)  # Changed to DateTimeField
+    floor_closes = models.DateTimeField(null=True, blank=True)  # Changed to DateTimeField
+    floor_opens = models.DateTimeField(null=True, blank=True)  # Changed to DateTimeField
 
     class Meta:
         db_table = 'schedule'  # Ensures it maps to the existing table
