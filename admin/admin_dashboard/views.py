@@ -18,7 +18,7 @@ def my_view(request):
 		if user is not None:
 			if user.is_active:
 				login(request, user)
-				return HttpResponseRedirect("/dashboard")
+				return HttpResponseRedirect("/user_management")
 	except Exception as e:
 		print("error in my_view :::::::::::",e)
 	return HttpResponseRedirect("/accounts/login")
@@ -50,7 +50,7 @@ def show_login(request):
 	try:
 		print("user id :::: ",request.user)
 		if request.user.id is not None:
-				return HttpResponseRedirect('dashboard')
+				return HttpResponseRedirect('user_management')
 		else:
 			return HttpResponseRedirect('accounts/login')
 	except Exception as e:
