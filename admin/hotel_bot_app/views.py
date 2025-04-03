@@ -107,32 +107,37 @@ def chatbot_api(request):
             generic_or_not = gpt_call_json_func([
                 {'role': 'system', 'content': user_query_identification_prompt + user_message}
             ], gpt_model='gpt-4o',json_required=False)
-            
+            print('prompt 1:::\n\n',user_query_identification_prompt + user_message)
             if generic_or_not=='room':
                 json_of_tables=ast.literal_eval(json_of_tables)
                 # GPT API Call
                 response = gpt_call_json_func([
                     {'role': 'system', 'content': Table_identification + '\n\n' + 'Here is my query\n' + user_message}
                 ], gpt_model='gpt-4o')
-                print(Table_identification + '\n\n' + 'Here is my query\n' + user_message)
+                print('prompt 2:::\n\n',Table_identification + '\n\n' + 'Here is my query\n' + user_message)
                 bot_response = ast.literal_eval(response)
 
                 extracted_values = extract_values(json_of_tables, bot_response['data'])
                 
                 query_sql = json.loads(gpt_call_json_func([{'role': 'system', 'content': generate_sql_prompt.format(user_message,extracted_values)}], gpt_model='gpt-4o'))
+                print("prompt 3:::\n\n", generate_sql_prompt.format(user_message,extracted_values))
                 
                 rows=fetch_data_from_sql(query_sql['query'])
+                
                 if rows==[]:
                     print("empty rows ")
                     possible_words_query=json.loads(gpt_call_json_func([
                     {'role': 'system', 'content': word_spaces_prompt.format(query_sql['query'])}], gpt_model='gpt-4o'))
                     rows=fetch_data_from_sql(possible_words_query['query'])
+                    print("\n\nprompt 4:::\n\n", word_spaces_prompt.format(query_sql['query']))
+
                     print("new query made is  ......",possible_words_query['query'])
 
                     final_response=gpt_call_json_func([
                     {'role': 'system', 'content': finalised_response_prompt.format(user_message,possible_words_query['query'],rows)}], gpt_model='gpt-4o',json_required=False)
+                    print("\n\nprompt 5:::",finalised_response_prompt.format(user_message,possible_words_query['query'],rows))
+
                     
-                    print(finalised_response_prompt.format(user_message,possible_words_query['query'],rows))
                     
                     bot_message=final_response
                 else:
@@ -145,14 +150,21 @@ def chatbot_api(request):
                 bot_message = generic_or_not
         except Exception as e:
             try:
-                print("Error processing bot response:", e)
-                query_sql = json.loads(gpt_call_json_func([{'role': 'system', 'content': generate_sql_prompt.format(user_message,extracted_values)},{'role': 'assistant', 'content': query_sql['query']},{'role': 'user', 'content':f'I got error see this and give me correct sql query\n\n{e}' }],gpt_model='gpt-4-1106-preview'))
-                final_response=gpt_call_json_func([
-                {'role': 'system', 'content': finalised_response_prompt.format(user_message,query_sql['query'],rows)}], gpt_model='gpt-4o',json_required=False)
-                print(finalised_response_prompt.format(user_message,query_sql['query'],rows))
-                bot_message=final_response
-            except:
+                print("\n\nError processing bot response entering agains", e)
+                retry_sql_query = json.loads(gpt_call_json_func([{'role': 'system', 'content': generate_sql_prompt.format(user_message,extracted_values)},{'role': 'assistant', 'content': query_sql['query']},{'role': 'user', 'content':f'I got error see this and give me correct sql query\n\n{e}' }],gpt_model='gpt-4-1106-preview'))
+
+
+                print('prompt 6 ::::::::',{'role': 'system', 'content': generate_sql_prompt.format(user_message,extracted_values)},{'role': 'assistant', 'content': query_sql['query']},{'role': 'user', 'content':f'I got error see this and give me correct sql query\n\n{e}' })
+
+
+                print("query made after retry:",retry_sql_query['query'])
                 
+                rows=fetch_data_from_sql(retry_sql_query['query'])
+                final_response=gpt_call_json_func([
+                {'role': 'system', 'content': finalised_response_prompt.format(user_message,retry_sql_query['query'],rows)}], gpt_model='gpt-4o',json_required=False)
+                bot_message=final_response
+            except Exception as e:
+                print("failed after attempt", e)
                 bot_message = "Sorry, I couldn't process that."
 
         # Store assistant message in DB
