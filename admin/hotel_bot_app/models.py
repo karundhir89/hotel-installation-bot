@@ -34,28 +34,6 @@ class Inventory(models.Model):
 
     def __str__(self):
         return f"Item: {self.item} - Available: {self.quantity_available}"
-
-
-
-class RoomData(models.Model):
-    id = models.AutoField(primary_key=True)  # Serial (Auto-increment)
-    room = models.TextField(null=True, blank=True)
-    floor = models.TextField(null=True, blank=True)
-    king = models.TextField(null=True, blank=True)
-    double = models.TextField(null=True, blank=True)
-    exec_king = models.TextField(null=True, blank=True)
-    bath_screen = models.TextField(null=True, blank=True)
-    room_model = models.TextField(null=True, blank=True)
-    left_desk = models.TextField(null=True, blank=True)
-    right_desk = models.TextField(null=True, blank=True)
-    to_be_renovated = models.TextField(null=True, blank=True)
-    description = models.TextField(null=True, blank=True)  # Fixed column name typo from "descripton"
-
-    class Meta:
-        db_table = 'room_data'  # Ensure this matches the actual table name in PostgreSQL
-
-    def __str__(self):
-        return f"Room {self.room} - Floor {self.floor}"
     
 class RoomModel(models.Model):
     id = models.AutoField(primary_key=True)  # Serial (Auto-increment)
@@ -67,6 +45,28 @@ class RoomModel(models.Model):
 
     def __str__(self):
         return f"Room Model: {self.room_model} - Total: {self.total}"
+
+
+class RoomData(models.Model):
+    id = models.AutoField(primary_key=True)  # Serial (Auto-increment)
+    room = models.TextField(null=True, blank=True)
+    floor = models.TextField(null=True, blank=True)
+    king = models.TextField(null=True, blank=True)
+    double = models.TextField(null=True, blank=True)
+    exec_king = models.TextField(null=True, blank=True)
+    bath_screen = models.TextField(null=True, blank=True)
+    room_model = models.TextField(null=True, blank=True)
+    room_model_id = models.ForeignKey(RoomModel, on_delete=models.SET_NULL, null=True, blank=True,db_column='room_model_id')
+    left_desk = models.TextField(null=True, blank=True)
+    right_desk = models.TextField(null=True, blank=True)
+    to_be_renovated = models.TextField(null=True, blank=True)
+    description = models.TextField(null=True, blank=True)  # Fixed column name typo from "descripton"
+
+    class Meta:
+        db_table = 'room_data'  # Ensure this matches the actual table name in PostgreSQL
+
+    def __str__(self):
+        return f"Room {self.room} - Floor {self.floor}"
     
 
 class Schedule(models.Model):
@@ -97,8 +97,6 @@ class Schedule(models.Model):
 
     def __str__(self):
         return f"Schedule - Phase: {self.phase}, Floor: {self.floor}"
-
-from django.db import models
 
 class ProductData(models.Model):
     id = models.AutoField(primary_key=True)
@@ -141,9 +139,6 @@ class Prompt(models.Model):
 
     def __str__(self):
         return f"Prompt {self.prompt_number}: {self.description[:50]}"  # Show first 50 chars
-from django.db import models
-
-from django.db import models
 
 class ChatSession(models.Model):
     id = models.AutoField(primary_key=True)

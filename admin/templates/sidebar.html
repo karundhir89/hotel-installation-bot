@@ -46,18 +46,34 @@
                     <p class="chatbot-link">Chat Bot</p>
                 </a>
             </li>
-			<li class="nav-item prompt li-elements-js" id="prompt">
+			<li class="nav-item display_prompts li-elements-js" id="prompt">
                 <a class="nav-link" id="prompt-link" href="{% url 'display_prompts' %}">
                     <i class="material-icons">edit</i>
-                    <p class="prompt-link">Edit Prompt</p>
+                    <p class="display_prompts-link">Edit Prompt</p>
                 </a>
             </li>
-			<li class="nav-item management li-elements-js" id="management">
+			<li class="nav-item user_management li-elements-js" id="management">
                 <a class="nav-link" id="management-link" href="{% url 'user_management' %}">
                     <i class="material-icons">management</i>
-                    <p class="management-link">User Management</p>
+                    <p class="user_management-link">User Management</p>
                 </a>
             </li>
+			<li class="nav-item manage-lean-more">
+				<a class="nav-link" data-toggle="collapse" id="request-parent-list" href="#collapseRoom" role="button" aria-expanded="false" aria-controls="collapseRoom">
+					<i class="material-icons">picture_as_pdf</i>
+					<p class="" style="color:#666666 !important">CRUD<span><i class="fas fa-caret-down caret-down"></i></span> <span><i class="fas fa-caret-up caret-up" ></i></span> </p>
+				</a>
+				<div class="collapse" id="collapseRoom" data-parent-id="request-parent-list">
+					<ul class="nav collapse" data-parent-id="request-parent-list" id="collapseRoomId">
+						<li class="nav-item room_data_list li-elements-js" id="room">
+							<a class="nav-link" id="room-link" href="{% url 'room_data_list' %}">
+								<i class="material-icons">picture_as_pdf</i>
+								<p class="room_data_list-link">Rooms</p>
+							</a>
+						</li>
+					</ul>
+				</div>
+			</li>
             <li class="nav-item log-out">
                 <a class="nav-link" href="{% url 'logout' %}">
                     <i class="fas fa-user"></i>
@@ -121,23 +137,9 @@ document.addEventListener('DOMContentLoaded', function () {
 		}
 
 		if(elementHidden){
-			if($("#collapseExample").children().filter($.getchildrenLength).length < 1){
-			let parent_id = $("#collapseExample").attr("data-parent-id")
-			$("#"+parent_id).hide()
-			}
 
-			if($("#collapseServiceId").children().filter($.getchildrenLength).length < 1){
-				let parent_id =$("#collapseServiceId").attr("data-parent-id")
-				$("#"+parent_id).hide()
-			}
-
-			if($("#reportscollapseService").children().filter($.getchildrenLength).length < 1){
-				let parent_id =$("#reportscollapseService").attr("data-parent-id")
-				$("#"+parent_id).hide()
-			}
-
-			if($("#collapseInactiveCustomersId").children().filter($.getchildrenLength).length < 1){
-				let parent_id =$("#collapseInactiveCustomersId").attr("data-parent-id")
+			if($("#collapseRoomId").children().filter($.getchildrenLength).length < 1){
+				let parent_id =$("#collapseRoomId").attr("data-parent-id")
 				$("#"+parent_id).hide()
 			}
 		}

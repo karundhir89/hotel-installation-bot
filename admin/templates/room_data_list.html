@@ -1,0 +1,316 @@
+{% extends 'dashboard_layout.html' %}
+{% load static %}
+{% block content %}
+
+<style>
+/* Increase height of table rows */
+#room_table tbody tr {
+    height: 60px;  /* Adjust row height (you can tweak this value as needed) */
+}
+
+/* Increase the width of columns */
+#room_table th, #room_table td {
+    white-space: nowrap; /* Prevent text wrapping to keep content in one line */
+    padding: 15px; /* Add more padding for better spacing */
+}
+
+/* Specifically for the description column, allow it to expand */
+#room_table td:nth-child(8) {
+    max-width: 250px; /* Limit width for description */
+    overflow: hidden; /* Hide text overflow */
+    text-overflow: ellipsis; /* Display ellipsis (...) when the text is too long */
+    word-wrap: break-word; /* Allow text to break into multiple lines if needed */
+}
+
+/* Add extra padding to the description column for better readability */
+#room_table td:nth-child(8) {
+    padding-top: 10px;
+    padding-bottom: 10px;
+}
+th.sorting::after {
+    content: "\2195"; /* Arrow icon: ↕ */
+    margin-left: 5px;
+}
+
+th.sorting_asc::after {
+    content: "\2191"; /* Up arrow: ↑ */
+}
+
+th.sorting_desc::after {
+    content: "\2193"; /* Down arrow: ↓ */
+}
+
+/* Optional: Adding cursor to indicate the column is sortable */
+th.sorting, th.sorting_asc, th.sorting_desc {
+    cursor: pointer;
+}
+.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 1000;
+}
+.modal {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1001;
+    padding: 20px;
+    border-radius: 5px;
+}
+.modal-content {
+    width: 80%;
+}
+
+</style>
+
+<!-- Loader -->
+<div class="loader" id="permissionsLoader">
+    <img src="{% static 'loaders/ajax-loader.gif' %}" />
+</div>
+
+<div class="content" id="modal-content">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-12">
+                {% include 'common/messages.html' %}
+                <div class="card">
+                    <div class="card-header card-header-primary">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h4 class="card-title pt-2">Room Data</h4>
+                            </div>
+                            <div class="col-md-6 text-right">
+                                <button id="addRoomBtn" class="btn btn-success">Add New Room</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table id="room_table" class="table table-striped" style="width:100%; display: none;">
+                                <thead class="text-primary">
+                                    <tr>
+                                        <th>Room</th>
+                                        <th>Floor</th>
+                                        <th>King</th>
+                                        <th>Double</th>
+                                        <th>Exec King</th>
+                                        <th>Bath Screen</th>
+                                        <th>Room Model</th>
+                                        <th>Description</th>
+                                        <th>Left Desk</th>
+                                        <th>Right Desk</th>
+                                        <th>To Be Renovated</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for room in rooms %}
+                                    <tr>
+                                        <td>{{ room.room }}</td>
+                                        <td>{{ room.floor }}</td>
+                                        <td>{{ room.king }}</td>
+                                        <td>{{ room.double }}</td>
+                                        <td>{{ room.exec_king }}</td>
+                                        <td>{{ room.bath_screen }}</td>
+                                        <td>{{ room.room_model }}</td>
+                                        <td>{{ room.description }}</td>
+                                        <td>{{ room.left_desk }}</td>
+                                        <td>{{ room.right_desk }}</td>
+                                        <td>{{ room.to_be_renovated }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Overlay for Adding Room -->
+<div class="modal-overlay" id="modalOverlay"></div>
+
+<!-- Add New Room Modal -->
+<!-- Room Modal Form -->
+<div id="roomModal" class="modal">
+    <div class="modal-content mx-auto p-4">
+        <span class="close" id="closeModal">×</span>
+        <h2 id="modalTitle">Add Room</h2>
+        <!-- Room Modal Form -->
+        <form id="roomForm" method="POST" action="#">
+            {% csrf_token %}
+            <div class="form-group">
+                <label for="room">Room Number:</label>
+                <input type="text" id="room" name="room" class="form-control" required>
+            </div>
+            <!-- Description Field -->
+            <div class="form-group">
+                <label for="description">Description:</label>
+                <textarea id="description" name="description" class="form-control" required></textarea>
+            </div>
+            <div class="form-group">
+                <label for="floor">Floor:</label>
+                <input type="text" id="floor" name="floor" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label for="king">King:</label>
+                <select id="king" name="king" class="form-control" required>
+                    <option value="YES">YES</option>
+                    <option value="NO">NO</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="double">Double:</label>
+                <select id="double" name="double" class="form-control" required>
+                    <option value="YES">YES</option>
+                    <option value="NO">NO</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="exec_king">Exec King:</label>
+                <select id="exec_king" name="exec_king" class="form-control" required>
+                    <option value="YES">YES</option>
+                    <option value="NO">NO</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="bath_screen">Bath Screen:</label>
+                <select id="bath_screen" name="bath_screen" class="form-control" required>
+                    <option value="YES">YES</option>
+                    <option value="NO">NO</option>
+                </select>
+            </div>
+
+            <!-- New Fields (YES/NO) -->
+            <div class="form-group">
+                <label for="left_desk">Left Desk:</label>
+                <select id="left_desk" name="left_desk" class="form-control" required>
+                    <option value="YES">YES</option>
+                    <option value="NO">NO</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="right_desk">Right Desk:</label>
+                <select id="right_desk" name="right_desk" class="form-control" required>
+                    <option value="YES">YES</option>
+                    <option value="NO">NO</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="to_be_renovated">To Be Renovated:</label>
+                <select id="to_be_renovated" name="to_be_renovated" class="form-control" required>
+                    <option value="YES">YES</option>
+                    <option value="NO">NO</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="room_model">Room Model:</label>
+                <select id="room_model" name="room_model" class="form-control" required>
+                    <!-- Room model options will be populated dynamically -->
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary" id="saveRoom">Save Room</button>
+        </form>
+
+    </div>
+</div>
+
+  
+
+<script>
+    $(document).ready(function() {
+        $('#permissionsLoader').hide();
+        $('#room_table').show();
+
+        // Initialize DataTable with custom options
+        $('#room_table').DataTable({
+            paging: true,      // Enable pagination
+            searching: true,   // Enable search
+            ordering: true,    // Enable sorting
+            info: true,        // Show info about records
+            order: [[0, 'desc']],  // Default sort by the first column (Room) in descending order
+            pageLength: 10,    // Set default number of rows per page
+            lengthMenu: [5, 10, 15, 20], // Allow different rows per page
+        });
+
+        // Open Add Room modal
+        $('#addRoomBtn').click(function() {
+            $('#modalTitle').text("Add New Room");
+            $('#room').val("");
+            $('#floor').val("");
+            $('#king').val("");
+            $('#double').val("");
+            $('#exec_king').val("");
+            $('#bath_screen').val("");
+            $('#room_model').val("");
+            $('#description').val("");
+            $('#left_desk').val("");
+            $('#right_desk').val("");
+            $('#to_be_renovated').val("");
+            $('#roomModal').fadeIn();
+            $('#modalOverlay').fadeIn();
+        });
+
+        // Fetch Room Models and populate the dropdown
+        $.ajax({
+            url: '{% url "get_room_models" %}',  // URL to get room models
+            type: 'GET',
+            success: function(response) {
+                var roomModelSelect = $('#room_model');
+                roomModelSelect.empty();  // Clear previous options
+                roomModelSelect.append('<option value="" selected>Select Room Model</option>');
+                response.room_models.forEach(function(roomModel) {
+                    roomModelSelect.append('<option value="' + roomModel.id + '">' + roomModel.name + '</option>');
+                });
+            },
+            error: function(xhr, status, error) {
+                toastr.error('Failed to load room models!');
+            }
+        });
+
+        // Submit the form with AJAX
+        $('#roomForm').submit(function(e) {
+            e.preventDefault();
+            
+            var formData = $(this).serialize();
+
+            $.ajax({
+                url: '{% url "add_room" %}',  // URL to handle the room addition
+                type: 'POST',
+                data: formData,
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}',  // CSRF token
+                },
+                success: function(response) {
+                    if (response.success) {
+                        toastr.success(response.success);
+                        $('#roomModal').modal('hide');
+                        location.reload();
+                    } else {
+                        toastr.error(response.error || 'Something went wrong!');
+                    }
+                },
+                error: function(xhr, status, error) {
+                    toastr.error('Error: ' + xhr.responseText);
+                }
+            });
+        });
+
+        // Close modal
+        $('#closeModal, #modalOverlay').click(function() {
+            $('#roomModal').fadeOut();
+            $('#modalOverlay').fadeOut();
+        });
+    });
+</script>
+
+{% endblock %}
