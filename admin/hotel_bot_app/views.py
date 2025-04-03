@@ -90,10 +90,19 @@ def chatbot_api(request):
         # Retrieve full chat history
         Table_identification = Prompt.objects.filter(prompt_number=1).values_list("description", flat=True).first()
         json_of_tables = Prompt.objects.filter(prompt_number=2).values_list("description", flat=True).first()
+        word_spaces_prompt = Prompt.objects.filter(prompt_number=3).values_list("description", flat=True).first()
         user_query_identification_prompt = Prompt.objects.filter(prompt_number=4).values_list("description", flat=True).first()
         finalised_response_prompt = Prompt.objects.filter(prompt_number=5).values_list("description", flat=True).first()
         generate_sql_prompt = Prompt.objects.filter(prompt_number=6).values_list("description", flat=True).first()
-        print('juicee ',user_query_identification_prompt + user_message)
+
+        def fetch_data_from_sql(query):
+        # Execute SQL query
+            print("sql query :::::;",query)
+            with connection.cursor() as cursor:
+                cursor.execute(query)
+                rows = cursor.fetchall()
+                print("rows fetched .....",rows)
+                return rows
         try:
             generic_or_not = gpt_call_json_func([
                 {'role': 'system', 'content': user_query_identification_prompt + user_message}
@@ -104,24 +113,16 @@ def chatbot_api(request):
                 # GPT API Call
                 response = gpt_call_json_func([
                     {'role': 'system', 'content': Table_identification + '\n\n' + 'Here is my query\n' + user_message}
-                ], gpt_model='gpt-4-1106-preview')
+                ], gpt_model='gpt-4o')
+                print(Table_identification + '\n\n' + 'Here is my query\n' + user_message)
                 bot_response = ast.literal_eval(response)
 
                 extracted_values = extract_values(json_of_tables, bot_response['data'])
+                
                 query_sql = json.loads(gpt_call_json_func([{'role': 'system', 'content': generate_sql_prompt.format(user_message,extracted_values)}], gpt_model='gpt-4o'))
-                print()
-                def fetch_data_from_sql(query):
-                # Execute SQL query
-                    print("sql query :::::;",query)
-                    with connection.cursor() as cursor:
-                        cursor.execute(query)
-                        rows = cursor.fetchall()
-                        print("rows fetched .....",rows)
-                        return rows
-                word_spaces_prompt = Prompt.objects.filter(prompt_number=3).values_list("description", flat=True).first()
+                
                 rows=fetch_data_from_sql(query_sql['query'])
                 if rows==[]:
-                    print('word space format',word_spaces_prompt.format(query_sql['query']))
                     print("empty rows ")
                     possible_words_query=json.loads(gpt_call_json_func([
                     {'role': 'system', 'content': word_spaces_prompt.format(query_sql['query'])}], gpt_model='gpt-4o'))
@@ -143,8 +144,16 @@ def chatbot_api(request):
             else:
                 bot_message = generic_or_not
         except Exception as e:
-            print("Error processing bot response:", e)
-            bot_message = "Sorry, I couldn't process that."
+            try:
+                print("Error processing bot response:", e)
+                query_sql = json.loads(gpt_call_json_func([{'role': 'system', 'content': generate_sql_prompt.format(user_message,extracted_values)},{'role': 'assistant', 'content': query_sql['query']},{'role': 'user', 'content':f'I got error see this and give me correct sql query\n\n{e}' }],gpt_model='gpt-4-1106-preview'))
+                final_response=gpt_call_json_func([
+                {'role': 'system', 'content': finalised_response_prompt.format(user_message,query_sql['query'],rows)}], gpt_model='gpt-4o',json_required=False)
+                print(finalised_response_prompt.format(user_message,query_sql['query'],rows))
+                bot_message=final_response
+            except:
+                
+                bot_message = "Sorry, I couldn't process that."
 
         # Store assistant message in DB
         ChatHistory.objects.create(session=session, message=bot_message, role="assistant")
