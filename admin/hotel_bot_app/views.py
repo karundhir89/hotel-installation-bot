@@ -244,7 +244,7 @@ Sample database rows:
 
         except Exception as e:
                 try:
-                    print("got error : now making new query")
+                    print("got error : now making new query",e)
                     response = json.loads(gpt_call_json_func([
                         {'role': 'system', 'content': prompt_second },
                         {'role': 'assistant', 'content': response['query'] },
