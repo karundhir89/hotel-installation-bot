@@ -47,21 +47,32 @@
                 </a>
             </li>
 			<li class="nav-item manage-lean-more">
-				<a class="nav-link" data-toggle="collapse" id="request-parent-list" href="#collapseRoom" role="button" aria-expanded="false" aria-controls="collapseRoom">
+				<a class="nav-link" data-toggle="collapse" href="#collapseRoom" role="button" aria-expanded="false" aria-controls="collapseRoom">
 					<i class="material-icons">room</i>
-					<p class="" style="color:#666666 !important">Hotel Data<span><i class="fas fa-caret-down caret-down"></i></span> <span><i class="fas fa-caret-up caret-up" ></i></span> </p>
+					<p style="color:#666666 !important">
+						Hotel Data
+						<span><i class="fas fa-caret-down caret-down"></i></span>
+						<span><i class="fas fa-caret-up caret-up"></i></span>
+					</p>
 				</a>
-				<div class="collapse" id="collapseRoom" data-parent-id="request-parent-list">
-					<ul class="nav collapse" data-parent-id="request-parent-list" id="collapseRoomId">
+				<div class="collapse" id="collapseRoom">
+					<ul class="nav" id="collapseRoomId" data-parent-id="request-parent-list">
 						<li class="nav-item room_data_list li-elements-js" id="room">
 							<a class="nav-link" id="room-link" href="{% url 'room_data_list' %}">
-								<i class="material-icons">rooms</i>
-								<p class="room_data_list-link">Rooms</p>
+								<i class="material-icons">meeting_room</i>
+								<p class="room_data_list-link">Room Data</p>
+							</a>
+						</li>
+						<li class="nav-item room_model_list li-elements-js" id="room_model_list">
+							<a class="nav-link" id="room-model-link" href="{% url 'room_model_list' %}">
+								<i class="material-icons">category</i>
+								<p class="room_model_list-link">Room Models</p>
 							</a>
 						</li>
 					</ul>
 				</div>
 			</li>
+			
             <li class="nav-item log-out">
                 <a class="nav-link" href="{% url 'logout' %}">
                     <i class="fas fa-user"></i>
@@ -126,10 +137,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
 		if(elementHidden){
 
-			if($("#collapseRoomId").children().filter($.getchildrenLength).length < 1){
-				let parent_id =$("#collapseRoomId").attr("data-parent-id")
-				$("#"+parent_id).hide()
+			if ($("#collapseRoomId").children().filter($.getchildrenLength).length < 1) {
+				const parent_id = $("#collapseRoomId").attr("data-parent-id");
+				$("#" + parent_id).hide();
 			}
+
 		}
 	}
 	

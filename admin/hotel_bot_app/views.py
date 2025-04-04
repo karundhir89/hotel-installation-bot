@@ -466,3 +466,54 @@ def delete_room(request):
             return JsonResponse({"error": str(e)}, status=400)
 
     return JsonResponse({"error": "Invalid request"}, status=400)
+
+@login_required
+def room_model_list(request):
+    room_models = RoomModel.objects.all()
+    return render(request, 'room_model_list.html', {'room_models': room_models})
+
+
+@login_required
+def save_room_model(request):
+    if request.method == 'POST':
+        model_id = request.POST.get('model_id')
+        name = request.POST.get('name').strip()
+
+        if not name:
+            return JsonResponse({'error': 'Model name is required'}, status=400)
+
+        # Check for duplicate name (case-insensitive)
+        existing_model = RoomModel.objects.filter(room_model__iexact=name)
+        if model_id:
+            existing_model = existing_model.exclude(id=model_id)
+
+        if existing_model.exists():
+            return JsonResponse({'error': 'A room model with this name already exists.'}, status=400)
+
+        if model_id:
+            try:
+                model = RoomModel.objects.get(id=model_id)
+                model.room_model = name
+                model.save()
+                return JsonResponse({'success': 'Room model updated successfully'})
+            except RoomModel.DoesNotExist:
+                return JsonResponse({'error': 'Room model not found'}, status=404)
+        else:
+            RoomModel.objects.create(room_model=name)
+            return JsonResponse({'success': 'Room model created successfully'})
+
+    return JsonResponse({'error': 'Invalid request'}, status=400)
+
+
+
+@login_required
+def delete_room_model(request):
+    if request.method == 'POST':
+        model_id = request.POST.get('model_id')
+        try:
+            room_model = RoomModel.objects.get(id=model_id)
+            room_model.delete()
+            return JsonResponse({'success': 'Room Model deleted.'})
+        except RoomModel.DoesNotExist:
+            return JsonResponse({'error': 'Room Model not found.'})
+    return JsonResponse({'error': 'Invalid request.'})
