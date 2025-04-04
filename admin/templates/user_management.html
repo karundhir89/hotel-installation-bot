@@ -3,8 +3,8 @@
 {% block content %}
 
 <!-- Loader -->
-<div class="loader" id="permissionsLoader">
-    <img src="{% static 'loaders/ajax-loader.gif' %}" />
+<div class="ajax-loader" id="permissionsLoader">
+    <div class="spinner"></div>
 </div>
 
 <div class="content" id="modal-content">
@@ -16,17 +16,17 @@
                     <div class="card-header card-header-primary">
                         <div class="row">
                             <div class="col-md-6">
-                                <h4 class="card-title pt-2">User Information</h4>
+                                <h4 class="card-title pt-2 text-dark">User Information</h4>
                             </div>
                             <div class="col-md-6 text-right">
-                                <button id="addUserBtn" class="btn btn-success">Add User</button>
+                                <button id="addUserBtn" class="btn">Add User</button>
                             </div>
                         </div>
                     </div>
                     <div class="card-body">
                         <div class="table-responsive">
                             <table id="user_table" class="table" style="width:100%; display: none;">
-                                <thead class="text-primary">
+                                <thead class="text-secondary">
                                     <tr>
                                         <th>Name</th>
                                         <th>Role</th>
@@ -59,9 +59,11 @@
 <!-- Modal for Adding User -->
 <div id="userModal" class="modal">
     <div class="modal-content mx-auto p-4" >
-        <span class="close" id="closeModal">×</span>
-        <h2 id="modalTitle">Add User</h2>
-        <form method="POST" action="{% url 'add_users_roles' %}" id="userForm">
+        <div class="d-flex justify-content-between align-items-center">
+            <h2 id="modalTitle">Add User</h2>
+            <span class="close" id="closeModal">×</span>
+        </div>
+            <form method="POST" action="{% url 'add_users_roles' %}" id="userForm">
             {% csrf_token %}
             <div class="form-group">
                 <label for="name">Name:</label>
@@ -74,7 +76,7 @@
             <div class="form-group">
                 <label for="role">Role:</label>
                 <div class="dropdown">
-                    <button class="btn btn-outline-primary dropdown-toggle" type="button" id="roleDropdown" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                    <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="roleDropdown" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                         Select Role
                     </button>
                     <div class="dropdown-menu" aria-labelledby="roleDropdown">
@@ -90,7 +92,7 @@
                 </div>
                 <input type="hidden" name="role" id="selectedRoles">
             </div>
-            <button type="submit" class="btn btn-primary" id="saveUser">Save</button>
+            <button type="submit" class="btn float-right" id="saveUser">Save</button>
         </form>
     </div>
 </div>

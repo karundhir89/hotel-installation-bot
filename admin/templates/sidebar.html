@@ -8,7 +8,7 @@
 
 /* Active link styling */
 .nav-link.active {
-    background-color: purple !important;
+    background-color: #57626a !important;
     color: white !important;
 }
 
@@ -28,18 +28,6 @@
 
     <div class="sidebar-wrapper">
         <ul class="nav">
-            <!-- <li class="nav-item dashboard Dashboard li-elements-js" id="dashboard">
-                <a class="nav-link" id="dashboard-link" href="{% url 'dashboard' %}">
-                    <i class="material-icons">dashboard</i>
-                    <p class="dashboard-link">Dashboard</p>
-                </a>
-            </li>
-            <li class="nav-item section-permissions Permissions li-elements-js" id="section-permissions">
-                <a class="nav-link" id="section-permissions-link" href="{% url 'section-permissions' %}">
-                    <i class="material-icons">security</i>
-                    <p class="section-permissions-link">Permissions</p>
-                </a>
-            </li> -->
             <li class="nav-item chatbot li-elements-js" id="chatbot">
                 <a class="nav-link" id="chatbot-link" href="{% url 'chatbot' %}">
                     <i class="material-icons">chat</i>
@@ -60,14 +48,14 @@
             </li>
 			<li class="nav-item manage-lean-more">
 				<a class="nav-link" data-toggle="collapse" id="request-parent-list" href="#collapseRoom" role="button" aria-expanded="false" aria-controls="collapseRoom">
-					<i class="material-icons">picture_as_pdf</i>
-					<p class="" style="color:#666666 !important">CRUD<span><i class="fas fa-caret-down caret-down"></i></span> <span><i class="fas fa-caret-up caret-up" ></i></span> </p>
+					<i class="material-icons">room</i>
+					<p class="" style="color:#666666 !important">Hotel Data<span><i class="fas fa-caret-down caret-down"></i></span> <span><i class="fas fa-caret-up caret-up" ></i></span> </p>
 				</a>
 				<div class="collapse" id="collapseRoom" data-parent-id="request-parent-list">
 					<ul class="nav collapse" data-parent-id="request-parent-list" id="collapseRoomId">
 						<li class="nav-item room_data_list li-elements-js" id="room">
 							<a class="nav-link" id="room-link" href="{% url 'room_data_list' %}">
-								<i class="material-icons">picture_as_pdf</i>
+								<i class="material-icons">rooms</i>
 								<p class="room_data_list-link">Rooms</p>
 							</a>
 						</li>
