@@ -2,19 +2,22 @@
 {% load static %}
 {% block content %}
 
-<div class="container mt-5">
-    <div class="chat-container mx-auto">
-        <h2 style="text-align:center;">Chatbot</h2>
-        <div class="chat-box" id="chat-box"></div>
-        <div class="input-box">
-            <span class="bmd-form-group">
-                <input type="text" id="user-input" class="form-control" placeholder="Type a message..."
-                    onkeydown="if(event.key==='Enter') sendMessage()">
-            </span>
-            <button class="btn" style="float: right;" onclick="sendMessage()">Send</button>
+<div class="content" id="modal-content">
+    <div class="container mt-5">
+        <div class="chat-container mx-auto">
+            <h2 style="text-align:center;">Chatbot</h2>
+            <div class="chat-box" id="chat-box"></div>
+            <div class="input-box">
+                <span class="bmd-form-group">
+                    <input type="text" id="user-input" class="form-control" placeholder="Type a message..."
+                        onkeydown="if(event.key==='Enter') sendMessage()">
+                </span>
+                <button class="btn" style="float: right;" onclick="sendMessage()">Send</button>
+            </div>
         </div>
     </div>
 </div>
+
 
 <style>
     .chat-container {
