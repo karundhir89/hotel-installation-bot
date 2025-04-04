@@ -13,4 +13,6 @@ urlpatterns = [
     path('rooms/', room_data_list, name='room_data_list'),
     path('rooms/add/', add_room, name='add_room'),  # Add room view
     path('get_room_models/', get_room_models, name='get_room_models'),
+    path('rooms/edit/', edit_room, name='edit_room'),
+    path('delete-room/', delete_room, name='delete_room'),
 ]

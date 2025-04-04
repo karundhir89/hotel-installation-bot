@@ -15,6 +15,7 @@ import random
 import string
 from django.core.mail import send_mail
 import environ
+from django.contrib.auth.decorators import login_required
 env = environ.Env()
 environ.Env.read_env()
 
@@ -276,7 +277,8 @@ def user_login(request):
             return JsonResponse({"error": f"An error occurred: {str(e)}"}, status=500)
     
     return render(request, 'user_login.html')
-          
+
+@login_required       
 def room_data_list(request):
     # Fetch room data from the database
     rooms = RoomData.objects.all()
@@ -284,11 +286,13 @@ def room_data_list(request):
     # Pass the room data to the template
     return render(request, 'room_data_list.html', {'rooms': rooms})
 
+@login_required
 def get_room_models(request):
     room_models = RoomModel.objects.all()
     room_model_list = [{"id": model.id, "name": model.room_model} for model in room_models]
     return JsonResponse({"room_models": room_model_list})
 
+@login_required
 def add_room(request):
     if request.method == 'POST':
         room_number = request.POST.get('room')
@@ -327,3 +331,55 @@ def add_room(request):
             return JsonResponse({'success': 'Room added successfully'})
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=400)
+
+
+@login_required
+def edit_room(request):
+    if request.method == 'POST':
+        try:
+            room_id = request.POST.get('room_id')
+            room = get_object_or_404(RoomData, id=room_id)
+
+            # Don't update room number
+            room.floor = request.POST.get('floor')
+            room.king = request.POST.get('king')
+            room.double = request.POST.get('double')
+            room.exec_king = request.POST.get('exec_king')
+            room.bath_screen = request.POST.get('bath_screen')
+            room.description = request.POST.get('description')
+            room.left_desk = request.POST.get('left_desk')
+            room.right_desk = request.POST.get('right_desk')
+            room.to_be_renovated = request.POST.get('to_be_renovated')
+
+            # Update Room Model if given
+            room_model_id = request.POST.get('room_model')
+            if room_model_id:
+                room_model = get_object_or_404(RoomModel, id=room_model_id)
+                room.room_model = room_model.room_model
+                room.room_model_id = room_model
+                print("room = ",room_model)
+
+            room.save()
+
+            return JsonResponse({'success': 'Room updated successfully!'})
+
+        except RoomModel.DoesNotExist:
+            return JsonResponse({'error': 'Invalid room model!'}, status=400)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+    return JsonResponse({'error': 'Invalid request'}, status=400)
+
+@login_required
+def delete_room(request):
+    if request.method == "POST":
+        room_id = request.POST.get("room_id")
+        room = get_object_or_404(RoomData, id=room_id)
+        
+        try:
+            room.delete()
+            return JsonResponse({"success": "Room deleted successfully!"})
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=400)
+
+    return JsonResponse({"error": "Invalid request"}, status=400)
