@@ -16,8 +16,22 @@ import string
 from django.core.mail import send_mail
 import environ
 from django.contrib.auth.decorators import login_required
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
+from django.contrib import messages
+from functools import wraps
+from django.shortcuts import redirect
+
 env = environ.Env()
 environ.Env.read_env()
+
+def session_login_required(view_func):
+    @wraps(view_func)
+    def wrapper(request, *args, **kwargs):
+        if not request.session.get('user_id'):
+            return redirect('user_login')
+        return view_func(request, *args, **kwargs)
+    return wrapper
 
 password_generated = ''.join(random.choices(string.ascii_letters + string.digits, k=6))
 open_ai_key=env("open_ai_api_key")
@@ -323,12 +337,24 @@ password=bcrypt.hashpw(password_generated.encode(), bcrypt.gensalt())
 
 
 def send_test_email(recipient_email,password):
-    subject = 'Test Email from Django'
-    message = 'Hello, this is a test email sent using Django and SMTP'
-    from_email = env('EMAIL_HOST_USER')  # This is the sender's email
-    recipient_list = [recipient_email]  # Add the recipient's email address here
-    
-    send_mail(subject, message, from_email, recipient_list, fail_silently=False)
+    subject = 'Your Access to Hotel Installation Admin'
+    from_email = env('EMAIL_HOST_USER')
+    recipient_list = [recipient_email]
+
+    html_message = render_to_string('email_sample.html', {
+        'email': recipient_email,
+        'password': password
+    })
+    plain_message = strip_tags(html_message)
+
+    send_mail(
+        subject,
+        plain_message,
+        from_email,
+        recipient_list,
+        html_message=html_message,
+        fail_silently=False
+    )
 
 def user_login(request):
     if request.method == "POST":
@@ -336,20 +362,19 @@ def user_login(request):
             data = json.loads(request.body)
             username = data.get("email")
             entry_password = data.get("password")
-            print(username,entry_password)
             
             if not username or not entry_password:
                 return JsonResponse({"error": "Username and password are required."}, status=400)
             
-            user = InvitedUser.objects.filter(email=username).values('email', 'password').first()
-            
+            user = InvitedUser.objects.filter(email=username).first()
+
             if user is None:
                 return JsonResponse({"error": "Email does not exist."}, status=404)
-            print(user["password"])
-            stored_hashed_password = bytes(user["password"])
-            
-            condition=bcrypt.checkpw(entry_password.encode(),stored_hashed_password)
-            if condition:
+
+            stored_hashed_password = bytes(user.password)  # ✅ convert memoryview to bytes
+            if bcrypt.checkpw(entry_password.encode(), stored_hashed_password):
+                request.session['user_id'] = user.id
+                request.session['user_email'] = user.email
                 return JsonResponse({"message": "successful."}, status=200)
             
             return JsonResponse({"error": "Incorrect password."}, status=401)
@@ -358,7 +383,7 @@ def user_login(request):
             return JsonResponse({"error": "Invalid JSON data."}, status=400)
         except Exception as e:
             return JsonResponse({"error": f"An error occurred: {str(e)}"}, status=500)
-    
+
     return render(request, 'user_login.html')
 
 @login_required       
@@ -504,8 +529,6 @@ def save_room_model(request):
 
     return JsonResponse({'error': 'Invalid request'}, status=400)
 
-
-
 @login_required
 def delete_room_model(request):
     if request.method == 'POST':
@@ -517,3 +540,80 @@ def delete_room_model(request):
         except RoomModel.DoesNotExist:
             return JsonResponse({'error': 'Room Model not found.'})
     return JsonResponse({'error': 'Invalid request.'})
+
+def get_room_type(request):
+    room_number = request.GET.get('room_number')
+    try:
+        room_data = RoomData.objects.get(room=room_number)
+        room_type = room_data.room_model if room_data.room_model else ''
+        return JsonResponse({'success': True, 'room_type': room_type})
+    except RoomData.DoesNotExist:
+        return JsonResponse({'success': False})
+
+@session_login_required
+def installation_form(request):
+    if not request.session.get('user_id'):
+        messages.warning(request, "You must be logged in to access the form.")
+        return redirect('user_login')
+    check_items = [
+        {"id": 0, "label": "0. Pre-Work completed."},
+        {"id": 1, "label": "1. The product arrived at the floor."},
+        {"id": 2, "label": "2. Door installed."},
+        {"id": 3, "label": "3. Closet installed."},
+        {"id": 4, "label": "4. Desk, TV shelf, and nightstands installed."},
+        {"id": 5, "label": "5. Screen installed."},
+        {"id": 6, "label": "6. Curtains installed."},
+        {"id": 7, "label": "7. Mirror installed."},
+        {"id": 8, "label": "8. Wall covering installed."},
+        {"id": 9, "label": "9. Beds installed."},
+        {"id": 10, "label": "10. Mini bar installed."},
+        {"id": 11, "label": "11. Chairs, ottomans, and side tables installed."},
+        {"id": 12, "label": "12. Retouching."},
+        {"id": 13, "label": "13. Post Work."}
+    ]
+
+    if request.method == 'POST':
+        room_number = request.POST.get('room_number')
+        room_type = request.POST.get('room_type')
+        final_date = request.POST.get('final_date')
+        final_by = request.POST.get('final_by')
+        final_notes = request.POST.get('final_notes')
+
+        # Here you can save data to the database if needed
+        print("Room:", room_number, "| Type:", room_type)
+        for item in check_items:
+            checked = request.POST.get(f'step_{item["id"]}')
+            date = request.POST.get(f'date_{item["id"]}')
+            checked_by = request.POST.get(f'checked_by_{item["id"]}')
+            print(f'{item["label"]} | Checked: {checked} | Date: {date} | By: {checked_by}')
+
+        print("Final Date:", final_date, "| By:", final_by, "| Notes:", final_notes)
+        messages.success(request, "Form submitted successfully!")
+        return redirect('installation_form')
+
+    return render(request, 'installation_form.html', {'check_items': check_items})
+
+@session_login_required
+def user_logout(request):
+    request.session.flush()
+    return redirect('user_login')
+
+@session_login_required
+def dashboard(request):
+    user_id = request.session.get("user_id")
+
+    if not user_id:
+        return redirect('user_login')
+
+    try:
+        user = InvitedUser.objects.get(id=user_id)
+
+        # If user.role is already a list (e.g., from a JSONField or ArrayField)
+        user_roles = [role.strip().lower() for role in user.role if isinstance(role, str)]
+
+        return render(request, 'dashboard.html', {
+            'name': user.name,
+            'roles': user_roles
+        })
+    except InvitedUser.DoesNotExist:
+        return redirect('user_login')
