@@ -1,7 +1,7 @@
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 import json
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 from openai import OpenAI
 import requests
 import bcrypt
@@ -15,6 +15,7 @@ import random
 import string
 from django.core.mail import send_mail
 import environ
+from django.contrib.auth.decorators import login_required
 env = environ.Env()
 environ.Env.read_env()
 
@@ -65,6 +66,7 @@ def extract_values(json_obj, keys):
     for key in keys:
         value = json_obj.get(key, None)
         table_selected+=f"Table name is '{key}' and column name is {value}\n\n"
+    print("table selected ,,,,,,",table_selected)
     return table_selected
 
 
@@ -77,7 +79,7 @@ def chatbot_api(request):
 
         # Retrieve or create chat session
         session_id = request.session.get("chat_session_id")
-
+        print("session ID",session_id)
         if not session_id:
             session = ChatSession.objects.create()
             request.session["chat_session_id"] = session.id
@@ -86,36 +88,85 @@ def chatbot_api(request):
 
         # Store user message in DB
         ChatHistory.objects.create(session=session, message=user_message, role="user")
-
         # Retrieve full chat history
         Table_identification = Prompt.objects.filter(prompt_number=1).values_list("description", flat=True).first()
         json_of_tables = Prompt.objects.filter(prompt_number=2).values_list("description", flat=True).first()
-        
-        json_of_tables=ast.literal_eval(json_of_tables)
-        # GPT API Call
-        response = gpt_call_json_func([
-            {'role': 'system', 'content': Table_identification + '\n\n' + 'Here is my query\n' + user_message}
-        ], gpt_model='gpt-4o')
+        word_spaces_prompt = Prompt.objects.filter(prompt_number=3).values_list("description", flat=True).first()
+        user_query_identification_prompt = Prompt.objects.filter(prompt_number=4).values_list("description", flat=True).first()
+        finalised_response_prompt = Prompt.objects.filter(prompt_number=5).values_list("description", flat=True).first()
+        generate_sql_prompt = Prompt.objects.filter(prompt_number=6).values_list("description", flat=True).first()
 
-        try:
-            bot_response = ast.literal_eval(response)
-            extracted_values = extract_values(json_of_tables, bot_response['data'])
-            query_sql = json.loads(gpt_call_json_func([
-                {'role': 'system', 'content': 'Generate an SQL query based on my query and return JSON with key "query".\n'
-                 'Instructions: always use LOWER in WHERE condition.\n\n'
-                 'User query:\n' + user_message + '\n\n'
-                 'Table details:\n' + extracted_values}
-            ], gpt_model='gpt-4o'))
-            
-            # Execute SQL query
+        def fetch_data_from_sql(query):
+        # Execute SQL query
+            print("sql query :::::;",query)
             with connection.cursor() as cursor:
-                cursor.execute(query_sql['query'])
+                cursor.execute(query)
                 rows = cursor.fetchall()
+                print("rows fetched .....",rows)
+                return rows
+        try:
+            generic_or_not = gpt_call_json_func([
+                {'role': 'system', 'content': user_query_identification_prompt + user_message}
+            ], gpt_model='gpt-4o',json_required=False)
+            print('prompt 1:::\n\n',user_query_identification_prompt + user_message)
+            if generic_or_not=='room':
+                json_of_tables=ast.literal_eval(json_of_tables)
+                # GPT API Call
+                response = gpt_call_json_func([
+                    {'role': 'system', 'content': Table_identification + '\n\n' + 'Here is my query\n' + user_message}
+                ], gpt_model='gpt-4o')
+                print('prompt 2:::\n\n',Table_identification + '\n\n' + 'Here is my query\n' + user_message)
+                bot_response = ast.literal_eval(response)
 
-            bot_message = f"The answer is {rows}"
+                extracted_values = extract_values(json_of_tables, bot_response['data'])
+                
+                query_sql = json.loads(gpt_call_json_func([{'role': 'system', 'content': generate_sql_prompt.format(user_message,extracted_values)}], gpt_model='gpt-4o'))
+                print("prompt 3:::\n\n", generate_sql_prompt.format(user_message,extracted_values))
+                
+                rows=fetch_data_from_sql(query_sql['query'])
+                
+                if rows==[]:
+                    print("empty rows ")
+                    possible_words_query=json.loads(gpt_call_json_func([
+                    {'role': 'system', 'content': word_spaces_prompt.format(query_sql['query'])}], gpt_model='gpt-4o'))
+                    rows=fetch_data_from_sql(possible_words_query['query'])
+                    print("\n\nprompt 4:::\n\n", word_spaces_prompt.format(query_sql['query']))
+
+                    print("new query made is  ......",possible_words_query['query'])
+
+                    final_response=gpt_call_json_func([
+                    {'role': 'system', 'content': finalised_response_prompt.format(user_message,possible_words_query['query'],rows)}], gpt_model='gpt-4o',json_required=False)
+                    print("\n\nprompt 5:::",finalised_response_prompt.format(user_message,possible_words_query['query'],rows))
+
+                    
+                    
+                    bot_message=final_response
+                else:
+                    final_response=gpt_call_json_func([
+                    {'role': 'system', 'content': finalised_response_prompt.format(user_message,query_sql['query'],rows)}], gpt_model='gpt-4o',json_required=False)
+                    print(finalised_response_prompt.format(user_message,query_sql['query'],rows))
+
+                    bot_message=final_response
+            else:
+                bot_message = generic_or_not
         except Exception as e:
-            print("Error processing bot response:", e)
-            bot_message = "Sorry, I couldn't process that."
+            try:
+                print("\n\nError processing bot response entering agains", e)
+                retry_sql_query = json.loads(gpt_call_json_func([{'role': 'system', 'content': generate_sql_prompt.format(user_message,extracted_values)},{'role': 'assistant', 'content': query_sql['query']},{'role': 'user', 'content':f'I got error see this and give me correct sql query\n\n{e}' }],gpt_model='gpt-4-1106-preview'))
+
+
+                print('prompt 6 ::::::::',{'role': 'system', 'content': generate_sql_prompt.format(user_message,extracted_values)},{'role': 'assistant', 'content': query_sql['query']},{'role': 'user', 'content':f'I got error see this and give me correct sql query\n\n{e}' })
+
+
+                print("query made after retry:",retry_sql_query['query'])
+                
+                rows=fetch_data_from_sql(retry_sql_query['query'])
+                final_response=gpt_call_json_func([
+                {'role': 'system', 'content': finalised_response_prompt.format(user_message,retry_sql_query['query'],rows)}], gpt_model='gpt-4o',json_required=False)
+                bot_message=final_response
+            except Exception as e:
+                print("failed after attempt", e)
+                bot_message = "Sorry, I couldn't process that."
 
         # Store assistant message in DB
         ChatHistory.objects.create(session=session, message=bot_message, role="assistant")
@@ -226,4 +277,109 @@ def user_login(request):
             return JsonResponse({"error": f"An error occurred: {str(e)}"}, status=500)
     
     return render(request, 'user_login.html')
-          
+
+@login_required       
+def room_data_list(request):
+    # Fetch room data from the database
+    rooms = RoomData.objects.all()
+
+    # Pass the room data to the template
+    return render(request, 'room_data_list.html', {'rooms': rooms})
+
+@login_required
+def get_room_models(request):
+    room_models = RoomModel.objects.all()
+    room_model_list = [{"id": model.id, "name": model.room_model} for model in room_models]
+    return JsonResponse({"room_models": room_model_list})
+
+@login_required
+def add_room(request):
+    if request.method == 'POST':
+        room_number = request.POST.get('room')
+        floor = request.POST.get('floor')
+        king = request.POST.get('king')
+        double = request.POST.get('double')
+        exec_king = request.POST.get('exec_king')
+        bath_screen = request.POST.get('bath_screen')
+        left_desk = request.POST.get('left_desk')
+        right_desk = request.POST.get('right_desk')
+        to_be_renovated = request.POST.get('to_be_renovated')
+        room_model_id = request.POST.get('room_model')
+        description = request.POST.get('description')
+
+        # Assuming room_model is a ForeignKey
+        room_model = RoomModel.objects.get(id=room_model_id)
+        # Check if room number already exists
+        if RoomData.objects.filter(room=room_number).exists():
+            return JsonResponse({"error": "Room number already exists!"}, status=400)
+
+        try:
+            RoomData.objects.create(
+                room=room_number,
+                floor=floor,
+                king=king,
+                double=double,
+                exec_king=exec_king,
+                bath_screen=bath_screen,
+                left_desk=left_desk,
+                right_desk=right_desk,
+                to_be_renovated=to_be_renovated,
+                room_model=room_model.room_model,
+                room_model_id=room_model,
+                description=description
+            )
+            return JsonResponse({'success': 'Room added successfully'})
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+
+@login_required
+def edit_room(request):
+    if request.method == 'POST':
+        try:
+            room_id = request.POST.get('room_id')
+            room = get_object_or_404(RoomData, id=room_id)
+
+            # Don't update room number
+            room.floor = request.POST.get('floor')
+            room.king = request.POST.get('king')
+            room.double = request.POST.get('double')
+            room.exec_king = request.POST.get('exec_king')
+            room.bath_screen = request.POST.get('bath_screen')
+            room.description = request.POST.get('description')
+            room.left_desk = request.POST.get('left_desk')
+            room.right_desk = request.POST.get('right_desk')
+            room.to_be_renovated = request.POST.get('to_be_renovated')
+
+            # Update Room Model if given
+            room_model_id = request.POST.get('room_model')
+            if room_model_id:
+                room_model = get_object_or_404(RoomModel, id=room_model_id)
+                room.room_model = room_model.room_model
+                room.room_model_id = room_model
+                print("room = ",room_model)
+
+            room.save()
+
+            return JsonResponse({'success': 'Room updated successfully!'})
+
+        except RoomModel.DoesNotExist:
+            return JsonResponse({'error': 'Invalid room model!'}, status=400)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+    return JsonResponse({'error': 'Invalid request'}, status=400)
+
+@login_required
+def delete_room(request):
+    if request.method == "POST":
+        room_id = request.POST.get("room_id")
+        room = get_object_or_404(RoomData, id=room_id)
+        
+        try:
+            room.delete()
+            return JsonResponse({"success": "Room deleted successfully!"})
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=400)
+
+    return JsonResponse({"error": "Invalid request"}, status=400)

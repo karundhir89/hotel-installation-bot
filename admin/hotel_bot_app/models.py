@@ -24,38 +24,16 @@ class Inventory(models.Model):
     id = models.AutoField(primary_key=True)  # Serial (Auto-increment)
     item = models.TextField(null=True, blank=True)
     client_id = models.TextField(null=True, blank=True)
-    qty_ordered = models.TextField(null=True, blank=True)
-    qty_received = models.TextField(null=True, blank=True)
-    quantity_installed = models.TextField(null=True, blank=True)
-    quantity_available = models.TextField(null=True, blank=True)
+    qty_ordered = models.IntegerField(null=True, blank=True)
+    qty_received = models.IntegerField(null=True, blank=True)
+    quantity_installed = models.IntegerField(null=True, blank=True)
+    quantity_available = models.IntegerField(null=True, blank=True)
 
     class Meta:
         db_table = 'inventory'  # Ensure this matches the actual table name in PostgreSQL
 
     def __str__(self):
         return f"Item: {self.item} - Available: {self.quantity_available}"
-
-
-
-class RoomData(models.Model):
-    id = models.AutoField(primary_key=True)  # Serial (Auto-increment)
-    room = models.TextField(null=True, blank=True)
-    floor = models.TextField(null=True, blank=True)
-    king = models.TextField(null=True, blank=True)
-    double = models.TextField(null=True, blank=True)
-    exec_king = models.TextField(null=True, blank=True)
-    bath_screen = models.TextField(null=True, blank=True)
-    room_model = models.TextField(null=True, blank=True)
-    left_desk = models.TextField(null=True, blank=True)
-    right_desk = models.TextField(null=True, blank=True)
-    to_be_renovated = models.TextField(null=True, blank=True)
-    description = models.TextField(null=True, blank=True)  # Fixed column name typo from "descripton"
-
-    class Meta:
-        db_table = 'room_data'  # Ensure this matches the actual table name in PostgreSQL
-
-    def __str__(self):
-        return f"Room {self.room} - Floor {self.floor}"
     
 class RoomModel(models.Model):
     id = models.AutoField(primary_key=True)  # Serial (Auto-increment)
@@ -67,41 +45,58 @@ class RoomModel(models.Model):
 
     def __str__(self):
         return f"Room Model: {self.room_model} - Total: {self.total}"
+
+
+class RoomData(models.Model):
+    id = models.AutoField(primary_key=True)  # Serial (Auto-increment)
+    room = models.TextField(null=True, blank=True)
+    floor = models.TextField(null=True, blank=True)
+    king = models.TextField(null=True, blank=True)
+    double = models.TextField(null=True, blank=True)
+    exec_king = models.TextField(null=True, blank=True)
+    bath_screen = models.TextField(null=True, blank=True)
+    room_model = models.TextField(null=True, blank=True)
+    room_model_id = models.ForeignKey(RoomModel, on_delete=models.SET_NULL, null=True, blank=True,db_column='room_model_id')
+    left_desk = models.TextField(null=True, blank=True)
+    right_desk = models.TextField(null=True, blank=True)
+    to_be_renovated = models.TextField(null=True, blank=True)
+    description = models.TextField(null=True, blank=True)  # Fixed column name typo from "descripton"
+
+    class Meta:
+        db_table = 'room_data'  # Ensure this matches the actual table name in PostgreSQL
+
+    def __str__(self):
+        return f"Room {self.room} - Floor {self.floor}"
     
 
 class Schedule(models.Model):
     id = models.AutoField(primary_key=True)
     phase = models.TextField(null=True, blank=True)
     floor = models.TextField(null=True, blank=True)
-    production_starts = models.TextField(null=True, blank=True)
-    production_ends = models.TextField(null=True, blank=True)
-    shipping_depature = models.TextField(null=True, blank=True)
-    shipping_arrival = models.TextField(null=True, blank=True)
-    custom_clearing_starts = models.TextField(null=True, blank=True)
-    custom_clearing_ends = models.TextField(null=True, blank=True)
-    arrive_on_site = models.TextField(null=True, blank=True)
-    pre_work_starts = models.TextField(null=True, blank=True)
-    pre_work_ends = models.TextField(null=True, blank=True)
-    install_starts = models.TextField(null=True, blank=True)
+    production_starts = models.DateTimeField(null=True, blank=True)
+    production_ends = models.DateTimeField(null=True, blank=True)
+    shipping_depature = models.DateTimeField(null=True, blank=True)
+    shipping_arrival = models.DateTimeField(null=True, blank=True)
+    custom_clearing_starts = models.DateTimeField(null=True, blank=True)
+    custom_clearing_ends = models.DateTimeField(null=True, blank=True)
+    arrive_on_site = models.DateTimeField(null=True, blank=True)
+    pre_work_starts = models.DateTimeField(null=True, blank=True)
+    pre_work_ends = models.DateTimeField(null=True, blank=True)
+    install_starts = models.DateTimeField(null=True, blank=True)
+    install_ends = models.DateTimeField(null=True, blank=True)  # Keep as DateTimeField
     
-    # Fix for double underscore issue
-    install_ends = models.TextField(null=True, blank=True, db_column="install_ends")
-    
-    # Fix for trailing underscore issue
-    post_work_starts = models.TextField(null=True, blank=True, db_column="post_work_starts")
-    
-    post_work_ends = models.TextField(null=True, blank=True)
-    floor_completed = models.TextField(null=True, blank=True)
-    floor_closes = models.TextField(null=True, blank=True)
-    floor_opens = models.TextField(null=True, blank=True)
+    post_work_starts = models.DateTimeField(null=True, blank=True)  # Changed to DateTimeField
+    post_work_ends = models.DateTimeField(null=True, blank=True)  # Changed to DateTimeField
+    floor_completed = models.DateTimeField(null=True, blank=True)  # Changed to DateTimeField
+    floor_closes = models.DateTimeField(null=True, blank=True)  # Changed to DateTimeField
+    floor_opens = models.DateTimeField(null=True, blank=True)  # Changed to DateTimeField
+
 
     class Meta:
         db_table = 'schedule'  # Ensures it maps to the existing table
 
     def __str__(self):
         return f"Schedule - Phase: {self.phase}, Floor: {self.floor}"
-
-from django.db import models
 
 class ProductData(models.Model):
     id = models.AutoField(primary_key=True)
@@ -144,9 +139,6 @@ class Prompt(models.Model):
 
     def __str__(self):
         return f"Prompt {self.prompt_number}: {self.description[:50]}"  # Show first 50 chars
-from django.db import models
-
-from django.db import models
 
 class ChatSession(models.Model):
     id = models.AutoField(primary_key=True)
