@@ -250,9 +250,8 @@ Sample database rows:
                 final_response=gpt_call_json_func([
                         {'role': 'system', 'content': finalised_response_prompt.format(user_message,response['query'],rows)}], gpt_model='gpt-4o',json_required=False)
                 bot_message=final_response
-     
-
-           
+            else:
+                bot_message=prompt_first
 
         except Exception as e:
                 try:
