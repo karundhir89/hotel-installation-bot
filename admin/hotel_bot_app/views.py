@@ -44,7 +44,7 @@ def gpt_call_json_func(message,gpt_model,json_required=True,temperature=0):
 				'Content-Type': 'application/json'
 			}
 		)
-		print("gpt function ended with ....",gpt_response.json()['choices'][0]['message']['content'])
+		# print("gpt function ended with ....",gpt_response.json())
 		# print("gpt response got is ",gpt_response.json()['choices'])
 		return gpt_response.json()['choices'][0]['message']['content']
 	except Exception as e:
@@ -95,11 +95,9 @@ def chatbot_api(request):
         generate_sql_prompt = Prompt.objects.filter(prompt_number=6).values_list("description", flat=True).first()
         def fetch_data_from_sql(query):
         # Execute SQL query
-            print("sql query :::::;",query)
             with connection.cursor() as cursor:
                 cursor.execute(query)
                 rows = cursor.fetchall()
-                print("rows fetched .....",rows)
                 return rows
         try:
             prompt_first = gpt_call_json_func([
@@ -107,7 +105,7 @@ def chatbot_api(request):
  
 If the user is engaging in general conversation (e.g., greetings like "hello" or "how are you?"), respond accordingly.
  
-If the query relates to database columns, hotel-related topics, models, inventory, or installation (such as rooms, services, IDs, scheduling, or product details), extract and return the most relevant tables, columns, data and "suggested query logic" in JSON format to assist in building SQL queries later.
+If the query relates to database columns, hotel-related topics, models, inventory, or installation (such as rooms, services, IDs, scheduling, or product details), extract and return the most relevant 'tables', and needed 'columns'and 'steps' : steps for how to make final query  in JSON format to assist in building SQL queries later.
  
 Otherwise, continue the conversation naturally.
  
@@ -152,18 +150,13 @@ Sample database rows:
 {}""".format(user_message)}
             ], gpt_model='gpt-4-1106-preview',json_required=False)
             print('first prompt output >>>>>> ',prompt_first,'\n\n')
-
-
-
-
-            
             if '{' in prompt_first:
                 prompt_second="""You are an expert chatbot specializing in hotel furniture installation. Your task is to generate the most accurate and optimized SQL query based on the user's request, database schema, and context.
     
     Instructions:
-        1.Carefully analyze the user query and determine the relevant tables and columns.
+        1.Carefully analyze the user query and determine the relevant tables and columns and steps.
     
-        2. Select the most appropriate tables for the query using the provided schema and related tables.
+        2. Select the most appropriate tables for the query using the provided schema and related tables and steps.
     
         3. Construct a well-structured SQL query that efficiently retrieves the required data which will be best fit according to User Query.
     
@@ -221,8 +214,7 @@ Sample database rows:
 
     {}
     
-    Relevant Context Tables and Columns:
-    Helpful references for query construction:
+    Relevant Context Tables and Columns and steps:
 
     {}
 
@@ -234,25 +226,16 @@ Sample database rows:
                 
                 response = json.loads(gpt_call_json_func([
                     {'role': 'system', 'content': prompt_second }
-                ], gpt_model='gpt-4-1106-preview'))
-                print("sql query made is >>>>>>>>>",response['query'])
+                ], gpt_model='gpt-4-1106-preview',temperature=0))
+
+                print("sql query made is >>>>>>>>>",response['query'],'\n\n raw response:::',response)
                 
                 rows=fetch_data_from_sql(response['query'])
-                if rows==[]:
-                        print("empty rows we got ")
-                        possible_words_query=json.loads(gpt_call_json_func([
-                        {'role': 'system', 'content': word_spaces_prompt.format(response['query'])}], gpt_model='gpt-4o'))
-                        print("\n\npossible word queries >>>>>",possible_words_query)
-                        rows=fetch_data_from_sql(possible_words_query['query'])
-                        final_response=gpt_call_json_func([
-                            {'role': 'system', 'content': finalised_response_prompt.format(user_message,possible_words_query['query'],rows)}], gpt_model='gpt-4o',json_required=False)
-                        bot_message=final_response
-                else:
-                        print("finalised response without word possible")
-                        final_response=gpt_call_json_func([
-                            {'role': 'system', 'content': finalised_response_prompt.format(user_message,response['query'],rows)}], gpt_model='gpt-4o',json_required=False)
-                        bot_message=final_response
-                        print(prompt_second,final_response)
+
+                print("rows >>>>>",rows)
+                final_response=gpt_call_json_func([
+                        {'role': 'system', 'content': finalised_response_prompt.format(user_message,response['query'],rows)}], gpt_model='gpt-4o',json_required=False)
+                bot_message=final_response
      
 
            
@@ -266,22 +249,11 @@ Sample database rows:
                         {'role': 'user', 'content': f'I got error please fix it \n\n {e}' },
                     ], gpt_model='gpt-4o'))
                     
+                    print("fixed code for sql after error :::::",response['query'])
                     rows=fetch_data_from_sql(response['query'])
-                    print(type(rows))
-                    if rows==[]:
-                        print("empty rows we got ")
-                        possible_words_query=json.loads(gpt_call_json_func([
-                        {'role': 'system', 'content': word_spaces_prompt.format(response['query'])}], gpt_model='gpt-4o'))
-                        print("\n\npossible word queries >>>>>",possible_words_query)
-                        rows=fetch_data_from_sql(possible_words_query['query'])
-                        final_response=gpt_call_json_func([
-                            {'role': 'system', 'content': finalised_response_prompt.format(user_message,response['query'],rows)}], gpt_model='gpt-4o',json_required=False)
-                        bot_message=final_response
-                    else:
-                        print("finalised response without word possible")
-                        final_response=gpt_call_json_func([
-                            {'role': 'system', 'content': finalised_response_prompt.format(user_message,response['query'],rows)}], gpt_model='gpt-4o',json_required=False)
-                        bot_message=final_response
+                    final_response=gpt_call_json_func([
+                        {'role': 'system', 'content': finalised_response_prompt.format(user_message,response['query'],rows)}], gpt_model='gpt-4o',json_required=False)
+                    bot_message=final_response
                     print(prompt_second,final_response)
                 except:   
                     bot_message = "Sorry, I couldn't process that."
