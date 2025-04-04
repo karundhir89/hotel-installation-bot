@@ -364,6 +364,10 @@ def send_test_email(recipient_email,password):
     )
 
 def user_login(request):
+    # Redirect to dashboard if already logged in
+    if request.session.get("user_id"):
+        return redirect("/dashboard")
+
     if request.method == "POST":
         try:
             data = json.loads(request.body)
@@ -378,7 +382,7 @@ def user_login(request):
             if user is None:
                 return JsonResponse({"error": "Email does not exist."}, status=404)
 
-            stored_hashed_password = bytes(user.password)  # ✅ convert memoryview to bytes
+            stored_hashed_password = bytes(user.password)  # convert memoryview to bytes
             if bcrypt.checkpw(entry_password.encode(), stored_hashed_password):
                 request.session['user_id'] = user.id
                 request.session['user_email'] = user.email
@@ -392,6 +396,7 @@ def user_login(request):
             return JsonResponse({"error": f"An error occurred: {str(e)}"}, status=500)
 
     return render(request, 'user_login.html')
+
 
 @login_required       
 def room_data_list(request):

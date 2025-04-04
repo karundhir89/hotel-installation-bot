@@ -52,7 +52,7 @@ def show_login(request):
 		if request.user.id is not None:
 				return HttpResponseRedirect('user_management')
 		else:
-			return HttpResponseRedirect('accounts/login')
+			return HttpResponseRedirect('user_login')
 	except Exception as e:
 		print('error in  show_login',str(e))
 	return HttpResponseRedirect('dashboard')
