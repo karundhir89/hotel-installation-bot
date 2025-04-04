@@ -238,10 +238,10 @@ Sample database rows:
                 print(prompt_second,final_response)
             else:
                 bot_message=prompt_first
-
+                print("decode")
 
            
-           
+
         except Exception as e:
                 try:
                     print("got error : now making new query")
