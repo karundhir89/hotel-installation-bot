@@ -93,7 +93,7 @@ def chatbot_api(request):
         user_query_identification_prompt = Prompt.objects.filter(prompt_number=4).values_list("description", flat=True).first()
         finalised_response_prompt = Prompt.objects.filter(prompt_number=5).values_list("description", flat=True).first()
         generate_sql_prompt = Prompt.objects.filter(prompt_number=6).values_list("description", flat=True).first()
-
+        print('finalised response prompts ::::',finalised_response_prompt)
         def fetch_data_from_sql(query):
         # Execute SQL query
             print("sql query :::::;",query)
@@ -227,11 +227,13 @@ Sample database rows:
     **strictly remember i need a sql query in json format with key 'query' and values as sql query**
     """.format(user_message,prompt_first)
                 # GPT API Call
+                print()
                 response = json.loads(gpt_call_json_func([
                     {'role': 'system', 'content': prompt_second }
                 ], gpt_model='gpt-4o'))
                 
                 rows=fetch_data_from_sql(response['query'])
+                print('shot spot')
                 final_response=gpt_call_json_func([
                     {'role': 'system', 'content': finalised_response_prompt.format(user_message,response['query'],rows)}], gpt_model='gpt-4o',json_required=False)
                 bot_message=final_response
