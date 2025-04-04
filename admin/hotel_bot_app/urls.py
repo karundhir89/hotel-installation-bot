@@ -17,6 +17,7 @@ urlpatterns = [
     path('rooms/edit/', edit_room, name='edit_room'),
     path('delete-room/', delete_room, name='delete_room'),
     path('room-models/', room_model_list, name='room_model_list'),
+    path('schedule_list/', schedule_list, name='schedule_list'),
     path('room-models/save/', save_room_model, name='save_room_model'),
     path('room-models/delete/', delete_room_model, name='delete_room_model'),
     path('installation-form/', installation_form, name='installation_form'),

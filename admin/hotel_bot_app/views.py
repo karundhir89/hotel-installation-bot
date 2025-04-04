@@ -406,6 +406,14 @@ def room_data_list(request):
     # Pass the room data to the template
     return render(request, 'room_data_list.html', {'rooms': rooms})
 
+
+@login_required       
+def schedule_list(request):
+    # Fetch room data from the database
+    rooms = Schedule.objects.all()
+    # Pass the room data to the template
+    return render(request, 'schedule_list.html', {'schedule': rooms})
+
 @login_required
 def get_room_models(request):
     room_models = RoomModel.objects.all()
