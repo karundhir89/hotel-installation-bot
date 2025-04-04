@@ -31,7 +31,7 @@
 	<!-- CSS Just for demo purpose, don't include it in your project -->
 	<link href="{% static 'demo/demo.css' %}"  rel="stylesheet" />
 	<link href="{% static 'css/style.css' %}"  rel="stylesheet" />
-	<link href="{% static 'css/main.css' %}"  rel="stylesheet" /> -->
+	<link href="{% static 'css/main.css' %}"  rel="stylesheet" />
 
 </head>
 
@@ -42,11 +42,14 @@
 			<!-- Navbar -->
 			<nav class="navbar navbar-expand-lg navbar-transparent navbar-absolute fixed-top ">
 				<div class="container-fluid">
-					<div class="navbar-wrapper">
-						<a class="navbar-brand" href="javascript:;">{{page_name}}</a>
-					</div>
-
-					<div class="collapse navbar-collapse justify-content-end">
+					<div class="collapse navbar-collapse justify-content-between">
+						<ul class="navbar-nav d-flex align-items-center">
+							<li class="nav-item">
+								<p class="navbar-text text-primary fw-bold h5 mb-0">
+									Hotel Installation Admin
+								</p>
+							</li>
+						</ul>						
 						<ul class="navbar-nav">
 							<li class="nav-item dropdown">
 								<a class="nav-link" href="javascript:;" id="navbarDropdownProfile" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">

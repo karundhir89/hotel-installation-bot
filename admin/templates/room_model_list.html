@@ -79,6 +79,7 @@ th.sorting, th.sorting_asc, th.sorting_desc {
                                 <thead class="text-secondary">
                                     <tr>
                                         <th>Name</th>
+                                        <th>Total</th>
                                         <th>Actions</th>
                                     </tr>
                                 </thead>
@@ -86,6 +87,7 @@ th.sorting, th.sorting_asc, th.sorting_desc {
                                     {% for model in room_models %}
                                     <tr>
                                         <td>{{ model.room_model }}</td>
+                                        <td>{{ model.total }}</td>
                                         <td>
                                             <button class="btn editModelBtn"
                                                     data-id="{{ model.id }}"
