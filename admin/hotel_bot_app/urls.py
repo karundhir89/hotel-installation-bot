@@ -3,6 +3,7 @@ from .views import *
 
 urlpatterns = [
     path('chat/', chatbot, name='chatbot'),
+    path('dashboard/', dashboard, name='dashboard'),
     path('api/chatbot/', chatbot_api, name='chatbot_api'),  # API for chatbot
     path('display_prompts/', display_prompts, name='display_prompts'),  # API for chatbot
     path('update_prompt/', update_prompt, name='update_prompt'),  # API for chatbot,
@@ -18,4 +19,7 @@ urlpatterns = [
     path('room-models/', room_model_list, name='room_model_list'),
     path('room-models/save/', save_room_model, name='save_room_model'),
     path('room-models/delete/', delete_room_model, name='delete_room_model'),
+    path('installation-form/', installation_form, name='installation_form'),
+    path('get-room-type/', get_room_type, name='get_room_type'),
+    path('user_logout',user_logout,name='user_logout')
 ]
