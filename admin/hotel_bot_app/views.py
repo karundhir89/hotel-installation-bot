@@ -93,7 +93,6 @@ def chatbot_api(request):
         user_query_identification_prompt = Prompt.objects.filter(prompt_number=4).values_list("description", flat=True).first()
         finalised_response_prompt = Prompt.objects.filter(prompt_number=5).values_list("description", flat=True).first()
         generate_sql_prompt = Prompt.objects.filter(prompt_number=6).values_list("description", flat=True).first()
-        print('finalised response prompts ::::',finalised_response_prompt)
         def fetch_data_from_sql(query):
         # Execute SQL query
             print("sql query :::::;",query)
@@ -152,7 +151,7 @@ Sample database rows:
                  
 {}""".format(user_message)}
             ], gpt_model='gpt-4-1106-preview',json_required=False)
-            print('output here ',prompt_first)
+            print('first prompt output >>>>>> ',prompt_first,'\n\n')
 
 
 
@@ -232,20 +231,29 @@ Sample database rows:
     **strictly remember i need a sql query in json format with key 'query' and values as sql query**
     """.format(user_message,prompt_first)
                 # GPT API Call
-                print()
+                
                 response = json.loads(gpt_call_json_func([
                     {'role': 'system', 'content': prompt_second }
-                ], gpt_model='gpt-4o'))
+                ], gpt_model='gpt-4-1106-preview'))
+                print("sql query made is >>>>>>>>>",response['query'])
                 
                 rows=fetch_data_from_sql(response['query'])
-                print('shot spot')
-                final_response=gpt_call_json_func([
-                    {'role': 'system', 'content': finalised_response_prompt.format(user_message,response['query'],rows)}], gpt_model='gpt-4o',json_required=False)
-                bot_message=final_response
-                print(prompt_second,final_response)
-            else:
-                bot_message=prompt_first
-                print("decode")
+                if rows==[]:
+                        print("empty rows we got ")
+                        possible_words_query=json.loads(gpt_call_json_func([
+                        {'role': 'system', 'content': word_spaces_prompt.format(response['query'])}], gpt_model='gpt-4o'))
+                        print("\n\npossible word queries >>>>>",possible_words_query)
+                        rows=fetch_data_from_sql(possible_words_query['query'])
+                        final_response=gpt_call_json_func([
+                            {'role': 'system', 'content': finalised_response_prompt.format(user_message,possible_words_query['query'],rows)}], gpt_model='gpt-4o',json_required=False)
+                        bot_message=final_response
+                else:
+                        print("finalised response without word possible")
+                        final_response=gpt_call_json_func([
+                            {'role': 'system', 'content': finalised_response_prompt.format(user_message,response['query'],rows)}], gpt_model='gpt-4o',json_required=False)
+                        bot_message=final_response
+                        print(prompt_second,final_response)
+     
 
            
 
@@ -259,9 +267,21 @@ Sample database rows:
                     ], gpt_model='gpt-4o'))
                     
                     rows=fetch_data_from_sql(response['query'])
-                    final_response=gpt_call_json_func([
-                        {'role': 'system', 'content': finalised_response_prompt.format(user_message,response['query'],rows)}], gpt_model='gpt-4o',json_required=False)
-                    bot_message=final_response
+                    print(type(rows))
+                    if rows==[]:
+                        print("empty rows we got ")
+                        possible_words_query=json.loads(gpt_call_json_func([
+                        {'role': 'system', 'content': word_spaces_prompt.format(response['query'])}], gpt_model='gpt-4o'))
+                        print("\n\npossible word queries >>>>>",possible_words_query)
+                        rows=fetch_data_from_sql(possible_words_query['query'])
+                        final_response=gpt_call_json_func([
+                            {'role': 'system', 'content': finalised_response_prompt.format(user_message,response['query'],rows)}], gpt_model='gpt-4o',json_required=False)
+                        bot_message=final_response
+                    else:
+                        print("finalised response without word possible")
+                        final_response=gpt_call_json_func([
+                            {'role': 'system', 'content': finalised_response_prompt.format(user_message,response['query'],rows)}], gpt_model='gpt-4o',json_required=False)
+                        bot_message=final_response
                     print(prompt_second,final_response)
                 except:   
                     bot_message = "Sorry, I couldn't process that."
