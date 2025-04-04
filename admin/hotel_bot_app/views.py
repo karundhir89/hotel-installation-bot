@@ -241,6 +241,7 @@ Sample database rows:
 
 
            
+           
         except Exception as e:
                 try:
                     print("got error : now making new query")
