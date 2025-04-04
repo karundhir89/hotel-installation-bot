@@ -27,7 +27,6 @@ from django.db import connection
 
 def gpt_call_json_func(message,gpt_model,json_required=True,temperature=0):
 	try:
-		print("gpt function call")
 		json_payload = {
 			'model': gpt_model,
 			'temperature': temperature,
@@ -45,7 +44,6 @@ def gpt_call_json_func(message,gpt_model,json_required=True,temperature=0):
 				'Content-Type': 'application/json'
 			}
 		)
-		print("gpt response got is ",gpt_response.json())
 		print("gpt function ended with ....",gpt_response.json()['choices'][0]['message']['content'])
 		# print("gpt response got is ",gpt_response.json()['choices'])
 		return gpt_response.json()['choices'][0]['message']['content']
@@ -136,11 +134,6 @@ Sample database rows:
 {{"product_data": [{{"id" : 1,"item" : "KS-JWM-113","client_id" : "P125","description" : "Desk\/Dining Chair","qty_ordered" : "320","price" : "255.0","client_selected" : "1"}},{{"id" : 2,"item" : "KS-JWM-702A","client_id" : "P123","description" : "Custom Dining Chair","qty_ordered" : "176","price" : "296.82","client_selected" : "1"}},{{"id" : 3,"item" : "KS-JVM-715-SABC","client_id" : "P120","description" : "Sofa SUITE A, B, C","qty_ordered" : "9","price" : "1646.6615384615384","client_selected" : "1"}},{{"id" : 4,"item" : "KS-JVM-715-CURVADIS","client_id" : "P121","description" : "Sofa CURVA DIS","qty_ordered" : "2","price" : "1646.6615384615384","client_selected" : "1"}}]}}
  
  
-Table: "product_room_model"
-Columns: "id" [serial4], "product_id" [int4], "room_model_id" [int4], "quantity" [int4]  
-Sample database rows:
-{{"product_room_model": [{{"id" : 1,"product_id" : 1,"room_model_id" : 1,"quantity" : 1}},{{"id" : 2,"product_id" : 1,"room_model_id" : 2,"quantity" : 1}},{{"id" : 3,"product_id" : 1,"room_model_id" : 3,"quantity" : 1}},{{"id" : 4,"product_id" : 1,"room_model_id" : 4,"quantity" : 1}},]}}
- 
 Table: "inventory"
 Columns: "id" [serial4], "item" [text], "client_id" [text], "qty_ordered" [text], "qty_received" [text], "quantity_installed" [text], "quantity_available" [text]
 Sample database rows:
@@ -160,12 +153,12 @@ Sample database rows:
 {}""".format(user_message)}
             ], gpt_model='gpt-4-1106-preview',json_required=False)
             print('output here ',prompt_first)
-            if '{' in prompt_first:
 
-                
-                
-                
-                
+
+
+
+            
+            if '{' in prompt_first:
                 prompt_second="""You are an expert chatbot specializing in hotel furniture installation. Your task is to generate the most accurate and optimized SQL query based on the user's request, database schema, and context.
     
     Instructions:
@@ -249,7 +242,21 @@ Sample database rows:
 
            
         except Exception as e:
-                bot_message = "Sorry, I couldn't process that."
+                try:
+                    print("got error : now making new query")
+                    response = json.loads(gpt_call_json_func([
+                        {'role': 'system', 'content': prompt_second },
+                        {'role': 'assistant', 'content': response['query'] },
+                        {'role': 'user', 'content': f'I got error please fix it \n\n {e}' },
+                    ], gpt_model='gpt-4o'))
+                    
+                    rows=fetch_data_from_sql(response['query'])
+                    final_response=gpt_call_json_func([
+                        {'role': 'system', 'content': finalised_response_prompt.format(user_message,response['query'],rows)}], gpt_model='gpt-4o',json_required=False)
+                    bot_message=final_response
+                    print(prompt_second,final_response)
+                except:   
+                    bot_message = "Sorry, I couldn't process that."
 
         # Store assistant message in DB
         ChatHistory.objects.create(session=session, message=bot_message, role="assistant")
