@@ -197,6 +197,11 @@ Sample database rows:
     Sample database rows:
     {{"product_room_model": [{{"id" : 1,"product_id" : 1,"room_model_id" : 1,"quantity" : 1}},{{"id" : 2,"product_id" : 1,"room_model_id" : 2,"quantity" : 1}},{{"id" : 3,"product_id" : 1,"room_model_id" : 3,"quantity" : 1}},{{"id" : 4,"product_id" : 1,"room_model_id" : 4,"quantity" : 1}},]}}
     
+    Table: "product_room_model"
+    Columns: "id" [serial4], "product_id" [int4], "room_model_id" [int4], "quantity" [int4]  
+    Sample database rows:
+    {{"product_room_model": [{{"id" : 1,"product_id" : 1,"room_model_id" : 1,"quantity" : 1}},{{"id" : 2,"product_id" : 1,"room_model_id" : 2,"quantity" : 1}},{{"id" : 3,"product_id" : 1,"room_model_id" : 3,"quantity" : 1}},{{"id" : 4,"product_id" : 1,"room_model_id" : 4,"quantity" : 1}},]}}
+
     Table: "inventory"
     Columns: "id" [serial4], "item" [text], "client_id" [text], "qty_ordered" [text], "qty_received" [text], "quantity_installed" [text], "quantity_available" [text]
     Sample database rows:
