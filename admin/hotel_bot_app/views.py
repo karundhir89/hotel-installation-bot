@@ -407,11 +407,11 @@ def room_data_list(request):
 
 
 @login_required       
-def schedule_list(request):
+def inventory_list(request):
     # Fetch room data from the database
-    rooms = Schedule.objects.all()
+    inventory = Inventory.objects.all()
     # Pass the room data to the template
-    return render(request, 'schedule_list.html', {'schedule': rooms})
+    return render(request, 'inventory.html', {'inventory': inventory})
 
 @login_required
 def get_room_models(request):
@@ -516,9 +516,15 @@ def room_model_list(request):
     room_models = RoomModel.objects.all()
     return render(request, 'room_model_list.html', {'room_models': room_models})
 
+@login_required
+def install_list(request):
+    install = Installation.objects.all()
+    return render(request, 'install.html', {'install': install})
+
 
 @login_required
 def save_room_model(request):
+    print('ssssss')
     if request.method == 'POST':
         model_id = request.POST.get('model_id')
         name = request.POST.get('name').strip()
@@ -549,11 +555,85 @@ def save_room_model(request):
     return JsonResponse({'error': 'Invalid request'}, status=400)
 
 @login_required
+def save_inventory(request):
+    if request.method == 'POST':
+        inventory_id = request.POST.get('inventory_id')
+        print(inventory_id,'ssssss  ')
+        item = request.POST.get('item', '').strip()
+        client_id = request.POST.get('client_id', '').strip()
+        qty_ordered = request.POST.get('qty_ordered') or 0
+        qty_received = request.POST.get('qty_received') or 0
+        quantity_installed = request.POST.get('quantity_installed') or 0
+        quantity_available = request.POST.get('quantity_available') or 0
+
+        if not item:
+            return JsonResponse({'error': 'Item name is required'}, status=400)
+
+        # Convert to appropriate data types
+        try:
+            qty_ordered = int(qty_ordered)
+            qty_received = int(qty_received)
+            quantity_installed = int(quantity_installed)
+            quantity_available = int(quantity_available)
+        except ValueError:
+            return JsonResponse({'error': 'Quantities must be integers'}, status=400)
+
+        # Check for duplicates
+        existing = Inventory.objects.filter(item__iexact=item, client_id=client_id)
+        if inventory_id:
+            existing = existing.exclude(id=inventory_id)
+
+
+
+        if existing.exists():
+            return JsonResponse({'error': 'This item already exists for the given client.'}, status=400)
+
+        if inventory_id:
+            try:
+                inventory = Inventory.objects.get(id=inventory_id)
+                inventory.item = item
+                inventory.client_id = client_id
+                inventory.qty_ordered = qty_ordered
+                inventory.qty_received = qty_received
+                inventory.quantity_installed = quantity_installed
+                inventory.quantity_available = quantity_available
+                inventory.save()
+                return JsonResponse({'success': True})
+            except Inventory.DoesNotExist:
+                return JsonResponse({'error': 'Inventory item not found'}, status=404)
+        else:
+            Inventory.objects.create(
+                item=item,
+                client_id=client_id,
+                qty_ordered=qty_ordered,
+                qty_received=qty_received,
+                quantity_installed=quantity_installed,
+                quantity_available=quantity_available
+            )
+            return JsonResponse({'success': True})
+
+    return JsonResponse({'error': 'Invalid request'}, status=400)
+
+
+
+@login_required
 def delete_room_model(request):
     if request.method == 'POST':
         model_id = request.POST.get('model_id')
         try:
             room_model = RoomModel.objects.get(id=model_id)
+            room_model.delete()
+            return JsonResponse({'success': 'Room Model deleted.'})
+        except RoomModel.DoesNotExist:
+            return JsonResponse({'error': 'Room Model not found.'})
+    return JsonResponse({'error': 'Invalid request.'})
+
+@login_required
+def delete_inventory(request):
+    if request.method == 'POST':
+        model_id = request.POST.get('model_id')
+        try:
+            room_model = Inventory.objects.get(id=model_id)
             room_model.delete()
             return JsonResponse({'success': 'Room Model deleted.'})
         except RoomModel.DoesNotExist:
@@ -611,6 +691,66 @@ def installation_form(request):
         return redirect('installation_form')
 
     return render(request, 'installation_form.html', {'check_items': check_items})
+
+@login_required
+def save_installation(request):
+    if request.method == 'POST':
+        installation_id = request.POST.get('installation_id')
+        print('[hello]',installation_id)
+        room = request.POST.get('room', '').strip()
+        product_available = request.POST.get('product_available', '').strip()
+        prework = request.POST.get('prework', '').strip()
+        install = request.POST.get('install', '').strip()
+        post_work = request.POST.get('post_work', '').strip()
+        day_install_began = request.POST.get('day_install_began', '').strip()
+        day_instal_complete = request.POST.get('day_instal_complete', '').strip()
+
+        if not room:
+            return JsonResponse({'error': 'Room field is required.'}, status=400)
+
+        try:
+            if installation_id:
+                print("inside")
+                installation = Installation.objects.get(id=installation_id)
+                installation.room = room
+                installation.product_available = product_available
+                installation.prework = prework
+                installation.install = install
+                installation.post_work = post_work
+                installation.day_install_began = day_install_began
+                installation.day_instal_complete = day_instal_complete
+                installation.save()
+            else:
+                print("Adding new row")
+                Installation.objects.create(
+                    room=room,
+                    product_available=product_available,
+                    prework=prework,
+                    install=install,
+                    post_work=post_work,
+                    day_install_began=day_install_began,
+                    day_instal_complete=day_instal_complete,
+                )
+
+            return JsonResponse({'success': True})
+
+        except Installation.DoesNotExist:
+            return JsonResponse({'error': 'Installation not found.'}, status=404)
+
+    return JsonResponse({'error': 'Invalid request'}, status=400)
+
+
+@login_required
+def delete_installation(request):
+    if request.method == 'POST':
+        model_id = request.POST.get('model_id')
+        try:
+            room_model = Installation.objects.get(id=model_id)
+            room_model.delete()
+            return JsonResponse({'success': 'Room Model deleted.'})
+        except RoomModel.DoesNotExist:
+            return JsonResponse({'error': 'Room Model not found.'})
+    return JsonResponse({'error': 'Invalid request.'})
 
 @session_login_required
 def user_logout(request):

@@ -17,10 +17,17 @@ urlpatterns = [
     path('rooms/edit/', edit_room, name='edit_room'),
     path('delete-room/', delete_room, name='delete_room'),
     path('room-models/', room_model_list, name='room_model_list'),
-    path('schedule_list/', schedule_list, name='schedule_list'),
+    path('inventory_list/', inventory_list, name='inventory_list'),
     path('room-models/save/', save_room_model, name='save_room_model'),
     path('room-models/delete/', delete_room_model, name='delete_room_model'),
     path('installation-form/', installation_form, name='installation_form'),
     path('get-room-type/', get_room_type, name='get_room_type'),
-    path('user_logout',user_logout,name='user_logout')
+    path('user_logout',user_logout,name='user_logout'),
+    path('save_inventory/',save_inventory,name='save_inventory'),
+    path('save_installation/',save_installation,name='save_installation'),
+    path('delete_inventory/',delete_inventory,name='delete_inventory'),
+    path('delete_installation/',delete_installation,name='delete_installation'),
+    path('install_list/',install_list,name='install_list'),
+
+    
 ]
