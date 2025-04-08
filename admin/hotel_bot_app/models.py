@@ -5,13 +5,13 @@ from django.contrib.postgres.fields import ArrayField
 
 class Installation(models.Model):
     id = models.AutoField(primary_key=True)  # Serial (Auto-increment)
-    room = models.TextField(null=True, blank=True)
+    room = models.IntegerField(null=True, blank=True)
     product_available = models.TextField(null=True, blank=True)
     prework = models.TextField(null=True, blank=True)
     install = models.TextField(null=True, blank=True)
     post_work = models.TextField(null=True, blank=True)
-    day_install_began = models.TextField(null=True, blank=True)
-    day_instal_complete = models.TextField(null=True, blank=True)
+    day_install_began = models.DateTimeField(null=True, blank=True)
+    day_instal_complete = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = 'install'  # Ensure this matches the actual table name in PostgreSQL
@@ -38,7 +38,7 @@ class Inventory(models.Model):
 class RoomModel(models.Model):
     id = models.AutoField(primary_key=True)  # Serial (Auto-increment)
     room_model = models.TextField(null=True, blank=True)
-    total = models.TextField(null=True, blank=True)
+    total = models.IntegerField(null=True, blank=True)
 
     class Meta:
         db_table = 'room_model'  # Ensure this matches the actual table name in PostgreSQL
@@ -49,8 +49,8 @@ class RoomModel(models.Model):
 
 class RoomData(models.Model):
     id = models.AutoField(primary_key=True)  # Serial (Auto-increment)
-    room = models.TextField(null=True, blank=True)
-    floor = models.TextField(null=True, blank=True)
+    room = models.IntegerField(null=True, blank=True)
+    floor = models.IntegerField(null=True, blank=True)
     king = models.TextField(null=True, blank=True)
     double = models.TextField(null=True, blank=True)
     exec_king = models.TextField(null=True, blank=True)
@@ -71,8 +71,8 @@ class RoomData(models.Model):
 
 class Schedule(models.Model):
     id = models.AutoField(primary_key=True)
-    phase = models.TextField(null=True, blank=True)
-    floor = models.TextField(null=True, blank=True)
+    phase = models.IntegerField(null=True, blank=True)
+    floor = models.IntegerField(null=True, blank=True)
     production_starts = models.DateTimeField(null=True, blank=True)
     production_ends = models.DateTimeField(null=True, blank=True)
     shipping_depature = models.DateTimeField(null=True, blank=True)
@@ -103,27 +103,8 @@ class ProductData(models.Model):
     item = models.TextField(null=True, blank=True)
     client_id = models.TextField(null=True, blank=True)
     description = models.TextField(null=True, blank=True)
-    qty_ordered = models.TextField(null=True, blank=True)
-    price = models.TextField(null=True, blank=True)
-    a = models.TextField(null=True, blank=True)
-    a_col = models.TextField(null=True, blank=True)
-    a_lo = models.TextField(null=True, blank=True)
-    a_lo_dr = models.TextField(null=True, blank=True)
-    b = models.TextField(null=True, blank=True)
-    c_pn = models.TextField(null=True, blank=True)
-    c = models.TextField(null=True, blank=True)
-    curva_24 = models.TextField(null=True, blank=True)
-    curva = models.TextField(null=True, blank=True)
-    curva_dis = models.TextField(null=True, blank=True)
-    d = models.TextField(null=True, blank=True)
-    dlx = models.TextField(null=True, blank=True)
-    presidential_suite = models.TextField(null=True, blank=True)
-    st_c = models.TextField(null=True, blank=True)
-    suite_a = models.TextField(null=True, blank=True)
-    suite_b = models.TextField(null=True, blank=True)
-    suite_c = models.TextField(null=True, blank=True)
-    suite_mini = models.TextField(null=True, blank=True)
-    curva_35 = models.TextField(null=True, blank=True)
+    # qty_ordered = models.IntegerField(null=True, blank=True)
+    price = models.FloatField(null=True, blank=True)
     client_selected = models.TextField(null=True, blank=True)
 
     class Meta:
