@@ -30,7 +30,7 @@
                     </div>
                     <h5 class="card-title text-secondary font-weight-bold">Inventory Shipment</h5>
                     <p class="card-text text-muted">Record outgoing inventory shipments.</p>
-                    <a href="#" class="btn btn-secondary btn-block">Start Shipment</a>
+                    <a href="{% url 'inventory_shipment' %}" class="btn btn-secondary btn-block">Start Shipment</a>
                 </div>
             </div>
         </div>
@@ -43,7 +43,7 @@
                     </div>
                     <h5 class="card-title text-secondary font-weight-bold">Inventory Received</h5>
                     <p class="card-text text-muted">Log incoming inventory to the system.</p>
-                    <a href="#" class="btn btn-secondary btn-block">Log Received</a>
+                    <a href="{% url 'inventory_received' %}" class="btn btn-secondary btn-block">Log Received</a>
                 </div>
             </div>
         </div>
@@ -56,7 +56,7 @@
                     </div>
                     <h5 class="card-title text-secondary font-weight-bold">Inventory Pull</h5>
                     <p class="card-text text-muted">Manage inventory pull requests and records.</p>
-                    <a href="#" class="btn btn-secondary btn-block">Inventory Pull</a>
+                    <a href="{% url 'inventory_pull' %}" class="btn btn-secondary btn-block">Inventory Pull</a>
                 </div>
             </div>
         </div>

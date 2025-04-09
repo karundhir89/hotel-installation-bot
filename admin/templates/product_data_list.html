@@ -1,0 +1,378 @@
+{% extends 'dashboard_layout.html' %}
+{% load static %}
+{% block content %}
+
+<style>
+#roomModelTable tbody tr {
+    height: 60px;
+}
+#roomModelTable th, #roomModelTable td {
+    white-space: nowrap;
+    padding: 15px;
+}
+th.sorting::after {
+    content: "\2195";
+    margin-left: 5px;
+}
+th.sorting_asc::after {
+    content: "\2191";
+}
+th.sorting_desc::after {
+    content: "\2193";
+}
+th.sorting, th.sorting_asc, th.sorting_desc {
+    cursor: pointer;
+}
+.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 1000;
+}
+.modal {
+    display: none;
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1001;
+    padding: 20px;
+    border-radius: 5px;
+}
+.modal-content {
+    width: 60%;
+    max-height: 80vh;
+    overflow: auto;
+}
+.form-group {
+    padding: 10px;
+    position: relative;
+    margin: 20px 0 0;
+}
+</style>
+
+<!-- Loader -->
+<div class="ajax-loader" id="modelLoader">
+    <div class="spinner"></div>
+</div>
+
+<div class="content" id="modal-content">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-12">
+                {% include 'common/messages.html' %}
+                <div class="card">
+                    <div class="card-header card-header-primary">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h4 class="card-title pt-2 text-dark">Product Data</h4>
+                            </div>
+                            <div class="col-md-6 text-right">
+                                <button id="addModelBtn" class="btn">Add Products</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table id="roomModelTable" class="table table-striped" style="width:100%; display: none;">
+                                <thead class="text-secondary">
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Item</th>
+                                        <th>Client ID</th>
+                                        <th>Description</th>
+                                        <th>Qty Ordered</th>
+                                        <th>Price</th>
+                                        <th>A</th>
+                                        <th>A Column</th>
+                                        <th>A Location</th>
+                                        <th>A Location DR</th>
+                                        <th>B</th>
+                                        <th>C PN</th>
+                                        <th>C</th>
+                                        <th>Curva 24</th>
+                                        <th>Curva</th>
+                                        <th>Curva Dis</th>
+                                        <th>D</th>
+                                        <th>DLX</th>
+                                        <th>Presidential Suite</th>
+                                        <th>ST C</th>
+                                        <th>Suite A</th>
+                                        <th>Suite B</th>
+                                        <th>Suite C</th>
+                                        <th>Suite Mini</th>
+                                        <th>Curva 35</th>
+                                        <th>Client Selected</th>
+                                        <th>Actions</th>
+                                    </tr>                                    
+                                </thead>
+                                <tbody>
+                                    {% for model in product_data_list %}
+                                    <tr>
+                                        <td>{{ model.id }}</td>
+                                        <td>{{ model.item }}</td>
+                                        <td>{{ model.client_id }}</td>
+                                        <td>{{ model.description }}</td>
+                                        <td>{{ model.qty_ordered }}</td>
+                                        <td>{{ model.price }}</td>
+                                        <td>{{ model.a }}</td>
+                                        <td>{{ model.a_col }}</td>
+                                        <td>{{ model.a_lo }}</td>
+                                        <td>{{ model.a_lo_dr }}</td>
+                                        <td>{{ model.b }}</td>
+                                        <td>{{ model.c_pn }}</td>
+                                        <td>{{ model.c }}</td>
+                                        <td>{{ model.curva_24 }}</td>
+                                        <td>{{ model.curva }}</td>
+                                        <td>{{ model.curva_dis }}</td>
+                                        <td>{{ model.d }}</td>
+                                        <td>{{ model.dlx }}</td>
+                                        <td>{{ model.presidential_suite }}</td>
+                                        <td>{{ model.st_c }}</td>
+                                        <td>{{ model.suite_a }}</td>
+                                        <td>{{ model.suite_b }}</td>
+                                        <td>{{ model.suite_c }}</td>
+                                        <td>{{ model.suite_mini }}</td>
+                                        <td>{{ model.curva_35 }}</td>
+                                        <td>{{ model.client_selected }}</td>
+                                        <td>
+                                            <button class="btn editModelBtn"
+                                                data-id="{{ model.id }}"
+                                                data-item="{{ model.item }}"
+                                                data-client_id="{{ model.client_id }}"
+                                                data-description="{{ model.description }}"
+                                                data-qty_ordered="{{ model.qty_ordered }}"
+                                                data-price="{{ model.price }}"
+                                                data-a="{{ model.a }}"
+                                                data-a_col="{{ model.a_col }}"
+                                                data-a_lo="{{ model.a_lo }}"
+                                                data-a_lo_dr="{{ model.a_lo_dr }}"
+                                                data-b="{{ model.b }}"
+                                                data-c_pn="{{ model.c_pn }}"
+                                                data-c="{{ model.c }}"
+                                                data-curva_24="{{ model.curva_24 }}"
+                                                data-curva="{{ model.curva }}"
+                                                data-curva_dis="{{ model.curva_dis }}"
+                                                data-d="{{ model.d }}"
+                                                data-dlx="{{ model.dlx }}"
+                                                data-presidential_suite="{{ model.presidential_suite }}"
+                                                data-st_c="{{ model.st_c }}"
+                                                data-suite_a="{{ model.suite_a }}"
+                                                data-suite_b="{{ model.suite_b }}"
+                                                data-suite_c="{{ model.suite_c }}"
+                                                data-suite_mini="{{ model.suite_mini }}"
+                                                data-curva_35="{{ model.curva_35 }}"
+                                                data-client_selected="{{ model.client_selected }}">
+                                                Edit
+                                            </button>
+                                            <button class="btn deleteModelBtn" data-id="{{ model.id }}">
+                                                Delete
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>  
+</div>
+
+<!-- Modal Overlay -->
+<div class="modal-overlay" id="modelModalOverlay"></div>
+
+<!-- Add/Edit Inventory Modal -->
+<div id="modelModal" class="modal">
+    <div class="modal-content mx-auto p-4">
+        <div class="d-flex justify-content-between align-items-center">
+            <h2 id="modelModalTitle">Add Products</h2>
+            <span class="close" id="closeModelModal">×</span>
+        </div>
+        <form id="modelForm" method="POST" action="{% url 'save_product_data' %}">
+            {% csrf_token %}
+            <input type="hidden" id="model-id" name="product_id">
+
+            <div class="form-group"><label for="item">Item:</label><input type="text" id="item" name="item" class="form-control"></div>
+            <div class="form-group"><label for="client_id">Client ID:</label><input type="text" id="client_id" name="client_id" class="form-control"></div>
+            <div class="form-group"><label for="description">Description:</label><input type="text" id="description" name="description" class="form-control"></div>
+            <div class="form-group"><label for="qty_ordered">Qty Ordered:</label><input type="text" id="qty_ordered" name="qty_ordered" class="form-control"></div>
+            <div class="form-group"><label for="price">Price:</label><input type="text" id="price" name="price" class="form-control"></div>
+            <div class="form-group"><label for="a">A:</label><input type="text" id="a" name="a" class="form-control"></div>
+            <div class="form-group"><label for="a_col">A Column:</label><input type="text" id="a_col" name="a_col" class="form-control"></div>
+            <div class="form-group"><label for="a_lo">A Location:</label><input type="text" id="a_lo" name="a_lo" class="form-control"></div>
+            <div class="form-group"><label for="a_lo_dr">A Location DR:</label><input type="text" id="a_lo_dr" name="a_lo_dr" class="form-control"></div>
+            <div class="form-group"><label for="b">B:</label><input type="text" id="b" name="b" class="form-control"></div>
+            <div class="form-group"><label for="c_pn">C PN:</label><input type="text" id="c_pn" name="c_pn" class="form-control"></div>
+            <div class="form-group"><label for="c">C:</label><input type="text" id="c" name="c" class="form-control"></div>
+            <div class="form-group"><label for="curva_24">Curva 24:</label><input type="text" id="curva_24" name="curva_24" class="form-control"></div>
+            <div class="form-group"><label for="curva">Curva:</label><input type="text" id="curva" name="curva" class="form-control"></div>
+            <div class="form-group"><label for="curva_dis">Curva Dis:</label><input type="text" id="curva_dis" name="curva_dis" class="form-control"></div>
+            <div class="form-group"><label for="d">D:</label><input type="text" id="d" name="d" class="form-control"></div>
+            <div class="form-group"><label for="dlx">DLX:</label><input type="text" id="dlx" name="dlx" class="form-control"></div>
+            <div class="form-group"><label for="presidential_suite">Presidential Suite:</label><input type="text" id="presidential_suite" name="presidential_suite" class="form-control"></div>
+            <div class="form-group"><label for="st_c">ST C:</label><input type="text" id="st_c" name="st_c" class="form-control"></div>
+            <div class="form-group"><label for="suite_a">Suite A:</label><input type="text" id="suite_a" name="suite_a" class="form-control"></div>
+            <div class="form-group"><label for="suite_b">Suite B:</label><input type="text" id="suite_b" name="suite_b" class="form-control"></div>
+            <div class="form-group"><label for="suite_c">Suite C:</label><input type="text" id="suite_c" name="suite_c" class="form-control"></div>
+            <div class="form-group"><label for="suite_mini">Suite Mini:</label><input type="text" id="suite_mini" name="suite_mini" class="form-control"></div>
+            <div class="form-group"><label for="curva_35">Curva 35:</label><input type="text" id="curva_35" name="curva_35" class="form-control"></div>
+            <div class="form-group"><label for="client_selected">Client Selected:</label><input type="text" id="client_selected" name="client_selected" class="form-control"></div>
+
+            <button type="submit" class="btn float-right">Save Product Data</button>
+        </form>
+    </div>
+</div>
+<script>
+$(document).ready(function () {
+    $('#modelLoader').hide();
+    $('#roomModelTable').show();
+
+    $('#roomModelTable').DataTable({
+        paging: true,
+        searching: true,
+        ordering: true,
+        info: true,
+        order: [[0, 'asc']],
+        pageLength: 10,
+        lengthMenu: [5, 10, 15, 20],
+    });
+
+    $('#addModelBtn').click(function () {
+    $('#modelModalTitle').text("Add Products");
+
+    $('#model-id').val("");
+    $('#item').val("");
+    $('#client_id').val("");
+    $('#description').val("");
+    $('#qty_ordered').val("");
+    $('#price').val("");
+    $('#a').val("");
+    $('#a_col').val("");
+    $('#a_lo').val("");
+    $('#a_lo_dr').val("");
+    $('#b').val("");
+    $('#c_pn').val("");
+    $('#c').val("");
+    $('#curva_24').val("");
+    $('#curva').val("");
+    $('#curva_dis').val("");
+    $('#d').val("");
+    $('#dlx').val("");
+    $('#presidential_suite').val("");
+    $('#st_c').val("");
+    $('#suite_a').val("");
+    $('#suite_b').val("");
+    $('#suite_c').val("");
+    $('#suite_mini').val("");
+    $('#curva_35').val("");
+    $('#client_selected').val("");
+
+    $('#modelModal').fadeIn();
+    $('#modelModalOverlay').fadeIn();
+});
+
+
+    $(document).on('click', '.editModelBtn', function () {
+    $('#modelModalTitle').text("Edit Inventory");
+    $('#model-id').val($(this).data('id'));
+    $('#item').val($(this).data('item'));
+    $('#client_id').val($(this).data('client_id'));
+    $('#description').val($(this).data('description'));
+    $('#qty_ordered').val($(this).data('qty_ordered'));
+    $('#price').val($(this).data('price'));
+    $('#a').val($(this).data('a'));
+    $('#a_col').val($(this).data('a_col'));
+    $('#a_lo').val($(this).data('a_lo'));
+    $('#a_lo_dr').val($(this).data('a_lo_dr'));
+    $('#b').val($(this).data('b'));
+    $('#c_pn').val($(this).data('c_pn'));
+    $('#c').val($(this).data('c'));
+    $('#curva_24').val($(this).data('curva_24'));
+    $('#curva').val($(this).data('curva'));
+    $('#curva_dis').val($(this).data('curva_dis'));
+    $('#d').val($(this).data('d'));
+    $('#dlx').val($(this).data('dlx'));
+    $('#presidential_suite').val($(this).data('presidential_suite'));
+    $('#st_c').val($(this).data('st_c'));
+    $('#suite_a').val($(this).data('suite_a'));
+    $('#suite_b').val($(this).data('suite_b'));
+    $('#suite_c').val($(this).data('suite_c'));
+    $('#suite_mini').val($(this).data('suite_mini'));
+    $('#curva_35').val($(this).data('curva_35'));
+    $('#client_selected').val($(this).data('client_selected'));
+
+    $('#modelModal').fadeIn();
+    $('#modelModalOverlay').fadeIn();
+});
+
+
+    $(document).on('click', '.deleteModelBtn', function () {
+        const modelId = $(this).data('id');
+        if (confirm("Are you sure you want to delete this item?")) {
+            $.ajax({
+                url: '{% url "delete_products_data" %}',
+                type: 'POST',
+                data: {
+                    model_id: modelId,
+                    csrfmiddlewaretoken: '{{ csrf_token }}'
+                },
+                success: function (response) {
+                    if (response.success) {
+                        toastr.success("Inventory item deleted successfully!");
+                        setTimeout(() => {
+                            location.reload();
+                        }, 1000);
+                    }
+                },
+                error: function (xhr) {
+                    toastr.error('Error: ' + xhr.responseText);
+                }
+            });
+        }
+    });
+
+    $('#modelForm').submit(function (e) {
+        e.preventDefault();
+        const formData = $(this).serialize();
+        const formAction = $(this).attr('action');
+
+        $.ajax({
+            url: formAction,
+            type: 'POST',
+            data: formData,
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+            },
+            success: function (response) {
+                if (response.success) {
+                    $('#modelModal').fadeOut();
+                    $('#modelModalOverlay').fadeOut();
+
+                    if ($('#model-id').val()) {
+                        toastr.success("Inventory updated successfully!");
+                    } else {
+                        toastr.success("Inventory added successfully!");
+                    }
+
+                    setTimeout(() => {
+                        location.reload();
+                    }, 1000);
+                } else {
+                    toastr.error(response.error || 'Something went wrong!');
+                }
+            }
+        });
+    });
+
+    $('#closeModelModal, #modelModalOverlay').click(function () {
+        $('#modelModal').fadeOut();
+        $('#modelModalOverlay').fadeOut();
+    });
+});
+</script>
+
+{% endblock %}

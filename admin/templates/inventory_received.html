@@ -1,0 +1,143 @@
+{% extends "frontend_base.html" %}
+{% load static %}
+
+{% block title %}Installation Control Form{% endblock %}
+
+{% block content %}
+<div class="container my-5">
+    <h3 class="mb-4 text-center text-secondary">Installation Control Form</h3>
+
+    <form method="post">
+        {% csrf_token %}
+        <div class="form-row mb-3">
+            <div class="col-md-4">
+              <label>Client Item</label>
+              <input type="text" class="form-control" name="room_number" id="room_number" required>
+            </div>
+            <div class="col-md-4">
+              <label>Product Item Number</label>
+              <input type="text" class="form-control" name="room_type" id="room_type" readonly required>
+            </div>
+        </div>
+
+        <hr>
+
+        <div class="form-group row align-items-center">
+            <div class="col-md-1 text-center">
+                <input class="form-check-input mt-2" type="checkbox" name="arrival_checked" id="arrival_checked">
+            </div>
+            <div class="col-md-3">
+                <label class="mb-0">1. ARRIVAL DATE</label>
+            </div>
+            <div class="col-md-3">
+                <label class="mb-0">Date:</label>
+                <input type="text" class="form-control" name="arrival_date_text" placeholder="e.g., April 6, 2025">
+            </div>
+            <div class="col-md-4">
+                <label class="mb-0">Checked By:</label>
+                <input type="text" class="form-control" name="arrival_checked_by" placeholder="Name">
+            </div>
+        </div>
+        
+        <div class="form-group row mt-3">
+            <div class="col-md-4">
+                <label>QTY RECEIVED</label>
+                <input type="number" class="form-control" name="qty_received" min="0">
+            </div>
+            <div class="col-md-4">
+                <label>QTY DAMAGED (if any)</label>
+                <input type="number" class="form-control" name="qty_damaged" min="0">
+            </div>
+        </div>
+        
+        <div class="form-group row mt-3">
+            <div class="col-md-12">
+                <label>Notes</label>
+                <textarea class="form-control" name="arrival_notes" rows="2" placeholder="Additional details..."></textarea>
+            </div>
+        </div>
+        
+
+        
+
+
+        {% for i in check_items %}
+        <div class="form-group row align-items-center">
+            <div class="col-md-5">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="step_{{ i.id }}" id="step_{{ i.id }}">
+                    <label class="form-check-label" for="step_{{ i.id }}">
+                        {{ i.label }}
+                    </label>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <input type="date" class="form-control" name="date_{{ i.id }}">
+            </div>
+            <div class="col-md-4">
+                <input type="text" class="form-control" name="checked_by_{{ i.id }}" placeholder="Checked by">
+            </div>
+        </div>
+        {% endfor %}
+
+        <hr>
+
+
+
+        <div class="text-center mt-4">
+            <button type="submit" class="btn btn-secondary px-5">Submit</button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  $(document).ready(function () {
+    const currentDate = new Date().toLocaleDateString('en-CA'); // Format: YYYY-MM-DD
+    const userName = "{{ user_name }}";
+
+    $('#arrival_checked').on('change', function () {
+      if ($(this).is(':checked')) {
+        $('input[name="arrival_date_text"]').val(currentDate);
+        $('input[name="arrival_checked_by"]').val(userName);
+      } else {
+        $('input[name="arrival_date_text"]').val('');
+        $('input[name="arrival_checked_by"]').val('');
+      }
+    });
+
+    $('#room_number').on('blur', function () {
+      const roomNumber = $(this).val();
+      if (!roomNumber) return;
+
+      $.ajax({
+        url: "{% url 'inventory_received_item_num' %}",
+        type: "GET",
+        data: { room_number: roomNumber },
+        success: function (data) {
+          if (data.success) {
+            $('#room_type').val(data.room_type);
+          } else {
+            toastr.error("Room number does not exist");
+            $('#room_type').val('');
+          }
+        },
+        error: function () {
+          toastr.error("Error fetching room type");
+          $('#room_type').val('');
+        }
+      });
+    });
+
+    {% if toast_message %}
+    toastr.options = {
+      "closeButton": true,
+      "progressBar": true,
+      "timeOut": "4000"
+    };
+    toastr.success("{{ toast_message }}");
+    {% endif %}
+  });
+</script>
+{% endblock %}
