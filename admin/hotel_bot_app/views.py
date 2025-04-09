@@ -522,6 +522,18 @@ def install_list(request):
 
 
 @login_required
+def product_data_list(request):
+    product_data_list = ProductData.objects.all()
+    return render(request, 'product_data_list.html', {'product_data_list': product_data_list})
+
+
+@login_required
+def schedule_list(request):
+    schedule = Schedule.objects.all()
+    return render(request, 'schedule.html', {'schedule': schedule})
+
+
+@login_required
 def save_room_model(request):
     print('ssssss')
     if request.method == 'POST':
@@ -635,7 +647,33 @@ def delete_inventory(request):
             room_model = Inventory.objects.get(id=model_id)
             room_model.delete()
             return JsonResponse({'success': 'Room Model deleted.'})
-        except RoomModel.DoesNotExist:
+        except Inventory.DoesNotExist:
+            return JsonResponse({'error': 'Room Model not found.'})
+    return JsonResponse({'error': 'Invalid request.'})
+
+
+@login_required
+def delete_schedule(request):
+    if request.method == 'POST':
+        model_id = request.POST.get('model_id')
+        try:
+            schedule = Schedule.objects.get(id=model_id)
+            schedule.delete()
+            return JsonResponse({'success': 'Room Model deleted.'})
+        except Inventory.DoesNotExist:
+            return JsonResponse({'error': 'Room Model not found.'})
+    return JsonResponse({'error': 'Invalid request.'})
+
+
+@login_required
+def delete_products_data(request):
+    if request.method == 'POST':
+        model_id = request.POST.get('model_id')
+        try:
+            room_model = ProductData.objects.get(id=model_id)
+            room_model.delete()
+            return JsonResponse({'success': 'Room Model deleted.'})
+        except ProductData.DoesNotExist:
             return JsonResponse({'error': 'Room Model not found.'})
     return JsonResponse({'error': 'Invalid request.'})
 
@@ -647,6 +685,9 @@ def get_room_type(request):
         return JsonResponse({'success': True, 'room_type': room_type})
     except RoomData.DoesNotExist:
         return JsonResponse({'success': False})
+    
+
+
 
 @session_login_required
 def installation_form(request):
@@ -690,6 +731,79 @@ def installation_form(request):
         return redirect('installation_form')
 
     return render(request, 'installation_form.html', {'check_items': check_items})
+
+def inventory_shipment(request):
+     return render(request, 'inventory_shipment.html')
+
+def get_product_item_num(request):
+    clientId=request.GET.get('room_number')
+    try:
+        print("Seminole",clientId,'hiii')
+        client_data_fetched= ProductData.objects.get(client_id=clientId)
+        print(client_data_fetched
+        )
+        get_item=client_data_fetched.item if client_data_fetched.item else ''
+        print("Seminole grand",get_item)
+        return JsonResponse({'success': True, 'room_type': get_item})
+    except RoomData.DoesNotExist:
+        return JsonResponse({'success': False})
+
+
+def inventory_received(request):
+    user_id = request.session.get("user_id")
+    user_name = ""
+
+    if user_id:
+        try:
+            user = InvitedUser.objects.get(id=user_id)
+            user_name = user.name  # Adjust field name if different
+        except InvitedUser.DoesNotExist:
+            pass
+
+    return render(request, 'inventory_received.html', {
+        'user_name': user_name
+    })
+
+def inventory_pull(request):
+    user_id = request.session.get("user_id")
+    user_name = ""
+
+    if user_id:
+        try:
+            user = InvitedUser.objects.get(id=user_id)
+            user_name = user.name  # Adjust field name if different
+        except InvitedUser.DoesNotExist:
+            pass
+
+    return render(request, 'inventory_pull.html', {
+        'user_name': user_name
+    })
+
+def inventory_pull_item(request):
+    clientId=request.GET.get('room_number')
+    try:
+        print("lllll",clientId,'hiii')
+        client_data_fetched= ProductData.objects.get(client_id=clientId)
+        print(client_data_fetched)
+        get_item=client_data_fetched.item if client_data_fetched.item else ''
+        print("grand",get_item)
+        return JsonResponse({'success': True, 'room_type': get_item})
+    except RoomData.DoesNotExist:
+        return JsonResponse({'success': False})
+
+def inventory_received_item_num(request):
+    clientId=request.GET.get('room_number')
+    try:
+        print("lllll",clientId,'hiii')
+        user_id = request.session.get("user_id")
+        client_data_fetched= ProductData.objects.get(client_id=clientId)
+        print(client_data_fetched)
+        get_item=client_data_fetched.item if client_data_fetched.item else ''
+        print("grand",get_item)
+        return JsonResponse({'success': True, 'room_type': get_item})
+    except RoomData.DoesNotExist:
+        return JsonResponse({'success': False})
+
 
 @login_required
 def save_installation(request):
@@ -738,6 +852,195 @@ def save_installation(request):
 
     return JsonResponse({'error': 'Invalid request'}, status=400)
 
+@login_required
+def save_schedule(request):
+    if request.method == 'POST':
+        post_data = request.POST
+        print(123)
+        schedule_id = post_data.get('schedule_id') or ''
+        phase = post_data.get('phase') or ''
+        floor = post_data.get('floor') or ''
+        production_starts = post_data.get('production_starts') or ''
+        production_ends = post_data.get('production_ends') or ''
+        shipping_depature = post_data.get('shipping_depature') or ''
+        shipping_arrival = post_data.get('shipping_arrival') or ''
+        custom_clearing_starts = post_data.get('custom_clearing_starts') or ''
+        custom_clearing_ends = post_data.get('custom_clearing_ends') or ''
+        arrive_on_site = post_data.get('arrive_on_site') or ''
+        pre_work_starts = post_data.get('pre_work_starts') or ''
+        pre_work_ends = post_data.get('pre_work_ends') or ''
+        install_starts = post_data.get('install_starts') or ''
+        install_ends = post_data.get('install_ends') or ''
+        post_work_starts = post_data.get('post_work_starts') or ''
+        post_work_ends = post_data.get('post_work_ends') or ''
+        floor_completed = post_data.get('floor_completed') or ''
+        floor_closes = post_data.get('floor_closes') or ''
+        floor_opens = post_data.get('floor_opens') or ''
+        print('333')
+        try:
+            if schedule_id:
+                print("Editing ",custom_clearing_ends)
+                installation = Schedule.objects.get(id=schedule_id)
+                installation.phase = phase
+                installation.floor = floor
+                installation.production_starts = production_starts
+                installation.production_ends = production_ends
+                installation.shipping_depature = shipping_depature
+                installation.shipping_arrival = shipping_arrival
+                installation.custom_clearing_starts = custom_clearing_starts
+                installation.custom_clearing_ends = custom_clearing_ends
+                installation.arrive_on_site = arrive_on_site
+                installation.pre_work_starts = pre_work_starts
+                installation.pre_work_ends = pre_work_ends
+                installation.install_starts = install_starts
+                installation.install_ends = install_ends
+                installation.post_work_starts = post_work_starts
+                installation.post_work_ends = post_work_ends
+                installation.floor_completed = floor_completed
+                installation.floor_closes = floor_closes
+                installation.floor_opens = floor_opens
+                installation.save()
+            else:
+                print("under new")
+                print(post_data)
+                Schedule.objects.create(
+                phase=phase,
+                floor=floor,
+                production_starts=production_starts,
+                production_ends=production_ends,
+                shipping_depature=shipping_depature,
+                shipping_arrival=shipping_arrival,
+                custom_clearing_starts=custom_clearing_starts,
+                custom_clearing_ends=custom_clearing_ends,
+                arrive_on_site=arrive_on_site,
+                pre_work_starts=pre_work_starts,
+                pre_work_ends=pre_work_ends,
+                install_starts=install_starts,
+                install_ends=install_ends,
+                post_work_starts=post_work_starts,
+                post_work_ends=post_work_ends,
+                floor_completed=floor_completed,
+                floor_closes=floor_closes,
+                floor_opens=floor_opens,
+            )
+            return JsonResponse({'success': True})
+
+        except Installation.DoesNotExist:
+                return JsonResponse({'error': 'Installation not found.'}, status=404)
+
+    return JsonResponse({'error': 'Invalid request'}, status=400)
+
+
+
+
+
+
+
+
+
+@login_required
+def save_product_data(request):
+    if request.method == 'POST':
+        post_data = request.POST
+        print('hhhhhhhh', post_data)
+
+        product_id = post_data.get('product_id')
+        item = post_data.get('item', '').strip()
+        client_id = post_data.get('client_id', '').strip()
+        description = post_data.get('description') or 0
+        qty_ordered = post_data.get('qty_ordered') or 0
+        price = post_data.get('price') or 0
+        a = post_data.get('a') or 0
+        a_col = post_data.get('a_col') or 0
+        a_lo = post_data.get('a_lo') or 0
+        a_lo_dr = post_data.get('a_lo_dr') or 0
+        b = post_data.get('b') or 0
+        c_pn = post_data.get('c_pn') or 0
+        c = post_data.get('c') or 0
+        curva_24 = post_data.get('curva_24') or 0
+        curva = post_data.get('curva') or 0
+        curva_dis = post_data.get('curva_dis') or 0
+        d = post_data.get('d') or 0
+        dlx = post_data.get('dlx') or 0
+        presidential_suite = post_data.get('presidential_suite') or 0
+        st_c = post_data.get('st_c') or 0
+        suite_a = post_data.get('suite_a') or 0
+        suite_b = post_data.get('suite_b') or 0
+        suite_c = post_data.get('suite_c') or 0
+        suite_mini = post_data.get('suite_mini') or 0
+        curva_35 = post_data.get('curva_35') or 0
+        client_selected = post_data.get('client_selected') or 0
+        try:
+            if product_id:
+                print("inside")
+                installation = ProductData.objects.get(id=product_id)
+                installation.product_id = product_id
+                installation.item = item
+                installation.client_id = client_id
+                installation.description = description
+                installation.qty_ordered = qty_ordered
+                installation.price = price
+                installation.a = a
+                installation.a_col = a_col
+                installation.a_lo = a_lo
+                installation.a_lo_dr = a_lo_dr
+                installation.b = b
+                installation.c_pn = c_pn
+                installation.c = c
+                installation.curva_24 = curva_24
+                installation.curva = curva
+                installation.curva_dis = curva_dis
+                installation.d = d
+                installation.dlx = dlx
+                installation.presidential_suite = presidential_suite
+                installation.st_c = st_c
+                installation.suite_a = suite_a
+                installation.suite_b = suite_b
+                installation.suite_c = suite_c
+                installation.suite_mini = suite_mini
+                installation.curva_35 = curva_35
+                installation.client_selected = client_selected
+
+                installation.save()
+            else:
+                print("Adding new row")
+                ProductData.objects.create(
+                item=item,
+                client_id=client_id,
+                description=description,
+                qty_ordered=qty_ordered,
+                price=price,
+                a=a,
+                a_col=a_col,
+                a_lo=a_lo,
+                a_lo_dr=a_lo_dr,
+                b=b,
+                c_pn=c_pn,
+                c=c,
+                curva_24=curva_24,
+                curva=curva,
+                curva_dis=curva_dis,
+                d=d,
+                dlx=dlx,
+                presidential_suite=presidential_suite,
+                st_c=st_c,
+                suite_a=suite_a,
+                suite_b=suite_b,
+                suite_c=suite_c,
+                suite_mini=suite_mini,
+                curva_35=curva_35,
+                client_selected=client_selected
+            )
+
+
+            return JsonResponse({'success': True})
+
+        except Installation.DoesNotExist:
+            return JsonResponse({'error': 'Installation not found.'}, status=404)
+
+    return JsonResponse({'error': 'Invalid request'}, status=400)
+
+
 
 @login_required
 def delete_installation(request):
@@ -747,7 +1050,7 @@ def delete_installation(request):
             room_model = Installation.objects.get(id=model_id)
             room_model.delete()
             return JsonResponse({'success': 'Room Model deleted.'})
-        except RoomModel.DoesNotExist:
+        except Installation.DoesNotExist:
             return JsonResponse({'error': 'Room Model not found.'})
     return JsonResponse({'error': 'Invalid request.'})
 
@@ -775,3 +1078,42 @@ def dashboard(request):
         })
     except InvitedUser.DoesNotExist:
         return redirect('user_login')
+
+
+
+def installation_control_form(request):
+    if request.method == 'POST':
+        try:
+            client_item = request.POST.get('client_item')
+            product_item = request.POST.get('product_item')
+            ship_date = request.POST.get('ship_date')
+            qty_shipped = request.POST.get('qty_shipped')
+            supplier = request.POST.get('supplier')
+            supplier_date = request.POST.get('supplier_date')
+            tracking_info = request.POST.get('tracking_info')
+            final_date = request.POST.get('final_date')
+            final_by = request.POST.get('final_by')
+            final_notes = request.POST.get('final_notes')
+
+            # Create a new Shipping entry
+            Shipping.objects.create(
+                client_id=client_item,
+                item=product_item,
+                ship_date=ship_date,
+                ship_qty=qty_shipped,
+                supplier=supplier,
+                supplier_date=supplier_date,
+                bol=tracking_info,
+                date=final_date,
+                by=final_by,
+                notes=final_notes
+            )
+
+            messages.success(request, "Shipment submitted successfully!")
+        except Exception as e:
+            messages.error(request, f"Error submitting shipment: {str(e)}")
+
+    # Pass your check_items context if needed
+    return render(request, 'inventory_shipment.html', {
+        'check_items': [],  # Replace with actual data
+    })

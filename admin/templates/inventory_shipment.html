@@ -1,0 +1,149 @@
+{% extends "frontend_base.html" %}
+{% load static %}
+
+{% block title %}Installation Control Form{% endblock %}
+
+{% block content %}
+<div class="container my-5">
+    <h3 class="mb-4 text-center text-secondary">Installation Control Form</h3>
+
+    <form method="post" action="{% url 'installation_control_form' %}">
+        {% csrf_token %}
+
+        <div class="form-row mb-3">
+            <div class="col-md-4">
+                <label>Client Item #</label>
+                <input type="text" class="form-control" name="client_item" id="room_number" required>
+            </div>
+            <div class="col-md-4">
+                <label>Product Item Number</label>
+                <input type="text" class="form-control" name="product_item" id="room_type" readonly required>
+            </div>
+        </div>
+
+        <hr>
+
+        <div class="form-group row">
+            <div class="col-md-3">
+                <label>Ship Date</label>
+                <input type="date" class="form-control" name="ship_date">
+            </div>
+            <div class="col-md-3">
+                <label>QTY Shipped</label>
+                <input type="number" class="form-control" name="qty_shipped" min="0">
+            </div>
+        </div>
+
+        <div class="form-group row">
+            <div class="col-md-4">
+                <label>Supplier</label>
+                <input type="text" class="form-control" name="supplier">
+            </div>
+            <div class="col-md-3">
+                <label>Supplier Date</label>
+                <input type="date" class="form-control" name="supplier_date">
+            </div>
+        </div>
+
+        <div class="form-group row">
+            <div class="col-md-7">
+                <label>Tracking information / BOL</label>
+                <input type="text" class="form-control" name="tracking_info" placeholder="Tracking number or BOL">
+            </div>
+        </div>
+
+        <hr>
+
+        {% for i in check_items %}
+        <div class="form-group row align-items-center">
+            <div class="col-md-5">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="step_{{ i.id }}" id="step_{{ i.id }}">
+                    <label class="form-check-label" for="step_{{ i.id }}">
+                        {{ i.label }}
+                    </label>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <input type="date" class="form-control" name="date_{{ i.id }}">
+            </div>
+            <div class="col-md-4">
+                <input type="text" class="form-control" name="checked_by_{{ i.id }}" placeholder="Checked by">
+            </div>
+        </div>
+        {% endfor %}
+
+        <hr>
+
+        <div class="form-group row mt-4">
+            <div class="col-md-3">
+                <label>Date</label>
+                <input type="date" class="form-control" name="final_date">
+            </div>
+            <div class="col-md-4">
+                <label>By</label>
+                <input type="text" class="form-control" name="final_by" placeholder="Name">
+            </div>
+            <div class="col-md-5">
+                <label>Notes</label>
+                <textarea class="form-control" name="final_notes" rows="2" placeholder="Additional notes..."></textarea>
+            </div>
+        </div>
+
+        <div class="text-center mt-4">
+            <button type="submit" class="btn btn-secondary px-5">Submit</button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<!-- Include jQuery and Toastr -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" />
+
+<script>
+  $(document).ready(function () {
+    // Auto-fill product item number
+    $('#room_number').on('blur', function () {
+      const roomNumber = $(this).val();
+      if (!roomNumber) return;
+
+      $.ajax({
+        url: "{% url 'get_product_item_num' %}",
+        type: "GET",
+        data: { room_number: roomNumber },
+        success: function (data) {
+          if (data.success) {
+            $('#room_type').val(data.room_type);
+          } else {
+            toastr.error("Room number does not exist");
+            $('#room_type').val('');
+          }
+        },
+        error: function () {
+          toastr.error("Error Fetching Product Item");
+          $('#room_type').val('');
+        }
+      });
+    });
+
+    // Toastr for Django messages
+    {% if messages %}
+    toastr.options = {
+      "closeButton": true,
+      "progressBar": true,
+      "timeOut": "4000"
+    };
+    {% for message in messages %}
+      {% if message.tags == "success" %}
+        toastr.success("{{ message|escapejs }}");
+      {% elif message.tags == "error" %}
+        toastr.error("{{ message|escapejs }}");
+      {% endif %}
+    {% endfor %}
+    {% endif %}
+  });
+</script>
+{% endblock %}

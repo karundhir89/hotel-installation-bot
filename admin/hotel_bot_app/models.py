@@ -12,6 +12,8 @@ class Installation(models.Model):
     post_work = models.TextField(null=True, blank=True)
     day_install_began = models.DateTimeField(null=True, blank=True)
     day_instal_complete = models.DateTimeField(null=True, blank=True)
+    product_arrived_at_floor= models.TextField(null=True, blank=True)
+    retouching= models.TextField(null=True, blank=True)
 
     class Meta:
         db_table = 'install'  # Ensure this matches the actual table name in PostgreSQL
@@ -152,3 +154,21 @@ class InvitedUser(models.Model):
     
     class Meta:
         db_table = "invited_users"
+
+
+class Shipping(models.Model):
+    client_id = models.CharField(max_length=255)
+    item = models.CharField(max_length=255)
+    ship_date = models.DateField()
+    ship_qty = models.PositiveIntegerField()
+    supplier = models.CharField(max_length=255)
+    supplier_date = models.DateField(null=True, blank=True)
+    bol = models.CharField("Bill of Lading", max_length=100, unique=True)
+    date = models.DateTimeField(auto_now_add=True)
+    by = models.CharField("Handled By", max_length=255)
+    notes = models.TextField(blank=True)
+
+    def __str__(self):
+        return f"Shipment {self.bol} - {self.item} to Client {self.client_id}"
+    class Meta:
+        db_table = "Shipping"
