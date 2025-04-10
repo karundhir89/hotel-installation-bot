@@ -41,6 +41,7 @@ urlpatterns = [
     path('inventory_pull/', inventory_pull, name='inventory_pull'),
     path('inventory_pull_item/', inventory_pull_item, name='inventory_pull_item'),
     path('installation_control_form/', installation_control_form, name='installation_control_form'),
+    path('inventory_pull_form/', inventory_pull_form, name='inventory_pull_form'),
 
     
 

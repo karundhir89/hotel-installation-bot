@@ -141,6 +141,7 @@ class ChatHistory(models.Model):
         return f"Message {self.id} in Session {self.session.id}"
 
 class InvitedUser(models.Model):
+    id = models.AutoField(primary_key=True)
     name = models.CharField(max_length=255)
     role = ArrayField(models.CharField(max_length=100), blank=True, default=list)
     last_login = models.DateTimeField(null=True, blank=True)  # Allow null values
@@ -172,3 +173,46 @@ class Shipping(models.Model):
         return f"Shipment {self.bol} - {self.item} to Client {self.client_id}"
     class Meta:
         db_table = "Shipping"
+
+
+class PullInventory(models.Model):
+    client_id =  models.CharField(max_length=255)
+    item = models.CharField(max_length=255)
+    available_qty = models.PositiveIntegerField(default=0)
+    is_pulled = models.BooleanField(default=False)
+    pulled_date = models.DateField(null=True, blank=True)
+    qty_pulled_for_install = models.PositiveIntegerField(default=0)
+    pulled_by = models.CharField(max_length=255)
+    floor = models.CharField(max_length=100, blank=True)
+    qty_pulled = models.PositiveIntegerField(default=0)
+    notes = models.TextField(blank=True)
+
+    def __str__(self):
+        return f"Pull - {self.item} for Client {self.client_id}"
+    class Meta:
+        db_table = "pull_inventory"
+
+class InstallDetail(models.Model):
+    install_id = models.AutoField(primary_key=True)
+    product_id=models.ForeignKey(ProductData, on_delete=models.SET_NULL, null=True, blank=True,db_column='product_id')
+    room_model_id=models.ForeignKey(RoomModel, on_delete=models.SET_NULL, null=True, blank=True,db_column='room_model_id')
+    room_id = models.ForeignKey(RoomData, on_delete=models.SET_NULL, null=True, blank=True,db_column='room_id')
+    product_name = models.CharField(max_length=255)
+    installed_by = models.ForeignKey(InvitedUser, on_delete=models.SET_NULL, null=True, blank=True,db_column='installed_by')
+    installed_on = models.DateField()
+    status=models.TextField(default='NO')
+
+    def __str__(self):
+        return f"Install {self.install_id} - {self.product_name} in Room {self.room_id}"
+    class Meta:
+        db_table = "install_detail"
+
+
+class ProductRoomModel(models.Model):
+    id=models.AutoField(primary_key=True)
+    product_id=models.ForeignKey(ProductData, on_delete=models.SET_NULL, null=True, blank=True,db_column='product_id')
+    room_model_id=models.ForeignKey(RoomModel, on_delete=models.SET_NULL, null=True, blank=True,db_column='room_model_id')
+    quantity=models.IntegerField(null=True)
+
+    class Meta:
+        db_table = "product_room_model"

@@ -7,16 +7,17 @@
 <div class="container my-5">
     <h3 class="mb-4 text-center text-secondary">Inventory Pull Form</h3>
 
-    <form method="post">
+    <form method="post" action="{% url 'inventory_pull_form' %}">
         {% csrf_token %}
+
         <div class="form-row mb-3">
             <div class="col-md-4">
-              <label>Client Item </label>
-              <input type="text" class="form-control" name="room_number" id="room_number" required>
+                <label>Client Item</label>
+                <input type="text" class="form-control" name="client_id" id="room_number" required>
             </div>
             <div class="col-md-4">
-              <label>Product Item Number</label>
-              <input type="text" class="form-control" name="room_type" id="room_type" readonly required>
+                <label>Product Item Number</label>
+                <input type="text" class="form-control" name="item_number" id="room_type" readonly required>
             </div>
         </div>
 
@@ -78,8 +79,6 @@
             </div>
         </div>
 
-
-
         <hr>
 
         <div class="text-center mt-4">
@@ -90,6 +89,11 @@
 {% endblock %}
 
 {% block extra_js %}
+<!-- Toastr JS + CSS -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" />
+
 <script>
   $(document).ready(function () {
     const currentDate = new Date().toLocaleDateString('en-CA'); // Format: YYYY-MM-DD
@@ -128,13 +132,20 @@
       });
     });
 
-    {% if toast_message %}
+    // Toastr for Django messages
+    {% if messages %}
     toastr.options = {
       "closeButton": true,
       "progressBar": true,
       "timeOut": "4000"
     };
-    toastr.success("{{ toast_message }}");
+    {% for message in messages %}
+      {% if message.tags == "success" %}
+        toastr.success("{{ message|escapejs }}");
+      {% elif message.tags == "error" %}
+        toastr.error("{{ message|escapejs }}");
+      {% endif %}
+    {% endfor %}
     {% endif %}
   });
 </script>

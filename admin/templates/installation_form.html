@@ -11,35 +11,19 @@
         {% csrf_token %}
         <div class="form-row mb-3">
             <div class="col-md-4">
-              <label>Room #</label>
-              <input type="text" class="form-control" name="room_number" id="room_number" required>
+                <label>Room #</label>
+                <input type="text" class="form-control" name="room_number" id="room_number" required>
             </div>
             <div class="col-md-4">
-              <label>Room Type</label>
-              <input type="text" class="form-control" name="room_type" id="room_type" readonly required>
+                <label>Room Type</label>
+                <input type="text" class="form-control" name="room_type" id="room_type" readonly required>
             </div>
         </div>
 
         <hr>
 
-        {% for i in check_items %}
-        <div class="form-group row align-items-center">
-            <div class="col-md-5">
-                <div class="form-check">
-                    <input class="form-check-input" type="checkbox" name="step_{{ i.id }}" id="step_{{ i.id }}">
-                    <label class="form-check-label" for="step_{{ i.id }}">
-                        {{ i.label }}
-                    </label>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <input type="date" class="form-control" name="date_{{ i.id }}">
-            </div>
-            <div class="col-md-4">
-                <input type="text" class="form-control" name="checked_by_{{ i.id }}" placeholder="Checked by">
-            </div>
-        </div>
-        {% endfor %}
+        <!-- Dynamic check items will be inserted here -->
+        <div id="check-items-wrapper"></div>
 
         <hr>
 
@@ -77,19 +61,50 @@
         type: "GET",
         data: { room_number: roomNumber },
         success: function (data) {
+          console.log("Received data:", data);  // Debug output
           if (data.success) {
             $('#room_type').val(data.room_type);
+            renderCheckItems(data.check_items);
           } else {
             toastr.error("Room number does not exist");
             $('#room_type').val('');
+            $('#check-items-wrapper').html('');
           }
         },
         error: function () {
           toastr.error("Error fetching room type");
           $('#room_type').val('');
+          $('#check-items-wrapper').html('');
         }
       });
     });
+
+    function renderCheckItems(items) {
+      const wrapper = $('#check-items-wrapper');
+      wrapper.html(''); // Clear existing items
+
+      items.forEach(item => {
+        const html = `
+          <div class="form-group row align-items-center">
+            <div class="col-md-5">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="step_${item.id}" id="step_${item.id}">
+                <label class="form-check-label" for="step_${item.id}">
+                  ${item.label}
+                </label>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <input type="date" class="form-control" name="date_${item.id}">
+            </div>
+            <div class="col-md-4">
+              <input type="text" class="form-control" name="checked_by_${item.id}" placeholder="Checked by">
+            </div>
+          </div>
+        `;
+        wrapper.append(html);
+      });
+    }
 
     {% if toast_message %}
     toastr.options = {

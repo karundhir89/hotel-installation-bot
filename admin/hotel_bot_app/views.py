@@ -21,7 +21,7 @@ from django.utils.html import strip_tags
 from django.contrib import messages
 from functools import wraps
 from django.shortcuts import redirect
-
+from datetime import date
 env = environ.Env()
 environ.Env.read_env()
 
@@ -679,58 +679,90 @@ def delete_products_data(request):
 
 def get_room_type(request):
     room_number = request.GET.get('room_number')
+    installed_by = request.GET.get('installed_by', 'unknown_user')
+    installed_on = date.today()
+
     try:
         room_data = RoomData.objects.get(room=room_number)
-        room_type = room_data.room_model if room_data.room_model else ''
-        return JsonResponse({'success': True, 'room_type': room_type})
+        room_type = room_data.room_model or ''
+        room_model = RoomModel.objects.get(room_model=room_type)
+        room_model_id = room_model.id
+
+        print('............', room_model_id)
+        product_room_models = ProductRoomModel.objects.filter(room_model_id=room_model_id)
+
+        # Check if InstallDetail already exists
+        existing_installs = InstallDetail.objects.filter(room_id=room_data)
+
+        if existing_installs.exists():
+            saved_items = [{
+                'install_id': inst.install_id,
+                'product_id': inst.product_id.id if inst.product_id else None,
+                'product_name': inst.product_name,
+                'room_id': inst.room_id.id if inst.room_id else None,
+                'room_model_id': inst.room_model_id.id if inst.room_model_id else None,
+                'installed_by': inst.installed_by.name if inst.installed_by else None,
+                'installed_on': str(inst.installed_on),
+                'status': inst.status
+            } for inst in existing_installs]
+        else:
+            # Create new InstallDetails from ProductRoomModel
+            saved_items = []
+            for prm in product_room_models:
+                install = InstallDetail.objects.create(
+                    product_id=prm.product_id,
+                    room_id=room_data,
+                    room_model_id=room_model,
+                    product_name=prm.product_id.description,
+                    installed_on=installed_on
+                )
+
+                saved_items.append({
+                    'install_id': install.install_id,
+                    'product_id': install.product_id.id if install.product_id else None,
+                    'product_name': install.product_name,
+                    'room_id': install.room_id.id if install.room_id else None,
+                    'room_model_id': install.room_model_id.id if install.room_model_id else None,
+                    'installed_by': install.installed_by.name if install.installed_by else None,
+                    'installed_on': str(install.installed_on),
+                    'status': install.status
+                })
+
+        # Default check items
+        check_items = [
+            {"id": 0, "label": "Pre-Work completed."},
+            {"id": 1, "label": "The product arrived at the floor."},
+            {"id": 12, "label": "Retouching."},
+            {"id": 13, "label": "Post Work."}
+        ]
+
+        # Add dynamic check items from ProductRoomModel
+        for prm in product_room_models:
+            if prm.product_id and prm.product_id.description:
+                check_items.append({
+                    "id": prm.id,
+                    "label": f"{prm.product_id.description} (Qty: {prm.quantity})"
+                })
+
+        return JsonResponse({
+            'success': True,
+            'room_type': room_type,
+            'check_items': check_items,
+            'saved_items': saved_items
+        })
+
     except RoomData.DoesNotExist:
-        return JsonResponse({'success': False})
-    
-
-
+        return JsonResponse({'success': False, 'message': 'Room not found'})
+    except RoomModel.DoesNotExist:
+        return JsonResponse({'success': False, 'message': 'Room model not found'})
 
 @session_login_required
 def installation_form(request):
     if not request.session.get('user_id'):
         messages.warning(request, "You must be logged in to access the form.")
         return redirect('user_login')
-    check_items = [
-        {"id": 0, "label": "0. Pre-Work completed."},
-        {"id": 1, "label": "1. The product arrived at the floor."},
-        {"id": 2, "label": "2. Door installed."},
-        {"id": 3, "label": "3. Closet installed."},
-        {"id": 4, "label": "4. Desk, TV shelf, and nightstands installed."},
-        {"id": 5, "label": "5. Screen installed."},
-        {"id": 6, "label": "6. Curtains installed."},
-        {"id": 7, "label": "7. Mirror installed."},
-        {"id": 8, "label": "8. Wall covering installed."},
-        {"id": 9, "label": "9. Beds installed."},
-        {"id": 10, "label": "10. Mini bar installed."},
-        {"id": 11, "label": "11. Chairs, ottomans, and side tables installed."},
-        {"id": 12, "label": "12. Retouching."},
-        {"id": 13, "label": "13. Post Work."}
-    ]
 
-    if request.method == 'POST':
-        room_number = request.POST.get('room_number')
-        room_type = request.POST.get('room_type')
-        final_date = request.POST.get('final_date')
-        final_by = request.POST.get('final_by')
-        final_notes = request.POST.get('final_notes')
-
-        # Here you can save data to the database if needed
-        print("Room:", room_number, "| Type:", room_type)
-        for item in check_items:
-            checked = request.POST.get(f'step_{item["id"]}')
-            date = request.POST.get(f'date_{item["id"]}')
-            checked_by = request.POST.get(f'checked_by_{item["id"]}')
-            print(f'{item["label"]} | Checked: {checked} | Date: {date} | By: {checked_by}')
-
-        print("Final Date:", final_date, "| By:", final_by, "| Notes:", final_notes)
-        messages.success(request, "Form submitted successfully!")
-        return redirect('installation_form')
-
-    return render(request, 'installation_form.html', {'check_items': check_items})
+    return render(request, 'installation_form.html')
 
 def inventory_shipment(request):
      return render(request, 'inventory_shipment.html')
@@ -803,7 +835,7 @@ def inventory_received_item_num(request):
         return JsonResponse({'success': True, 'room_type': get_item})
     except RoomData.DoesNotExist:
         return JsonResponse({'success': False})
-
+    
 
 @login_required
 def save_installation(request):
@@ -1117,3 +1149,50 @@ def installation_control_form(request):
     return render(request, 'inventory_shipment.html', {
         'check_items': [],  # Replace with actual data
     })
+
+from django.shortcuts import render, redirect
+from django.contrib import messages
+
+def inventory_pull_form(request):
+    if request.method == 'POST':
+        try:
+            user_id = request.session.get("user_id")
+            print(request.POST)
+
+            client_id = request.POST.get('client_id')
+            item = request.POST.get('item_number')
+            available_qty = request.POST.get('qty_available_ready_to_pull')
+            is_pulled = request.POST.get('pull_checked') == 'on'
+            pulled_date = request.POST.get('pull_date_text')
+            qty_pulled_for_install = request.POST.get('qty_pulled_for_install')
+            pulled_by = user_id
+            floor = request.POST.get('floor_where_going')
+            qty_pulled = request.POST.get('inventory_available_after_pull')
+            notes = request.POST.get('pull_notes')  # This line was incorrect before
+
+            PullInventory.objects.create(
+                client_id=client_id,
+                item=item,
+                available_qty=available_qty,
+                is_pulled=is_pulled,
+                pulled_date=pulled_date,
+                qty_pulled_for_install=qty_pulled_for_install,
+                pulled_by=pulled_by,
+                floor=floor,
+                qty_pulled=qty_pulled,
+                notes=notes
+            )
+
+            messages.success(request, "Inventory pull submitted successfully!")
+        except Exception as e:
+            print(f"Error submitting inventory pull: {str(e)}")
+            messages.error(request, f"Error submitting inventory pull: {str(e)}")
+
+        # 🔄 Prevent resubmission by redirecting after POST
+        return redirect('inventory_pull_form')
+
+    # For GET request
+    return render(request, 'inventory_pull.html', {
+        'check_items': [],  # Replace or update as needed
+    })
+
