@@ -1,0 +1,298 @@
+description: >
+  This database schema is part of a hotel furniture installation and renovation tracking system.
+  It helps manage inventory, room models, product mappings, installation progress, and scheduling.
+  The data is used by planners, vendors, and project managers to track readiness, progress, and requirements.
+
+  ### Query Generation Rules:
+  - Always use human-readable columns (e.g., `product_data.description` for product names instead of `inventory.item` SKUs).
+  - Match column types exactly in comparisons (e.g., `text` to `text`, `integer` to `integer`).
+  - Use explicit JOINs with foreign keys or shared columns (e.g., `client_id`) instead of subqueries where possible.
+  - Avoid aggregating (e.g., SUM) unless explicitly requested; return raw data for clarity.
+  - Include table aliases (e.g., `i` for `inventory`) in queries for readability.
+  - If no direct relationship exists, explain in the query comment why and use logical assumptions (e.g., `client_id` linking).
+
+tables:
+  - name: install
+    description: >
+      Tracks installation progress and lifecycle for a specific room.
+      Captures timestamps and notes about prework, install, and post-install activities.
+    columns:
+      - name: id
+        type: integer
+        constraints: 
+          - primary key
+          - auto-increment
+        description: Unique ID for the installation record.
+      - name: room
+        type: integer
+        description: Room number being worked on (matches `room_data.room`).
+      - name: product_available
+        type: text
+        description: Description of product availability status.
+      - name: prework
+        type: text
+        description: Notes or checklist for pre-installation tasks.
+      - name: install
+        type: text
+        description: Notes during the installation phase.
+      - name: post_work
+        type: text
+        description: Notes for post-installation tasks or cleanup.
+      - name: day_install_began
+        type: timestamp with time zone
+        description: Start time for installation.
+      - name: day_instal_complete
+        type: timestamp with time zone
+        description: Completion time for installation .
+
+  - name: inventory
+    description: >
+      Represents current inventory for all furniture/products ordered by the client.
+      Helps track ordered, received, available, and installed quantities.
+      
+      ### Query Hint:
+      To find inventory for a specific product:
+      1. Search `product_data.description` for the product name.
+      2. Use `product_data.client_id` to match `inventory.client_id`.
+      3. Return `inventory.quantity_available` and `product_data.description` for clarity.
+    columns:
+      - name: id
+        type: integer
+        constraints: 
+          - primary key
+          - auto-increment
+        description: Unique ID for each inventory entry.
+      - name: item
+        type: text
+        description: SKU of the item (not the name; use `product_data.description` for name).
+      - name: client_id
+        type: text
+        description: Client identifier (links to `product_data.client_id`).
+      - name: qty_ordered
+        type: integer
+        description: Total quantity ordered for this client.
+      - name: qty_received
+        type: integer
+        description: Quantity received so far.
+      - name: quantity_installed
+        type: integer
+        description: Quantity already installed at the site.
+      - name: quantity_available
+        type: integer
+        description: Quantity currently available for installation.
+
+  - name: product_data
+    description: >
+      Contains catalog data about products including price, description, and quantities.
+      Used for planning and referencing against inventory and installation.
+      
+      ### Query Hint:
+      Use `description` as the human-readable product name instead of `item` (SKU).
+    columns:
+      - name: id
+        type: integer
+        constraints: 
+          - primary key
+          - auto-increment
+        description: Unique product ID.
+      - name: item
+        type: text
+        description: Product code (SKU; use `description` for name).
+      - name: client_id
+        type: text
+        description: Client identifier (links to `inventory.client_id`).
+      - name: description
+        type: text
+        description: Product name (human-readable).
+      - name: qty_ordered
+        type: integer
+        description: Quantity ordered by client.
+      - name: price
+        type: real
+        description: Price per unit.
+      - name: client_selected
+        type: text
+        description: Indicates if the client has selected this product (e.g., 'yes', 'no').
+
+  - name: product_room_model
+    description: >
+      Mapping between products and room models, defining what furniture goes into each room model.
+      Used to plan inventory allocation and installations for different room types.
+    columns:
+      - name: id
+        type: integer
+        constraints: 
+          - primary key
+          - auto-increment
+        description: Unique mapping ID.
+      - name: product_id
+        type: integer
+        constraints: 
+          - foreign key to product_data.id ON DELETE CASCADE
+        description: References `product_data.id` for the product.
+      - name: room_model_id
+        type: integer
+        constraints: 
+          - foreign key to room_model.id ON DELETE CASCADE
+        description: References `room_model.id` for the room model.
+      - name: quantity
+        type: integer
+        constraints: 
+          - NOT NULL
+        description: Number of product units required for this room model.
+    constraints:
+      - name: product_room_model_product_id_fkey
+        definition: FOREIGN KEY (product_id) REFERENCES product_data(id) ON DELETE CASCADE
+      - name: product_room_model_room_model_id_fkey
+        definition: FOREIGN KEY (room_model_id) REFERENCES room_model(id) ON DELETE CASCADE
+
+  - name: room_data
+    description: >
+      Stores per-room configuration and characteristics.
+      Includes room type, floor, renovation status, and links to room model templates.
+      
+      ### Query Hint:
+      Use `room` to link with `install.room`; use `room_model_id` for `room_model` joins.
+    columns:
+      - name: id
+        type: integer
+        constraints: 
+          - primary key
+          - auto-increment
+        description: Unique room ID.
+      - name: room
+        type: integer
+        description: Room number (links to `install.room`).
+      - name: floor
+        type: integer
+        description: Floor number (links to `schedule.floor`).
+      - name: king
+        type: text
+        description: Indicator if king bed is present (e.g., 'yes', 'no').
+      - name: double
+        type: text
+        description: Indicator for double bed (e.g., 'yes', 'no').
+      - name: exec_king
+        type: text
+        description: Executive king room indicator (e.g., 'yes', 'no').
+      - name: bath_screen
+        type: text
+        description: Whether room includes bath screen (e.g., 'yes', 'no').
+      - name: room_model
+        type: text
+        description: Name of associated room model (human-readable; see `room_model.room_model`).
+      - name: left_desk
+        type: text
+        description: Flag or description of left-side desk presence.
+      - name: right_desk
+        type: text
+        description: Flag or description of right-side desk.
+      - name: to_be_renovated
+        type: text
+        description: Whether the room is scheduled for renovation (e.g., 'yes', 'no').
+      - name: description
+        type: text
+        description: Any notes or additional description.
+      - name: room_model_id
+        type: integer
+        constraints: 
+          - foreign key to room_model.id DEFERRABLE INITIALLY DEFERRED
+        description: Links to `room_model.id`.
+      - name: room_model_id_id
+        type: integer
+        constraints: 
+          - foreign key to room_model.id DEFERRABLE INITIALLY DEFERRED
+        description: Additional/legacy link to `room_model.id`.
+    constraints:
+      - name: room_data_room_model_id_782034fb_fk_room_model_id
+        definition: FOREIGN KEY (room_model_id) REFERENCES room_model(id) DEFERRABLE INITIALLY DEFERRED
+      - name: room_data_room_model_id_id_15ee5e24_fk_room_model_id
+        definition: FOREIGN KEY (room_model_id_id) REFERENCES room_model(id) DEFERRABLE INITIALLY DEFERRED
+    indexes:
+      - name: room_data_room_model_id_782034fb
+        definition: INDEX ON room_model_id
+      - name: room_data_room_model_id_id_15ee5e24
+        definition: INDEX ON room_model_id_id
+
+  - name: room_model
+    description: >
+      Master list of room templates/models, defining standard layouts or furniture needs.
+    columns:
+      - name: id
+        type: integer
+        constraints: 
+          - primary key
+          - auto-increment
+        description: Unique ID for each room model.
+      - name: room_model
+        type: text
+        description: Name or code for room model (human-readable).
+      - name: total
+        type: integer
+        description: Total number of rooms with this model.
+
+  - name: schedule
+    description: >
+      Detailed installation and project timeline schedule for each floor or phase.
+      Used to coordinate shipping, clearing, pre-work, installation, and post-work.
+    columns:
+      - name: id
+        type: integer
+        constraints: 
+          - primary key
+          - auto-increment
+        description: Unique ID for the schedule.
+      - name: phase
+        type: integer
+        description: Phase number (milestone reference).
+      - name: floor
+        type: integer
+        description: Floor number (links to `room_data.floor`).
+      - name: production_starts
+        type: timestamp with time zone
+        description: When production begins.
+      - name: production_ends
+        type: timestamp with time zone
+        description: When production ends.
+      - name: shipping_depature
+        type: timestamp with time zone
+        description: Product shipment departure time (typo 'depature' intentional per DB).
+      - name: shipping_arrival
+        type: timestamp with time zone
+        description: When shipment arrives on site.
+      - name: custom_clearing_starts
+        type: timestamp with time zone
+        description: Customs clearance starts.
+      - name: custom_clearing_ends
+        type: timestamp with time zone
+        description: Customs clearance ends.
+      - name: arrive_on_site
+        type: timestamp with time zone
+        description: Furniture arrival on site.
+      - name: pre_work_starts
+        type: timestamp with time zone
+        description: Pre-installation work start.
+      - name: pre_work_ends
+        type: timestamp with time zone
+        description: Pre-installation work end.
+      - name: install_starts
+        type: timestamp with time zone
+        description: Installation start time.
+      - name: install_ends
+        type: timestamp with time zone
+        description: Installation end time.
+      - name: post_work_starts
+        type: timestamp with time zone
+        description: Post-installation work begins.
+      - name: post_work_ends
+        type: timestamp with time zone
+        description: Post-installation work ends.
+      - name: floor_completed
+        type: timestamp with time zone
+        description: Floor officially marked complete.
+      - name: floor_closes
+        type: timestamp with time zone
+        description: Date the floor is closed for access.
+      - name: floor_opens
+        type: timestamp with time zone
+        description: Floor reopens after work.
