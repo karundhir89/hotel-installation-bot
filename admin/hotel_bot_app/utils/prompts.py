@@ -31,9 +31,9 @@ def fetch_data_from_sql(query):
 
 def format_gpt_prompt(user_message, prompt_data):
     return f"""
-You are an expert chatbot specializing in hotel furniture installation. 
+You are an expert chatbot specializing in hotel furniture installation and your name is hero bot. 
 
-Your job is to analyze the user query and generate a valid SQL query that not just retrieve the raw information from database but can be human understandable like if searching for prodcuts then return the name instead of their id or other kind of indetifiers and so the same in other queries that can be run on the following database schema. 
+Your job is to analyze the user query and generate a valid SQL query if there is need to do otherwise answer as specialize chatbot for hi hello and general queries that not just retrieve the raw information from database but can be human understandable like if searching for prodcuts then return the name instead of their id or other kind of indetifiers and so the same in other queries that can be run on the following database schema. 
 
 ### User Query:
 {user_message}
@@ -46,6 +46,10 @@ Your job is to analyze the user query and generate a valid SQL query that not ju
 - Do not explain anything.
 - Query should be good enough to tell what about this is and the real information and a layman needs to understand
 - The response must be a JSON object with this format:
+- Also must take care of type casts dont query wrong type to wrong fields like searching chiar with numberic fields don't do that
+- For matching any given product name use iLike and retuned the best matches
+- Always use limit parameter and use the best practice whie generating query and also try to more focus on indexes for fasta access
+- Aslo you can use pagination if needed
 {{
   "query": "SQL_QUERY_STRING_HERE"
 }}
@@ -125,6 +129,7 @@ def generate_final_response(user_message, rows):
 
     prompt = f"""
     You are an HTML-generating assistant.
+    your name is hero bot.
 
     ⚠️ You must return only **valid raw HTML**. Never use Markdown, backticks, code blocks, or any formatting language. Only pure HTML tags.
 
@@ -163,8 +168,8 @@ def generate_final_response(user_message, rows):
     - Quotes around HTML
     - Text outside the table
 
-    📌 If no data exists, return a just text with a helpful answer.
-
+    📌 If no data exists, return a just text with a helpful answer without any html tag.
+        and if asked some general question response generally
     💡 Treat the response as something that will be injected directly into a live web page.
     """
 
@@ -207,3 +212,59 @@ def output_praser_gpt(message, gpt_model, json_required=True, temperature=0):
     except Exception as e:
         print("gpt call error:", e)
         return {"query": None}
+
+def verify_sql_query(user_message, sql_query, prompt_data, error_message=None, gpt_model="gpt-4o"):
+    """
+    Verifies the SQL query for correctness, data type casting, structure, and intent alignment.
+    Also considers DB error messages like type mismatch.
+    """
+
+    prompt = f"""
+You are a SQL validation and debugging expert for hotel furniture installation systems.
+your name is hero bot.
+
+Your job is to:
+- Review the user message, SQL query, schema, and any error message.
+- Spot logical, syntactic, and type-related problems.
+- Provide a structured JSON output showing whether the query is valid.
+- Suggest a corrected version of the query if needed.
+
+## User Message:
+{user_message}
+
+## SQL Query:
+{sql_query}
+
+## Schema:
+{json.dumps(prompt_data, indent=2)}
+
+## Database Error (if any):
+{error_message or "None"}
+
+## Output JSON format:
+{{
+  "is_valid": true | false,
+  "issues": ["describe what is wrong, e.g., type mismatch or bad join"],
+  "recommendation": "Provide a fixed or improved SQL query (if applicable), or null"
+}}
+
+Respond with ONLY a valid JSON object. No other explanations.
+"""
+
+    try:
+        response = output_praser_gpt(
+            [{"role": "user", "content": prompt}],
+            gpt_model=gpt_model,
+            json_required=True,
+            temperature=0.2,
+        )
+
+        return json.loads(response) if isinstance(response, str) else response
+
+    except Exception as e:
+        print("SQL verification error:", e)
+        return {
+            "is_valid": False,
+            "issues": ["Could not parse GPT response."],
+            "recommendation": None,
+        }

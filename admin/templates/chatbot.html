@@ -2,48 +2,37 @@
 {% load static %}
 {% block content %}
 
-<div class="content" id="modal-content">
-    <div class="container mt-5">
-        <div class="chat-container mx-auto">
-            <h2 style="text-align:center;">Chatbot</h2>
-            <div class="chat-box" id="chat-box"></div>
-            <div class="input-box">
-                <span class="bmd-form-group">
-                    <input type="text" id="user-input" class="form-control" placeholder="Type a message..."
-                        onkeydown="if(event.key==='Enter') sendMessage()">
-                </span>
-                <button class="btn" style="float: right;" onclick="sendMessage()">Send</button>
-            </div>
-        </div>
-    </div>
-</div>
 
 
 <style>
     .chat-container {
-        width: 800px;
-        max-width: 100%;
+        max-width: 65vw;
+        height: 90vh;
         background: white;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        padding: 24px;
+        border-radius: 12px;
+        box-shadow: 0 0 12px rgba(0, 0, 0, 0.08);
+        margin: auto;
     }
 
     .chat-box {
-        height: 600px;
+        height: 80%;
         overflow-y: auto;
         border-bottom: 2px solid #ddd;
         padding-bottom: 10px;
-        margin-bottom: 10px;
+        margin-bottom: 15px;
         display: flex;
         flex-direction: column;
+        padding: 15px;
     }
 
     .message {
-        padding: 8px;
-        margin: 5px 0;
-        border-radius: 5px;
+        padding: 10px 14px;
+        margin: 6px 0;
+        border-radius: 8px;
         max-width: 80%;
+        opacity: 0;
+        animation: fadeIn 0.3s forwards;
     }
 
     .user-message {
@@ -52,93 +41,170 @@
         align-self: flex-end;
     }
 
+    .user-message::before {
+        content: "🧑‍💻 ";
+        margin-right: 6px;
+    }
+
     .bot-message {
-        background: #ddd;
+        background: #eee;
         color: black;
         align-self: flex-start;
-        max-width: 90%; /* Increase this value */
+        max-width: 90%;
         min-width: 80%;
-        /* border: 2px solid #57626a; */
+    }
+
+    .bot-message::before {
+        content: "🤖 ";
+        margin-right: 6px;
     }
 
     .input-box {
         display: flex;
-        gap: 10px;
+        gap: 12px;
+        align-items: center;
     }
 
     .chat-container span.bmd-form-group {
         display: inline-block;
-        width: 90%;
+        width: 100%;
+    }
+
+    textarea#user-input {
+        font-size: 14px;
+        border-radius: 6px;
+        padding: 10px;
+        resize: none;
     }
 
     .btn-primary {
-        padding: 8px 12px;
-    }
-    table tr {
-        gap: 10px;
-
+        padding: 10px 16px;
+        font-weight: 500;
+        border-radius: 6px;
     }
 
     table {
-    border-collapse: separate;
-    border-spacing: 0;
-    width: 100%;
-    font-size: 13px;
-    border: 1px solid #e0e0e0;
-    border-radius: 6px;
-    overflow: hidden;
-}
+        border-collapse: separate;
+        border-spacing: 0;
+        width: 100%;
+        font-size: 13px;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        overflow: hidden;
+    }
 
-table th, table td {
-    padding: 8px 12px;
-    border-bottom: 1px solid #eee;
-    text-align: left;
-}
+    table th, table td {
+        padding: 8px 12px;
+        border-bottom: 1px solid #eee;
+        text-align: left;
+    }
 
-table th {
-    background-color: #f9f9f9;
-    font-weight: 600;
-    font-size: 13.5px;
-    color: #333;
-    border-bottom: 2px solid #ddd;
-}
+    table th {
+        background-color: #f9f9f9;
+        font-weight: 600;
+        font-size: 13.5px;
+        color: #333;
+        border-bottom: 2px solid #ddd;
+    }
 
-table tr:last-child td {
-    border-bottom: none;
-}
+    table tr:last-child td {
+        border-bottom: none;
+    }
 
-table tr:hover {
-    background-color: #f5f5f5;
-}
+    table tr:hover {
+        background-color: #f5f5f5;
+    }
 
-table td:first-child {
-    font-weight: 500;
-    color: #222;
-}
+    table td:first-child {
+        font-weight: 500;
+        color: #222;
+    }
 
+    @keyframes fadeIn {
+        to {
+            opacity: 1;
+        }
+    }
+    @media (max-width: 768px) {
+    .chat-container {
+        max-width: 95vw;
+        height: 85vh;
+        padding: 16px;
+        border-radius: 10px;
+    }
+
+    .chat-box {
+        height: 70%;
+        padding: 10px 5px;
+    }
+
+    .input-box {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+
+    .btn-primary {
+        width: 100%;
+    }
+
+    textarea#user-input {
+        font-size: 13px;
+        padding: 8px;
+    }
+
+    .message {
+        max-width: 95%;
+    }
+
+    .bot-message, .user-message {
+        min-width: auto;
+    }
+}
 
 </style>
-
+<div class="content" id="modal-content">
+    <div class="container mt-5">
+        <div class="chat-container mx-auto">
+            <h2 style="text-align:center;">Chatbot</h2>
+            <div class="chat-box" id="chat-box"></div>
+            <div class="input-box">
+                <span class="bmd-form-group">
+                    <textarea id="user-input" class="form-control" placeholder="Type a message..." rows="2"></textarea>
+                </span>
+                <button class="btn btn-primary" style="float: right;" onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+</div>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
+    document.addEventListener("DOMContentLoaded", function () {
+        fetchChatHistory();  // Load chat history
+        document.getElementById("user-input").focus();
 
-    document.addEventListener("DOMContentLoaded", function() {
-        fetchChatHistory();  // Load chat history when the page loads
+        // Handle Enter/Shift+Enter
+        document.getElementById("user-input").addEventListener("keydown", function (event) {
+            if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        });
     });
 
     function sendMessage() {
-        let userInput = document.getElementById("user-input").value.trim();
+        let userInputField = document.getElementById("user-input");
+        let userInput = userInputField.value.trim();
         if (userInput === "") return;
 
         let chatBox = document.getElementById("chat-box");
 
-        // Add user message to chat box
         appendMessage(userInput, "user-message");
+        userInputField.value = "";
 
-        // Clear input field
-        document.getElementById("user-input").value = "";
+        // Show temporary typing message
+        appendMessage("Hero Bot is typing...", "bot-message", true);
 
-        // Send message to Django API
         fetch("/api/chatbot/", {
             method: "POST",
             headers: {
@@ -149,10 +215,19 @@ table td:first-child {
         })
         .then(response => response.json())
         .then(data => {
+            // Remove temp typing message
+            let tempMsg = document.getElementById("temp-msg");
+            if (tempMsg) tempMsg.remove();
+
             appendMessage(data.response, "bot-message");
-            fetchChatHistory(); // Re-fetch chat history to ensure it's updated
+            fetchChatHistory(); // Refresh history
         })
-        .catch(error => console.error("Error:", error));
+        .catch(error => {
+            console.error("Error:", error);
+            let tempMsg = document.getElementById("temp-msg");
+            if (tempMsg) tempMsg.remove();
+            appendMessage("⚠️ Error talking to bot.", "bot-message");
+        });
     }
 
     function fetchChatHistory() {
@@ -160,8 +235,7 @@ table td:first-child {
         .then(response => response.json())
         .then(data => {
             let chatBox = document.getElementById("chat-box");
-            chatBox.innerHTML = ""; // Clear chat box before appending history
-
+            chatBox.innerHTML = ""; // Clear existing messages
             if (data.chat_history && data.chat_history.length > 0) {
                 data.chat_history.forEach(chat => {
                     let roleClass = chat.role === "user" ? "user-message" : "bot-message";
@@ -172,24 +246,21 @@ table td:first-child {
         .catch(error => console.error("Error fetching chat history:", error));
     }
 
-
-    function appendMessage(text, className) {
+    function appendMessage(text, className, isTemp = false) {
         let chatBox = document.getElementById("chat-box");
         let messageDiv = document.createElement("div");
         messageDiv.classList.add("message", className);
+        if (isTemp) messageDiv.id = "temp-msg";
 
         if (className === "bot-message") {
-            messageDiv.innerHTML = text;  // Inject raw HTML from bot
+            messageDiv.innerHTML = text;
         } else {
-            messageDiv.textContent = text;  // Escape user input
+            messageDiv.textContent = text;
         }
 
         chatBox.appendChild(messageDiv);
-
-        // Scroll to the latest message
         chatBox.scrollTop = chatBox.scrollHeight;
     }
-
 
     function getCookie(name) {
         let cookieValue = null;
@@ -204,7 +275,44 @@ table td:first-child {
             }
         }
         return cookieValue;
+        function sendMessage() {
+    let userInputField = document.getElementById("user-input");
+    let userInput = userInputField.value.trim();
+    let sendBtn = document.querySelector(".btn-primary");
+
+    if (userInput === "") return;
+
+    sendBtn.disabled = true;
+    appendMessage(userInput, "user-message");
+    userInputField.value = "";
+
+    appendMessage("Hero Bot is typing...", "bot-message", true);
+
+    fetch("/api/chatbot/", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": getCookie("csrftoken")
+        },
+        body: JSON.stringify({ message: userInput })
+    })
+    .then(response => response.json())
+    .then(data => {
+        document.getElementById("temp-msg")?.remove();
+        appendMessage(data.response, "bot-message");
+        fetchChatHistory();
+        sendBtn.disabled = false;
+    })
+    .catch(error => {
+        console.error("Error:", error);
+        document.getElementById("temp-msg")?.remove();
+        appendMessage("⚠️ Error talking to bot.", "bot-message");
+        sendBtn.disabled = false;
+    });
+}
+
     }
 </script>
+
 
 {% endblock %}

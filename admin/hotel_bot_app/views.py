@@ -21,7 +21,8 @@ from hotel_bot_app.utils.prompts import (fetch_data_from_sql,
                                          format_gpt_prompt,
                                          generate_final_response,
                                          gpt_call_json_func,
-                                         load_database_schema)
+                                         load_database_schema,
+                                         verify_sql_query)
 from openai import OpenAI
 
 from .models import *
@@ -61,11 +62,77 @@ def extract_values(json_obj, keys):
     return table_selected
 
 
+# @csrf_exempt
+# def chatbot_api(request):
+#     if request.method == "POST":
+#         data = json.loads(request.body)
+#         user_message = data.get("message", "")
+
+#         session_id = request.session.get("chat_session_id")
+#         if not session_id:
+#             session = ChatSession.objects.create()
+#             request.session["chat_session_id"] = session.id
+#         else:
+#             session = get_object_or_404(ChatSession, id=session_id)
+
+#         ChatHistory.objects.create(session=session, message=user_message, role="user")
+
+#         if not user_message.strip():
+#             return JsonResponse({"response": "⚠️ No message sent."}, status=400)
+
+#         try:
+#             # Generate first prompt to analyze user message
+#             DB_SCHEMA = load_database_schema()
+#             prompt_first = format_gpt_prompt(
+#                 user_message, DB_SCHEMA
+#             )  # Construct prompt dynamically
+
+#             prompt_response = gpt_call_json_func(
+#                 [{"role": "user", "content": prompt_first}],
+#                 gpt_model="gpt-4o",
+#                 json_required=False,
+#             )
+#             print("First prompt response:", prompt_response)
+
+#             # Process the response and generate SQL query
+#             sql_query = prompt_response.get("query")
+#             rows = None
+#             if sql_query:
+#                 verify_sql_query(user_message, sql_query, DB_SCHEMA)
+#                 rows = fetch_data_from_sql(sql_query)
+
+#                 # Format rows into a readable string
+#             bot_message = generate_final_response(user_message, rows)
+#             # prompt_response = gpt_call_json_func([{"role": "user", "content": prompt_first}], gpt_model="gpt-4o",
+#             print("\n\n\final reponse", bot_message)
+#             ChatHistory.objects.create(
+#                 session=session, message=bot_message, role="assistant"
+#             )
+#             return JsonResponse({"response": bot_message})
+#         except Exception as e:
+#             print("Error occurred:", e)
+#             error_message = f"Sorry, I couldn't process that due to: {str(e)}"
+#             ChatHistory.objects.create(
+#                 session=session, message=error_message, role="assistant"
+#             )
+#             return JsonResponse({"response": error_message})
+
+#     return JsonResponse({"error": "Invalid request"}, status=400)
+
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
+from hotel_bot_app.models import ChatSession, ChatHistory
+
+
 @csrf_exempt
 def chatbot_api(request):
     if request.method == "POST":
         data = json.loads(request.body)
-        user_message = data.get("message", "")
+        user_message = data.get("message", "").strip()
+
+        if not user_message:
+            return JsonResponse({"response": "⚠️ No message sent."}, status=400)
 
         session_id = request.session.get("chat_session_id")
         if not session_id:
@@ -76,43 +143,63 @@ def chatbot_api(request):
 
         ChatHistory.objects.create(session=session, message=user_message, role="user")
 
-        if not user_message.strip():
-            return JsonResponse({"response": "⚠️ No message sent."}, status=400)
-
         try:
-            # Generate first prompt to analyze user message
             DB_SCHEMA = load_database_schema()
-            prompt_first = format_gpt_prompt(
-                user_message, DB_SCHEMA
-            )  # Construct prompt dynamically
 
+            # Prompt GPT to generate SQL
+            prompt_first = format_gpt_prompt(user_message, DB_SCHEMA)
             prompt_response = gpt_call_json_func(
                 [{"role": "user", "content": prompt_first}],
                 gpt_model="gpt-4o",
-                json_required=False,
+                json_required=True,
             )
-            print("First prompt response:", prompt_response)
+            print("First GPT response:", prompt_response)
 
-            # Process the response and generate SQL query
             sql_query = prompt_response.get("query")
             rows = None
-            if sql_query:
-                rows = fetch_data_from_sql(sql_query)
+            bot_message = None
 
-                # Format rows into a readable string
+            if sql_query:
+                try:
+                    # Try executing the query directly
+                    rows = fetch_data_from_sql(sql_query)
+
+                except Exception as db_error:
+                    print("DB execution error:", db_error)
+
+                    # Run GPT SQL verifier
+                    verification = verify_sql_query(
+                        user_message=user_message,
+                        sql_query=sql_query,
+                        prompt_data=DB_SCHEMA,
+                        error_message=str(db_error),
+                        gpt_model="gpt-4o"
+                    )
+
+                    print("Verification result:", verification)
+
+                    # If GPT recommends a fixed query, retry with that
+                    if not verification["is_valid"] and verification.get("recommendation"):
+                        try:
+                            rows = fetch_data_from_sql(verification["recommendation"])
+                            sql_query = verification["recommendation"]
+                        except Exception as second_error:
+                            print("Retry failed:", second_error)
+                            raise second_error  # Let it get caught below
+                    else:
+                        raise db_error  # Re-raise if no fix recommended
+
             bot_message = generate_final_response(user_message, rows)
-            # prompt_response = gpt_call_json_func([{"role": "user", "content": prompt_first}], gpt_model="gpt-4o",
-            print("\n\n\final reponse", bot_message)
-            ChatHistory.objects.create(
-                session=session, message=bot_message, role="assistant"
-            )
+
+            # Save assistant's response
+            ChatHistory.objects.create(session=session, message=bot_message, role="assistant")
+
             return JsonResponse({"response": bot_message})
+
         except Exception as e:
             print("Error occurred:", e)
             error_message = f"Sorry, I couldn't process that due to: {str(e)}"
-            ChatHistory.objects.create(
-                session=session, message=error_message, role="assistant"
-            )
+            ChatHistory.objects.create(session=session, message=error_message, role="assistant")
             return JsonResponse({"response": error_message})
 
     return JsonResponse({"error": "Invalid request"}, status=400)
