@@ -26,3 +26,4 @@ sqlparse==0.4.4
 tqdm==4.67.1
 typing_extensions==4.13.0
 urllib3==2.3.0
+pyyaml
