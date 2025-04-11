@@ -62,69 +62,6 @@ def extract_values(json_obj, keys):
     return table_selected
 
 
-# @csrf_exempt
-# def chatbot_api(request):
-#     if request.method == "POST":
-#         data = json.loads(request.body)
-#         user_message = data.get("message", "")
-
-#         session_id = request.session.get("chat_session_id")
-#         if not session_id:
-#             session = ChatSession.objects.create()
-#             request.session["chat_session_id"] = session.id
-#         else:
-#             session = get_object_or_404(ChatSession, id=session_id)
-
-#         ChatHistory.objects.create(session=session, message=user_message, role="user")
-
-#         if not user_message.strip():
-#             return JsonResponse({"response": "⚠️ No message sent."}, status=400)
-
-#         try:
-#             # Generate first prompt to analyze user message
-#             DB_SCHEMA = load_database_schema()
-#             prompt_first = format_gpt_prompt(
-#                 user_message, DB_SCHEMA
-#             )  # Construct prompt dynamically
-
-#             prompt_response = gpt_call_json_func(
-#                 [{"role": "user", "content": prompt_first}],
-#                 gpt_model="gpt-4o",
-#                 json_required=False,
-#             )
-#             print("First prompt response:", prompt_response)
-
-#             # Process the response and generate SQL query
-#             sql_query = prompt_response.get("query")
-#             rows = None
-#             if sql_query:
-#                 verify_sql_query(user_message, sql_query, DB_SCHEMA)
-#                 rows = fetch_data_from_sql(sql_query)
-
-#                 # Format rows into a readable string
-#             bot_message = generate_final_response(user_message, rows)
-#             # prompt_response = gpt_call_json_func([{"role": "user", "content": prompt_first}], gpt_model="gpt-4o",
-#             print("\n\n\final reponse", bot_message)
-#             ChatHistory.objects.create(
-#                 session=session, message=bot_message, role="assistant"
-#             )
-#             return JsonResponse({"response": bot_message})
-#         except Exception as e:
-#             print("Error occurred:", e)
-#             error_message = f"Sorry, I couldn't process that due to: {str(e)}"
-#             ChatHistory.objects.create(
-#                 session=session, message=error_message, role="assistant"
-#             )
-#             return JsonResponse({"response": error_message})
-
-#     return JsonResponse({"error": "Invalid request"}, status=400)
-
-from django.views.decorators.csrf import csrf_exempt
-from django.http import JsonResponse
-from django.shortcuts import get_object_or_404
-from hotel_bot_app.models import ChatSession, ChatHistory
-
-
 @csrf_exempt
 def chatbot_api(request):
     if request.method == "POST":
@@ -135,11 +72,21 @@ def chatbot_api(request):
             return JsonResponse({"response": "⚠️ No message sent."}, status=400)
 
         session_id = request.session.get("chat_session_id")
+        print("session_idddd", session_id)
         if not session_id:
             session = ChatSession.objects.create()
             request.session["chat_session_id"] = session.id
+            request.session.set_expiry(3600)  # Session expires in 1 hour (3600 seconds)
+            session_id = session.id  # Update the local variable
+            print("session_idddd", session_id)
         else:
-            session = get_object_or_404(ChatSession, id=session_id)
+            try:
+                session = ChatSession.objects.get(id=session_id)
+            except ChatSession.DoesNotExist:
+                session = ChatSession.objects.create()
+                request.session["chat_session_id"] = session.id
+                request.session.set_expiry(3600)
+                session_id = session.id
 
         ChatHistory.objects.create(session=session, message=user_message, role="user")
 

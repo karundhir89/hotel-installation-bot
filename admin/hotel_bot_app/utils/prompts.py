@@ -31,7 +31,7 @@ def fetch_data_from_sql(query):
 
 def format_gpt_prompt(user_message, prompt_data):
     return f"""
-You are an expert chatbot specializing in hotel furniture installation and your name is hero bot. 
+You are an expert chatbot specializing in hotel furniture installation and your name is PksBot bot. 
 
 Your job is to analyze the user query and generate a valid SQL query if there is need to do otherwise answer as specialize chatbot for hi hello and general queries that not just retrieve the raw information from database but can be human understandable like if searching for prodcuts then return the name instead of their id or other kind of indetifiers and so the same in other queries that can be run on the following database schema. 
 
@@ -129,7 +129,7 @@ def generate_final_response(user_message, rows):
 
     prompt = f"""
     You are an HTML-generating assistant.
-    your name is hero bot.
+    your name is PksBot bot.
 
     ⚠️ You must return only **valid raw HTML**. Never use Markdown, backticks, code blocks, or any formatting language. Only pure HTML tags.
 
@@ -221,7 +221,7 @@ def verify_sql_query(user_message, sql_query, prompt_data, error_message=None, g
 
     prompt = f"""
 You are a SQL validation and debugging expert for hotel furniture installation systems.
-your name is hero bot.
+your name is PksBot bot.
 
 Your job is to:
 - Review the user message, SQL query, schema, and any error message.

@@ -89,18 +89,6 @@ DATABASES = {
         'PORT': env('database_port')
     }
 }
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': 'hotel_bot',
-#         'USER': 'psql',
-#         'PASSWORD': 'one2three',
-#         'HOST': 'localhost',
-#         'PORT': '5432',
-#     }
-# }
-
-
 
 # Password validation
 # https://docs.djangoproject.com/en/3.2/ref/settings/#auth-password-validators
