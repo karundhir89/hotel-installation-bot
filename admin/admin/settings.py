@@ -79,26 +79,26 @@ WSGI_APPLICATION = 'admin.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/3.2/ref/settings/#databases
 
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': env('database_name'),
-#         'USER': env('database_user'),
-#         'PASSWORD': env('database_password'),
-#         'HOST': env('database_host'),
-#         'PORT': env('database_port')
-#     }
-# }
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'hotel_bot',
-        'USER': 'psql',
-        'PASSWORD': 'one2three',
-        'HOST': 'localhost',
-        'PORT': '5432',
+        'NAME': env('database_name'),
+        'USER': env('database_user'),
+        'PASSWORD': env('database_password'),
+        'HOST': env('database_host'),
+        'PORT': env('database_port')
     }
 }
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': 'hotel_bot',
+#         'USER': 'psql',
+#         'PASSWORD': 'one2three',
+#         'HOST': 'localhost',
+#         'PORT': '5432',
+#     }
+# }
 
 
 
