@@ -41,14 +41,28 @@ th.sorting, th.sorting_asc, th.sorting_desc {
     border-radius: 5px;
 }
 .modal-content {
-    width: 60%;
-    max-height: 80vh;
+    width: 42%;
+    height: 74vh;
     overflow: auto;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
 }
 .form-group {
     padding: 10px;
     position: relative;
     margin: 20px 0 0;
+}
+.main-panel{
+    position: fixed;
+    right: 0;
+}
+@media (max-width: 768px) {
+    .main-panel{
+    position: absolute;
+    right: 0;
+    }
 }
 </style>
 

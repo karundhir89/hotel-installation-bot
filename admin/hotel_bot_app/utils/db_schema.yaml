@@ -70,7 +70,7 @@ tables:
         description: Client identifier (links to `product_data.client_id`).
       - name: qty_ordered
         type: integer
-        description: Total quantity ordered for this client.
+        description: Total quantity ordered for this client and do not need to sum up as its alrady total.
       - name: qty_received
         type: integer
         description: Quantity received so far.
@@ -104,9 +104,6 @@ tables:
       - name: description
         type: text
         description: Product name (human-readable).
-      - name: qty_ordered
-        type: integer
-        description: Quantity ordered by client.
       - name: price
         type: real
         description: Price per unit.
@@ -235,6 +232,7 @@ tables:
     description: >
       Detailed installation and project timeline schedule for each floor or phase.
       Used to coordinate shipping, clearing, pre-work, installation, and post-work.
+      if asked for when an floor is going to get complete or work will get done you can consider floor_completed date as completed date
     columns:
       - name: id
         type: integer
@@ -289,7 +287,7 @@ tables:
         description: Post-installation work ends.
       - name: floor_completed
         type: timestamp with time zone
-        description: Floor officially marked complete.
+        description: Floor officially marked complete and its also treated as completed date the final date 
       - name: floor_closes
         type: timestamp with time zone
         description: Date the floor is closed for access.

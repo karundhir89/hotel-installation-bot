@@ -117,6 +117,7 @@ class ProductData(models.Model):
 class Prompt(models.Model):
     id = models.AutoField(primary_key=True)
     prompt_number = models.IntegerField(unique=True)
+    prompt_name = models.CharField(max_length=255)
     description = models.TextField()
 
     def __str__(self):
@@ -191,20 +192,20 @@ class PullInventory(models.Model):
     class Meta:
         db_table = "pull_inventory"
 
-class InstallDetail(models.Model):
-    install_id = models.AutoField(primary_key=True)
-    product_id=models.ForeignKey(ProductData, on_delete=models.SET_NULL, null=True, blank=True,db_column='product_id')
-    room_model_id=models.ForeignKey(RoomModel, on_delete=models.SET_NULL, null=True, blank=True,db_column='room_model_id')
-    room_id = models.ForeignKey(RoomData, on_delete=models.SET_NULL, null=True, blank=True,db_column='room_id')
-    product_name = models.CharField(max_length=255)
-    installed_by = models.ForeignKey(InvitedUser, on_delete=models.SET_NULL, null=True, blank=True,db_column='installed_by')
-    installed_on = models.DateField()
-    status=models.TextField(default='NO')
+# class InstallDetail(models.Model):
+#     install_id = models.AutoField(primary_key=True)
+#     product_id=models.ForeignKey(ProductData, on_delete=models.SET_NULL, null=True, blank=True,db_column='product_id')
+#     room_model_id=models.ForeignKey(RoomModel, on_delete=models.SET_NULL, null=True, blank=True,db_column='room_model_id')
+#     room_id = models.ForeignKey(RoomData, on_delete=models.SET_NULL, null=True, blank=True,db_column='room_id')
+#     product_name = models.CharField(max_length=255)
+#     installed_by = models.ForeignKey(InvitedUser, on_delete=models.SET_NULL, null=True, blank=True,db_column='installed_by')
+#     installed_on = models.DateField()
+#     status=models.TextField(default='NO')
 
-    def __str__(self):
-        return f"Install {self.install_id} - {self.product_name} in Room {self.room_id}"
-    class Meta:
-        db_table = "install_detail"
+#     def __str__(self):
+#         return f"Install {self.install_id} - {self.product_name} in Room {self.room_id}"
+#     class Meta:
+#         db_table = "install_detail"
 
 
 class ProductRoomModel(models.Model):
