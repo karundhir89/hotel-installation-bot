@@ -628,6 +628,7 @@ def get_room_type(request):
                 check_items.append({
                     "id": inst.install_id,
                     "label": f"{inst.product_name}",
+                    "type": "detail",
                 })
 
         else:
@@ -674,6 +675,7 @@ def get_room_type(request):
                 check_items.append({
                     "id": inst.install_id,
                     "label": f"{inst.product_name}",
+                    "type": "detail",
                 })
 
         # Process static Installation step items (IDs 0, 1, 12, 13)
@@ -684,28 +686,32 @@ def get_room_type(request):
                     "label": "Pre-Work completed.",
                     "checked_by": installation_data.prework_checked_by.name if installation_data.prework_checked_by else None,
                     "check_on": localtime(installation_data.prework_check_on).isoformat() if installation_data.prework_check_on else None,
-                    "status": installation_data.prework
+                    "status": installation_data.prework,
+                    "type": "installation"
                 },
                 {
                     "id": 1,
                     "label": "The product arrived at the floor.",
                     "checked_by": installation_data.product_arrived_at_floor_checked_by.name if installation_data.product_arrived_at_floor_checked_by else None,
                     "check_on": localtime(installation_data.product_arrived_at_floor_check_on).isoformat() if installation_data.product_arrived_at_floor_check_on else None,
-                    "status": installation_data.product_arrived_at_floor
+                    "status": installation_data.product_arrived_at_floor,
+                    "type": "installation"
                 },
                 {
                     "id": 12,
                     "label": "Retouching.",
                     "checked_by": installation_data.retouching_checked_by.name if installation_data.retouching_checked_by else None,
                     "check_on": localtime(installation_data.retouching_check_on).isoformat() if installation_data.retouching_check_on else None,
-                    "status": installation_data.retouching
+                    "status": installation_data.retouching,
+                    "type": "installation"
                 },
                 {
                     "id": 13,
                     "label": "Post Work.",
                     "checked_by": installation_data.post_work_checked_by.name if installation_data.post_work_checked_by else None,
                     "check_on": localtime(installation_data.post_work_check_on).isoformat() if installation_data.post_work_check_on else None,
-                    "status": installation_data.post_work
+                    "status": installation_data.post_work,
+                    "type": "installation"
                 },
             ])
 
@@ -755,11 +761,6 @@ def inventory_shipment(request):
             tracking_info = request.POST.get("tracking_info")
             shipment_date_text = request.POST.get('shipment_date_text')
 
-            try:
-                checked_on = datetime.strptime(shipment_date_text, '%B %d, %Y')  # e.g., "April 6, 2025"
-            except ValueError:
-                checked_on = None  # or handle error if necessary
-
             # Save the shipping entry
             Shipping.objects.create(
                 client_id=client_item,
@@ -769,7 +770,7 @@ def inventory_shipment(request):
                 supplier=supplier,
                 bol=tracking_info,
                 checked_by=user,
-                checked_on = checked_on
+                checked_on = shipment_date_text
             )
 
             # Update Inventory
@@ -1150,24 +1151,32 @@ def installation_form(request):
     if not request.session.get("user_id"):
         messages.warning(request, "You must be logged in to access the form.")
         return redirect("user_login")
-    
-    invited_user = request.session.get('user_id')
+
+    invited_user = request.session.get("user_id")
     invited_user_instance = get_object_or_404(InvitedUser, id=invited_user)
 
     if request.method == "POST":
         room_number = request.POST.get("room_number")
-        print(request.POST)
 
-        installation, _ = Installation.objects.get_or_create(room=room_number)
+        room_instance = get_object_or_404(RoomData, room=room_number)
+        installation, _ = Installation.objects.get_or_create(room=room_instance.room)
 
         for key in request.POST:
             if key.startswith("step_"):
-                step_id = int(key.split("_")[1])
-                is_checked = request.POST.get(key) == "on"
-                date = request.POST.get(f"date_{step_id}")
-                checked_by = request.POST.get(f"checked_by_{step_id}")
+                parts = key.split("_")  # ['step', 'type', 'id']
+                if len(parts) != 3:
+                    continue
+                _, step_type, step_id_str = parts
 
-                if step_id in [0, 1, 12, 13]:
+                try:
+                    step_id = int(step_id_str)
+                except ValueError:
+                    continue
+
+                is_checked = request.POST.get(key) == "on"
+                date = request.POST.get(f"date_{step_type}_{step_id}") or now().date()
+
+                if step_type == "installation":
                     if step_id == 0:
                         installation.prework = "YES" if is_checked else "NO"
                         installation.prework_check_on = now().date() if is_checked else None
@@ -1184,22 +1193,33 @@ def installation_form(request):
                         installation.post_work = "YES" if is_checked else "NO"
                         installation.post_work_check_on = now().date() if is_checked else None
                         installation.post_work_checked_by = invited_user_instance if is_checked else None
-                else:
+
+                elif step_type == "detail":
                     try:
+                        product_room_model = ProductRoomModel.objects.get(id=step_id)
+
                         install_detail, _ = InstallDetail.objects.get_or_create(
-                            install_id=step_id
+                            install_id=step_id,
+                            defaults={
+                                "product_id": product_room_model.product_id,
+                                "room_model_id": product_room_model.room_model_id,
+                                "room_id": room_instance.id,
+                            }
                         )
+
                         if is_checked:
                             install_detail.status = "YES"
-                            install_detail.installed_on = date or now().date()
+                            install_detail.installed_on = date
                             install_detail.installed_by = invited_user_instance
                         else:
                             install_detail.status = "NO"
                             install_detail.installed_on = None
                             install_detail.installed_by = None
+
                         install_detail.save()
                     except ProductRoomModel.DoesNotExist:
-                        pass  # silently skip if invalid ID
+                        pass
+
 
         installation.save()
         messages.success(request, "Installation data saved successfully!")
