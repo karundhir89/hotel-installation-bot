@@ -27,6 +27,7 @@ from openai import OpenAI
 
 from .models import *
 from .models import ChatSession
+from django.utils.timezone import localtime
 
 env = environ.Env()
 environ.Env.read_env()
@@ -629,10 +630,9 @@ def delete_products_data(request):
             return JsonResponse({"error": "Room Model not found."})
     return JsonResponse({"error": "Invalid request."})
 
-
+@session_login_required
 def get_room_type(request):
     room_number = request.GET.get("room_number")
-    installed_by = request.GET.get("installed_by", "unknown_user")
     installed_on = date.today()
 
     try:
@@ -641,80 +641,135 @@ def get_room_type(request):
         room_model = RoomModel.objects.get(room_model=room_type)
         room_model_id = room_model.id
 
-        print("............", room_model_id)
         product_room_models = ProductRoomModel.objects.filter(
             room_model_id=room_model_id
         )
 
+        # Get Installation model for the room
+        installation_data = Installation.objects.filter(room=room_number).first()
+
+        saved_items = []
+        check_items = []
+
         # Check if InstallDetail already exists
-        existing_installs = InstallDetail.objects.filter(room_id=room_data)
+        existing_installs = InstallDetail.objects.filter(
+            room_id=room_data
+        ).select_related("product_id", "room_id", "room_model_id", "installed_by")
 
         if existing_installs.exists():
-            saved_items = [
-                {
+            for inst in existing_installs:
+                try:
+                    prm = ProductRoomModel.objects.get(product_id=inst.product_id, room_model_id=inst.room_model_id)
+                    prm_id = prm.id
+                except ProductRoomModel.DoesNotExist:
+                    prm_id = None
+
+                saved_items.append({
                     "install_id": inst.install_id,
                     "product_id": inst.product_id.id if inst.product_id else None,
                     "product_name": inst.product_name,
                     "room_id": inst.room_id.id if inst.room_id else None,
-                    "room_model_id": (
-                        inst.room_model_id.id if inst.room_model_id else None
-                    ),
-                    "installed_by": (
-                        inst.installed_by.name if inst.installed_by else None
-                    ),
-                    "installed_on": str(inst.installed_on),
+                    "room_model_id": inst.room_model_id.id if inst.room_model_id else None,
+                    "product_room_model_id": prm_id,
+                    "installed_by": inst.installed_by.name if inst.installed_by else None,
+                    "installed_on": inst.installed_on.isoformat() if inst.installed_on else None,
                     "status": inst.status,
-                }
-                for inst in existing_installs
-            ]
+                })
+
+                # Add to check_items with install_id as ID
+                check_items.append({
+                    "id": inst.install_id,
+                    "label": f"{inst.product_name}",
+                })
+
         else:
-            # Create new InstallDetails from ProductRoomModel
-            saved_items = []
+            # Only create InstallDetails if none exist yet
+            install_details_to_create = []
             for prm in product_room_models:
-                install = InstallDetail.objects.create(
+                install = InstallDetail(
+                    installation=installation_data,
                     product_id=prm.product_id,
                     room_id=room_data,
                     room_model_id=room_model,
                     product_name=prm.product_id.description,
                     installed_on=installed_on,
                 )
+                install_details_to_create.append(install)
 
-                saved_items.append(
-                    {
-                        "install_id": install.install_id,
-                        "product_id": (
-                            install.product_id.id if install.product_id else None
-                        ),
-                        "product_name": install.product_name,
-                        "room_id": install.room_id.id if install.room_id else None,
-                        "room_model_id": (
-                            install.room_model_id.id if install.room_model_id else None
-                        ),
-                        "installed_by": (
-                            install.installed_by.name if install.installed_by else None
-                        ),
-                        "installed_on": str(install.installed_on),
-                        "status": install.status,
-                    }
-                )
+            # Bulk create for efficiency
+            InstallDetail.objects.bulk_create(install_details_to_create)
 
-        # Default check items
-        check_items = [
-            {"id": 0, "label": "Pre-Work completed."},
-            {"id": 1, "label": "The product arrived at the floor."},
-            {"id": 12, "label": "Retouching."},
-            {"id": 13, "label": "Post Work."},
-        ]
+            # Re-fetch created records with IDs
+            created_installs = InstallDetail.objects.filter(
+                installation=installation_data, room_id=room_data
+            ).select_related("product_id")
 
-        # Add dynamic check items from ProductRoomModel
-        for prm in product_room_models:
-            if prm.product_id and prm.product_id.description:
-                check_items.append(
-                    {
-                        "id": prm.id,
-                        "label": f"{prm.product_id.description} (Qty: {prm.quantity})",
-                    }
-                )
+            for inst in created_installs:
+                try:
+                    prm = ProductRoomModel.objects.get(product_id=inst.product_id, room_model_id=inst.room_model_id)
+                    prm_id = prm.id
+                except ProductRoomModel.DoesNotExist:
+                    prm_id = None
+
+                saved_items.append({
+                    "install_id": inst.install_id,
+                    "product_id": inst.product_id.id if inst.product_id else None,
+                    "product_name": inst.product_name,
+                    "room_id": inst.room_id.id if inst.room_id else None,
+                    "room_model_id": inst.room_model_id.id if inst.room_model_id else None,
+                    "product_room_model_id": prm_id,
+                    "installed_by": inst.installed_by.name if inst.installed_by else None,
+                    "installed_on": inst.installed_on.isoformat() if inst.installed_on else None,
+                    "status": inst.status,
+                })
+
+                check_items.append({
+                    "id": inst.install_id,
+                    "label": f"{inst.product_name}",
+                })
+
+        # Process static Installation step items (IDs 0, 1, 12, 13)
+        if installation_data:
+            check_items.extend([
+                {
+                    "id": 0,
+                    "label": "Pre-Work completed.",
+                    "checked_by": installation_data.prework_checked_by.name if installation_data.prework_checked_by else None,
+                    "check_on": localtime(installation_data.prework_check_on).isoformat() if installation_data.prework_check_on else None,
+                    "status": installation_data.prework
+                },
+                {
+                    "id": 1,
+                    "label": "The product arrived at the floor.",
+                    "checked_by": installation_data.product_arrived_at_floor_checked_by.name if installation_data.product_arrived_at_floor_checked_by else None,
+                    "check_on": localtime(installation_data.product_arrived_at_floor_check_on).isoformat() if installation_data.product_arrived_at_floor_check_on else None,
+                    "status": installation_data.product_arrived_at_floor
+                },
+                {
+                    "id": 12,
+                    "label": "Retouching.",
+                    "checked_by": installation_data.retouching_checked_by.name if installation_data.retouching_checked_by else None,
+                    "check_on": localtime(installation_data.retouching_check_on).isoformat() if installation_data.retouching_check_on else None,
+                    "status": installation_data.retouching
+                },
+                {
+                    "id": 13,
+                    "label": "Post Work.",
+                    "checked_by": installation_data.post_work_checked_by.name if installation_data.post_work_checked_by else None,
+                    "check_on": localtime(installation_data.post_work_check_on).isoformat() if installation_data.post_work_check_on else None,
+                    "status": installation_data.post_work
+                },
+            ])
+
+        # Sort check_items by placing 0 and 1 at the beginning, and 12 and 13 at the end, while sorting the rest by ID
+        check_items = sorted(
+            check_items,
+            key=lambda x: (
+                x["id"] not in [0, 1],  # Ensure IDs 0 and 1 are first
+                x["id"] in [12, 13],  # Ensure IDs 12 and 13 are last
+                x["id"]  # Sort the rest of the IDs normally
+            )
+        )
 
         return JsonResponse(
             {
@@ -729,16 +784,6 @@ def get_room_type(request):
         return JsonResponse({"success": False, "message": "Room not found"})
     except RoomModel.DoesNotExist:
         return JsonResponse({"success": False, "message": "Room model not found"})
-
-
-@session_login_required
-def installation_form(request):
-    if not request.session.get("user_id"):
-        messages.warning(request, "You must be logged in to access the form.")
-        return redirect("user_login")
-
-    return render(request, "installation_form.html")
-
 
 def inventory_shipment(request):
     return render(request, "inventory_shipment.html")
@@ -1081,7 +1126,7 @@ def dashboard(request):
     except InvitedUser.DoesNotExist:
         return redirect("user_login")
 
-
+@session_login_required
 def installation_control_form(request):
     if request.method == "POST":
         try:
@@ -1123,11 +1168,7 @@ def installation_control_form(request):
         },
     )
 
-
-from django.contrib import messages
-from django.shortcuts import redirect, render
-
-
+@session_login_required
 def inventory_pull_form(request):
     if request.method == "POST":
         try:
@@ -1174,3 +1215,67 @@ def inventory_pull_form(request):
             "check_items": [],  # Replace or update as needed
         },
     )
+
+@session_login_required
+def installation_form(request):
+    if not request.session.get("user_id"):
+        messages.warning(request, "You must be logged in to access the form.")
+        return redirect("user_login")
+    
+    invited_user = request.session.get('user_id')
+    invited_user_instance = get_object_or_404(InvitedUser, id=invited_user)
+
+    if request.method == "POST":
+        room_number = request.POST.get("room_number")
+        print(request.POST)
+
+        installation, _ = Installation.objects.get_or_create(room=room_number)
+
+        for key in request.POST:
+            if key.startswith("step_"):
+                step_id = int(key.split("_")[1])
+                is_checked = request.POST.get(key) == "on"
+                date = request.POST.get(f"date_{step_id}")
+                checked_by = request.POST.get(f"checked_by_{step_id}")
+
+                if step_id in [0, 1, 12, 13]:
+                    if step_id == 0:
+                        installation.prework = "YES" if is_checked else "NO"
+                        installation.prework_check_on = now().date() if is_checked else None
+                        installation.prework_checked_by = invited_user_instance if is_checked else None
+                    elif step_id == 1:
+                        installation.product_arrived_at_floor = "YES" if is_checked else "NO"
+                        installation.product_arrived_at_floor_check_on = now().date() if is_checked else None
+                        installation.product_arrived_at_floor_checked_by = invited_user_instance if is_checked else None
+                    elif step_id == 12:
+                        installation.retouching = "YES" if is_checked else "NO"
+                        installation.retouching_check_on = now().date() if is_checked else None
+                        installation.retouching_checked_by = invited_user_instance if is_checked else None
+                    elif step_id == 13:
+                        installation.post_work = "YES" if is_checked else "NO"
+                        installation.post_work_check_on = now().date() if is_checked else None
+                        installation.post_work_checked_by = invited_user_instance if is_checked else None
+                else:
+                    try:
+                        install_detail, _ = InstallDetail.objects.get_or_create(
+                            install_id=step_id
+                        )
+                        if is_checked:
+                            install_detail.status = "YES"
+                            install_detail.installed_on = date or now().date()
+                            install_detail.installed_by = invited_user_instance
+                        else:
+                            install_detail.status = "NO"
+                            install_detail.installed_on = None
+                            install_detail.installed_by = None
+                        install_detail.save()
+                    except ProductRoomModel.DoesNotExist:
+                        pass  # silently skip if invalid ID
+
+        installation.save()
+        messages.success(request, "Installation data saved successfully!")
+        return redirect("installation_form")
+
+    return render(request, "installation_form.html", {
+        "invited_user": invited_user_instance,
+    })

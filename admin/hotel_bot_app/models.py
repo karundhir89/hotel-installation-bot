@@ -1,19 +1,51 @@
 from django.db import models
-
-from django.db import models
 from django.contrib.postgres.fields import ArrayField
+
+class InvitedUser(models.Model):
+    id = models.AutoField(primary_key=True)
+    name = models.CharField(max_length=255)
+    role = ArrayField(models.CharField(max_length=100), blank=True, default=list)
+    last_login = models.DateTimeField(null=True, blank=True)  # Allow null values
+    email = models.EmailField(unique=True)
+    status = models.CharField(max_length=50, default='invited', null=False, blank=True)  # ✅ Add default
+    password = models.BinaryField()
+
+
+    def __str__(self):
+        return self.name
+    
+    class Meta:
+        db_table = "invited_users"
 
 class Installation(models.Model):
     id = models.AutoField(primary_key=True)  # Serial (Auto-increment)
     room = models.IntegerField(null=True, blank=True)
     product_available = models.TextField(null=True, blank=True)
     prework = models.TextField(null=True, blank=True)
+    prework_checked_by = models.ForeignKey(
+        InvitedUser, null=True, blank=True, on_delete=models.SET_NULL, related_name='prework_checked_by'
+    )
+    prework_check_on = models.DateTimeField(null=True, blank=True)
+
     install = models.TextField(null=True, blank=True)
     post_work = models.TextField(null=True, blank=True)
+    post_work_checked_by = models.ForeignKey(
+        InvitedUser, null=True, blank=True, on_delete=models.SET_NULL, related_name='post_work_checked_by'
+    )
+    post_work_check_on = models.DateTimeField(null=True, blank=True)
     day_install_began = models.DateTimeField(null=True, blank=True)
     day_instal_complete = models.DateTimeField(null=True, blank=True)
     product_arrived_at_floor= models.TextField(null=True, blank=True)
+    product_arrived_at_floor_checked_by = models.ForeignKey(
+        InvitedUser, null=True, blank=True, on_delete=models.SET_NULL, related_name='product_arrived_checked_by'
+    )
+    product_arrived_at_floor_check_on = models.DateTimeField(null=True, blank=True)
+
     retouching= models.TextField(null=True, blank=True)
+    retouching_checked_by = models.ForeignKey(
+        InvitedUser, null=True, blank=True, on_delete=models.SET_NULL, related_name='retouching_checked_by'
+    )
+    retouching_check_on = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = 'install'  # Ensure this matches the actual table name in PostgreSQL
@@ -140,23 +172,6 @@ class ChatHistory(models.Model):
     def __str__(self):
         return f"Message {self.id} in Session {self.session.id}"
 
-class InvitedUser(models.Model):
-    id = models.AutoField(primary_key=True)
-    name = models.CharField(max_length=255)
-    role = ArrayField(models.CharField(max_length=100), blank=True, default=list)
-    last_login = models.DateTimeField(null=True, blank=True)  # Allow null values
-    email = models.EmailField(unique=True)
-    status = models.CharField(max_length=50, default='invited', null=False, blank=True)  # ✅ Add default
-    password = models.BinaryField()
-
-
-    def __str__(self):
-        return self.name
-    
-    class Meta:
-        db_table = "invited_users"
-
-
 class Shipping(models.Model):
     client_id = models.CharField(max_length=255)
     item = models.CharField(max_length=255)
@@ -194,12 +209,13 @@ class PullInventory(models.Model):
 
 class InstallDetail(models.Model):
     install_id = models.AutoField(primary_key=True)
+    installation = models.ForeignKey(Installation, on_delete=models.CASCADE, null=True, blank=True, related_name='install_details')
     product_id=models.ForeignKey(ProductData, on_delete=models.SET_NULL, null=True, blank=True,db_column='product_id')
     room_model_id=models.ForeignKey(RoomModel, on_delete=models.SET_NULL, null=True, blank=True,db_column='room_model_id')
     room_id = models.ForeignKey(RoomData, on_delete=models.SET_NULL, null=True, blank=True,db_column='room_id')
     product_name = models.CharField(max_length=255)
     installed_by = models.ForeignKey(InvitedUser, on_delete=models.SET_NULL, null=True, blank=True,db_column='installed_by')
-    installed_on = models.DateField()
+    installed_on = models.DateTimeField(default=None,null=True, blank=True)
     status=models.TextField(default='NO')
 
     def __str__(self):
