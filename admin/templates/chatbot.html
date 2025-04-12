@@ -179,6 +179,45 @@
         min-width: auto;
     }
 }
+.typing-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 10px 14px;
+    margin: 6px 0;
+    border-radius: 8px;
+    max-width: 80%;
+    background: #eee;
+    color: black;
+    align-self: flex-start;
+    animation: fadeIn 0.3s forwards;
+}
+
+.typing-indicator span {
+    width: 8px;
+    height: 8px;
+    background-color: #333;
+    border-radius: 50%;
+    display: inline-block;
+    animation: blink 1.4s infinite both;
+}
+
+.typing-indicator span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.typing-indicator span:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes blink {
+    0%, 80%, 100% {
+        opacity: 0;
+    }
+    40% {
+        opacity: 1;
+    }
+}
 
 
 </style>
@@ -267,21 +306,28 @@
         .catch(error => console.error("Error fetching chat history:", error));
     }
 
-    function appendMessage(text, className, isTemp = false) {
-        let chatBox = document.getElementById("chat-box");
-        let messageDiv = document.createElement("div");
+    function appendMessage(text, className, isTemp = false, isTyping = false) {
+    let chatBox = document.getElementById("chat-box");
+    let messageDiv = document.createElement("div");
+
+    if (isTyping) {
+        messageDiv.classList.add("typing-indicator", "bot-message");
+        messageDiv.id = "temp-msg";
+        messageDiv.innerHTML = `<span></span><span></span><span></span>`;
+    } else {
         messageDiv.classList.add("message", className);
         if (isTemp) messageDiv.id = "temp-msg";
-
         if (className === "bot-message") {
             messageDiv.innerHTML = text;
         } else {
             messageDiv.textContent = text;
         }
-
-        chatBox.appendChild(messageDiv);
-        chatBox.scrollTop = chatBox.scrollHeight;
     }
+
+    chatBox.appendChild(messageDiv);
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+
 
     function getCookie(name) {
         let cookieValue = null;
@@ -308,7 +354,9 @@
     appendMessage(userInput, "user-message");
     userInputField.value = "";
 
-    appendMessage("PksBot is typing...", "bot-message", true);
+    // appendMessage("PksBot is typing...", "bot-message", true);
+    appendMessage("", "bot-message", false, true);  // animated typing
+
 
     fetch("/api/chatbot/", {
         method: "POST",

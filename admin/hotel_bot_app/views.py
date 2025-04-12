@@ -17,7 +17,7 @@ from django.template.loader import render_to_string
 from django.utils.html import strip_tags
 from django.utils.timezone import now
 from django.views.decorators.csrf import csrf_exempt
-from hotel_bot_app.utils.prompts import (fetch_data_from_sql,
+from hotel_bot_app.utils.helper import (fetch_data_from_sql,
                                          format_gpt_prompt,
                                          generate_final_response,
                                          gpt_call_json_func,
@@ -61,14 +61,14 @@ def extract_values(json_obj, keys):
         table_selected += f"Table name is '{key}' and column name is {value}\n\n"
     print("table selected ,,,,,,", table_selected)
     return table_selected
-
+from  .utils.update_db_schema import load_and_enrich_yaml_with_examples
 
 @csrf_exempt
 def chatbot_api(request):
     if request.method == "POST":
         data = json.loads(request.body)
         user_message = data.get("message", "").strip()
-
+        load_and_enrich_yaml_with_examples()
         if not user_message:
             return JsonResponse({"response": "⚠️ No message sent."}, status=400)
 
@@ -95,22 +95,31 @@ def chatbot_api(request):
             DB_SCHEMA = load_database_schema()
 
             # Prompt GPT to generate SQL
-            prompt_first = format_gpt_prompt(user_message, DB_SCHEMA)
+            # prompt_first = format_gpt_prompt(user_message, DB_SCHEMA)
+            # prompt_response = gpt_call_json_func(
+            #     [{"role": "user", "content": prompt_first}],
+            #     gpt_model="gpt-4o",
+            #     json_required=False,
+            # )
+            messages = format_gpt_prompt(user_message, DB_SCHEMA)
             prompt_response = gpt_call_json_func(
-                [{"role": "user", "content": prompt_first}],
+                messages,
                 gpt_model="gpt-4o",
-                json_required=True,
+                json_required=False,
             )
-            print("First GPT response:", prompt_response)
+
+            print("First GPT response:", prompt_response)   
 
             sql_query = prompt_response.get("query")
             rows = None
             bot_message = None
 
             if sql_query:
+                print("Query", sql_query)
                 try:
                     # Try executing the query directly
                     rows = fetch_data_from_sql(sql_query)
+                    print("Rows", rows)
 
                 except Exception as db_error:
                     print("DB execution error:", db_error)
