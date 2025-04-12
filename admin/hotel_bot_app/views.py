@@ -2,7 +2,7 @@ import ast
 import json
 import random
 import string
-from datetime import date
+from datetime import date, datetime
 from functools import wraps
 
 import bcrypt
@@ -785,24 +785,8 @@ def get_room_type(request):
     except RoomModel.DoesNotExist:
         return JsonResponse({"success": False, "message": "Room model not found"})
 
+@session_login_required
 def inventory_shipment(request):
-    return render(request, "inventory_shipment.html")
-
-
-def get_product_item_num(request):
-    clientId = request.GET.get("room_number")
-    try:
-        print("Seminole", clientId, "hiii")
-        client_data_fetched = ProductData.objects.get(client_id=clientId)
-        print(client_data_fetched)
-        get_item = client_data_fetched.item if client_data_fetched.item else ""
-        print("Seminole grand", get_item)
-        return JsonResponse({"success": True, "room_type": get_item})
-    except RoomData.DoesNotExist:
-        return JsonResponse({"success": False})
-
-
-def inventory_received(request):
     user_id = request.session.get("user_id")
     user_name = ""
 
@@ -813,9 +797,107 @@ def inventory_received(request):
         except InvitedUser.DoesNotExist:
             pass
 
+    if request.method == "POST":
+        try:
+            client_item = request.POST.get("client_item")
+            product_item = request.POST.get("product_item")
+            ship_date = request.POST.get("ship_date")
+            qty_shipped = int(request.POST.get("qty_shipped") or 0)
+            supplier = request.POST.get("supplier")
+            tracking_info = request.POST.get("tracking_info")
+            shipment_date_text = request.POST.get('shipment_date_text')
+
+            try:
+                checked_on = datetime.strptime(shipment_date_text, '%B %d, %Y')  # e.g., "April 6, 2025"
+            except ValueError:
+                checked_on = None  # or handle error if necessary
+
+            # Save the shipping entry
+            Shipping.objects.create(
+                client_id=client_item,
+                item=product_item,
+                ship_date=ship_date,
+                ship_qty=qty_shipped,
+                supplier=supplier,
+                bol=tracking_info,
+                checked_by=user,
+                checked_on = checked_on
+            )
+
+            # Update Inventory
+            inventory = Inventory.objects.filter(client_id=client_item, item=product_item).first()
+            if inventory:
+                inventory.qty_ordered = (inventory.qty_ordered or 0) + qty_shipped
+                inventory.save()
+
+            messages.success(request, "Shipment submitted and inventory updated!")
+            return redirect("inventory_shipment")
+
+        except Exception as e:
+            messages.error(request, f"Error submitting shipment: {str(e)}")
+
+    return render(request, "inventory_shipment.html", {"user_name": user_name})
+
+
+def get_product_item_num(request):
+    clientId = request.GET.get("room_number")
+    try:
+        client_data_fetched = ProductData.objects.get(client_id=clientId)
+        print(client_data_fetched)
+        get_item = client_data_fetched.item if client_data_fetched.item else ""
+        supplier = client_data_fetched.supplier if client_data_fetched.supplier else "N.A."
+        print("item = ", get_item)
+        return JsonResponse({"success": True, "room_type": get_item, "supplier": supplier})
+    except RoomData.DoesNotExist:
+        return JsonResponse({"success": False})
+
+
+@session_login_required
+def inventory_received(request):
+    user_id = request.session.get("user_id")
+    user_name = ""
+    user = None
+
+    if user_id:
+        try:
+            user = InvitedUser.objects.get(id=user_id)
+            user_name = user.name
+        except InvitedUser.DoesNotExist:
+            pass
+
+    if request.method == "POST":
+        try:
+            client_item = request.POST.get("client_item")
+            product_item = request.POST.get("product_item")
+            received_date = request.POST.get("received_date")
+            received_qty = int(request.POST.get("received_qty") or 0)
+            damaged_qty = int(request.POST.get("damaged_qty") or 0)
+
+            InventoryReceived.objects.create(
+                client_id=client_item,
+                item=product_item,
+                received_date=received_date,
+                received_qty=received_qty,
+                damaged_qty=damaged_qty,
+                checked_by=user
+            )
+
+            # Update Inventory
+            inventory = Inventory.objects.filter(client_id=client_item, item=product_item).first()
+            if inventory:
+                inventory.qty_received = (inventory.qty_received or 0) + (received_qty - damaged_qty)
+                inventory.quantity_available = (inventory.quantity_available or 0) + (received_qty - damaged_qty)
+                inventory.save()
+
+            messages.success(request, "Inventory received successfully!")
+            return redirect("inventory_received")
+
+        except Exception as e:
+            messages.error(request, f"Error saving received inventory: {str(e)}")
+
     return render(request, "inventory_received.html", {"user_name": user_name})
 
-
+@session_login_required
 def inventory_pull(request):
     user_id = request.session.get("user_id")
     user_name = ""
@@ -827,32 +909,78 @@ def inventory_pull(request):
         except InvitedUser.DoesNotExist:
             pass
 
-    return render(request, "inventory_pull.html", {"user_name": user_name})
+    if request.method == "POST":
+        try:
+            user_id = request.session.get("user_id")
+            print(request.POST)
+
+            client_id = request.POST.get("client_id")
+            item = request.POST.get("item_number")
+            available_qty = request.POST.get("qty_available_ready_to_pull")
+            pulled_date = request.POST.get("pull_date_text")
+            qty_pulled_for_install = request.POST.get("qty_pulled_for_install")
+            pulled_by = user
+            floor = request.POST.get("floor_where_going")
+            qty_available = request.POST.get("inventory_available_after_pull")
+
+            PullInventory.objects.create(
+                client_id=client_id,
+                item=item,
+                available_qty=available_qty,
+                pulled_date=pulled_date,
+                qty_pulled=qty_pulled_for_install,
+                pulled_by=pulled_by,
+                floor=floor,
+                qty_available_after_pull=qty_available
+            )
+
+            # Update Inventory
+            inventory = Inventory.objects.filter(client_id=client_id, item=item).first()
+            if inventory:
+                inventory.quantity_available = qty_available
+                inventory.quantity_installed = qty_pulled_for_install
+                inventory.save()
+
+            messages.success(request, "Inventory pull submitted successfully!")
+        except Exception as e:
+            print(f"Error submitting inventory pull: {str(e)}")
+            messages.error(request, f"Error submitting inventory pull: {str(e)}")
+
+        # 🔄 Prevent resubmission by redirecting after POST
+        return redirect("inventory_pull")
+
+    # For GET request
+    return render(
+        request,
+        "inventory_pull.html",
+        {
+            "user_name": user_name,  # Replace or update as needed
+        },
+    )
 
 
 def inventory_pull_item(request):
-    clientId = request.GET.get("room_number")
+    clientId = request.GET.get("client_id")
     try:
-        print("lllll", clientId, "hiii")
-        client_data_fetched = ProductData.objects.get(client_id=clientId)
-        print(client_data_fetched)
+        client_data_fetched = Inventory.objects.get(client_id=clientId)
         get_item = client_data_fetched.item if client_data_fetched.item else ""
-        print("grand", get_item)
-        return JsonResponse({"success": True, "room_type": get_item})
+        available_qty = client_data_fetched.quantity_available
+
+        product_ids = ProductData.objects.filter(client_id=clientId).values_list('id', flat=True)
+        room_model_ids = ProductRoomModel.objects.filter(product_id__in=product_ids).values_list('room_model_id', flat=True)
+        floors = list(RoomData.objects.filter(room_model_id__in=room_model_ids)
+              .values_list('floor', flat=True).distinct())
+        return JsonResponse({"success": True, "item_number": get_item, "available_qty":available_qty, "floors": floors})
     except RoomData.DoesNotExist:
         return JsonResponse({"success": False})
 
 
 def inventory_received_item_num(request):
-    clientId = request.GET.get("room_number")
+    clientId = request.GET.get("client_item")
     try:
-        print("lllll", clientId, "hiii")
-        user_id = request.session.get("user_id")
-        client_data_fetched = ProductData.objects.get(client_id=clientId)
-        print(client_data_fetched)
+        client_data_fetched = Inventory.objects.get(client_id=clientId)
         get_item = client_data_fetched.item if client_data_fetched.item else ""
-        print("grand", get_item)
-        return JsonResponse({"success": True, "room_type": get_item})
+        return JsonResponse({"success": True, "product_item": get_item})
     except RoomData.DoesNotExist:
         return JsonResponse({"success": False})
 
@@ -1125,96 +1253,6 @@ def dashboard(request):
         )
     except InvitedUser.DoesNotExist:
         return redirect("user_login")
-
-@session_login_required
-def installation_control_form(request):
-    if request.method == "POST":
-        try:
-            client_item = request.POST.get("client_item")
-            product_item = request.POST.get("product_item")
-            ship_date = request.POST.get("ship_date")
-            qty_shipped = request.POST.get("qty_shipped")
-            supplier = request.POST.get("supplier")
-            supplier_date = request.POST.get("supplier_date")
-            tracking_info = request.POST.get("tracking_info")
-            final_date = request.POST.get("final_date")
-            final_by = request.POST.get("final_by")
-            final_notes = request.POST.get("final_notes")
-
-            # Create a new Shipping entry
-            Shipping.objects.create(
-                client_id=client_item,
-                item=product_item,
-                ship_date=ship_date,
-                ship_qty=qty_shipped,
-                supplier=supplier,
-                supplier_date=supplier_date,
-                bol=tracking_info,
-                date=final_date,
-                by=final_by,
-                notes=final_notes,
-            )
-
-            messages.success(request, "Shipment submitted successfully!")
-        except Exception as e:
-            messages.error(request, f"Error submitting shipment: {str(e)}")
-
-    # Pass your check_items context if needed
-    return render(
-        request,
-        "inventory_shipment.html",
-        {
-            "check_items": [],  # Replace with actual data
-        },
-    )
-
-@session_login_required
-def inventory_pull_form(request):
-    if request.method == "POST":
-        try:
-            user_id = request.session.get("user_id")
-            print(request.POST)
-
-            client_id = request.POST.get("client_id")
-            item = request.POST.get("item_number")
-            available_qty = request.POST.get("qty_available_ready_to_pull")
-            is_pulled = request.POST.get("pull_checked") == "on"
-            pulled_date = request.POST.get("pull_date_text")
-            qty_pulled_for_install = request.POST.get("qty_pulled_for_install")
-            pulled_by = user_id
-            floor = request.POST.get("floor_where_going")
-            qty_pulled = request.POST.get("inventory_available_after_pull")
-            notes = request.POST.get("pull_notes")  # This line was incorrect before
-
-            PullInventory.objects.create(
-                client_id=client_id,
-                item=item,
-                available_qty=available_qty,
-                is_pulled=is_pulled,
-                pulled_date=pulled_date,
-                qty_pulled_for_install=qty_pulled_for_install,
-                pulled_by=pulled_by,
-                floor=floor,
-                qty_pulled=qty_pulled,
-                notes=notes,
-            )
-
-            messages.success(request, "Inventory pull submitted successfully!")
-        except Exception as e:
-            print(f"Error submitting inventory pull: {str(e)}")
-            messages.error(request, f"Error submitting inventory pull: {str(e)}")
-
-        # 🔄 Prevent resubmission by redirecting after POST
-        return redirect("inventory_pull_form")
-
-    # For GET request
-    return render(
-        request,
-        "inventory_pull.html",
-        {
-            "check_items": [],  # Replace or update as needed
-        },
-    )
 
 @session_login_required
 def installation_form(request):

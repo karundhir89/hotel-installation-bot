@@ -1,142 +1,127 @@
 {% extends "frontend_base.html" %}
 {% load static %}
 
-{% block title %}Installation Control Form{% endblock %}
+{% block title %}Receiving Form{% endblock %}
 
 {% block content %}
 <div class="container my-5">
-    <h3 class="mb-4 text-center text-secondary">Installation Control Form</h3>
+  <div class="card shadow-sm rounded-4 p-4">
+    <h3 class="mb-4 text-center text-secondary py-4">Receiving Form</h3>
 
     <form method="post">
-        {% csrf_token %}
-        <div class="form-row mb-3">
-            <div class="col-md-4">
-              <label>Client Item</label>
-              <input type="text" class="form-control" name="room_number" id="room_number" required>
-            </div>
-            <div class="col-md-4">
-              <label>Product Item Number</label>
-              <input type="text" class="form-control" name="room_type" id="room_type" readonly required>
-            </div>
+      {% csrf_token %}
+
+      <div class="row mb-3">
+        <div class="col-md-6">
+          <label class="form-label">Client Item</label>
+          <input type="text" class="form-control rounded-3" name="client_item" id="client_item" required>
         </div>
-
-        <hr>
-
-        <div class="form-group row align-items-center">
-            <div class="col-md-1 text-center">
-                <input class="form-check-input mt-2" type="checkbox" name="arrival_checked" id="arrival_checked">
-            </div>
-            <div class="col-md-3">
-                <label class="mb-0">1. ARRIVAL DATE</label>
-            </div>
-            <div class="col-md-3">
-                <label class="mb-0">Date:</label>
-                <input type="text" class="form-control" name="arrival_date_text" placeholder="e.g., April 6, 2025">
-            </div>
-            <div class="col-md-4">
-                <label class="mb-0">Checked By:</label>
-                <input type="text" class="form-control" name="arrival_checked_by" placeholder="Name">
-            </div>
+        <div class="col-md-6">
+          <label class="form-label">Product Item Number</label>
+          <input type="text" class="form-control rounded-3" name="product_item" id="product_item" readonly required>
         </div>
-        
-        <div class="form-group row mt-3">
-            <div class="col-md-4">
-                <label>QTY RECEIVED</label>
-                <input type="number" class="form-control" name="qty_received" min="0">
-            </div>
-            <div class="col-md-4">
-                <label>QTY DAMAGED (if any)</label>
-                <input type="number" class="form-control" name="qty_damaged" min="0">
-            </div>
+      </div>      
+
+      <div class="border rounded-3 p-3 mb-4 bg-light">
+        <div class="row mb-3 align-items-center">
+          <div class="col-md-1">
+            <input type="checkbox" name="arrival_checked" id="arrival_checked" required>
+          </div>
+          <div class="col-md-11">
+            <label class="fw-bold mb-0">1. ARRIVAL DATE</label>
+          </div>
         </div>
-        
-        <div class="form-group row mt-3">
-            <div class="col-md-12">
-                <label>Notes</label>
-                <textarea class="form-control" name="arrival_notes" rows="2" placeholder="Additional details..."></textarea>
-            </div>
+      
+        <div class="row mb-3">
+          <div class="col-md-6">
+            <label class="form-label">Date</label>
+            <input type="date" class="form-control rounded-3" name="received_date" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Checked By</label>
+            <input type="text" class="form-control rounded-3" name="checked_by" placeholder="Name" required>
+          </div>
         </div>
-        
-
-        
-
-
-        {% for i in check_items %}
-        <div class="form-group row align-items-center">
-            <div class="col-md-5">
-                <div class="form-check">
-                    <input class="form-check-input" type="checkbox" name="step_{{ i.id }}" id="step_{{ i.id }}">
-                    <label class="form-check-label" for="step_{{ i.id }}">
-                        {{ i.label }}
-                    </label>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <input type="date" class="form-control" name="date_{{ i.id }}">
-            </div>
-            <div class="col-md-4">
-                <input type="text" class="form-control" name="checked_by_{{ i.id }}" placeholder="Checked by">
-            </div>
+      
+        <div class="row mb-3">
+          <div class="col-md-6">
+            <label class="form-label">QTY RECEIVED</label>
+            <input type="number" class="form-control rounded-3" name="received_qty" min="0" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">QTY DAMAGED (if any)</label>
+            <input type="number" class="form-control rounded-3" name="damaged_qty" min="0">
+          </div>
         </div>
-        {% endfor %}
+      
+        <!-- <div class="mb-3">
+          <label class="form-label">Notes</label>
+          <textarea class="form-control rounded-3" name="arrival_notes" rows="2" placeholder="Additional details..."></textarea>
+        </div> -->
+      </div>        
 
-        <hr>
-
-
-
-        <div class="text-center mt-4">
-            <button type="submit" class="btn btn-secondary px-5">Submit</button>
-        </div>
+      <div class="text-center mt-4">
+        <button type="submit" class="btn btn-secondary px-5 rounded-3 shadow-sm">Submit</button>
+      </div>
     </form>
+  </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
   $(document).ready(function () {
-    const currentDate = new Date().toLocaleDateString('en-CA'); // Format: YYYY-MM-DD
+    const currentDate = new Date(); // Format: YYYY-MM-DD
     const userName = "{{ user_name }}";
+    const isoDate = currentDate.toISOString().split('T')[0]; // "YYYY-MM-DD"
 
     $('#arrival_checked').on('change', function () {
       if ($(this).is(':checked')) {
-        $('input[name="arrival_date_text"]').val(currentDate);
-        $('input[name="arrival_checked_by"]').val(userName);
+        $('input[name="received_date"]').val(isoDate);
+        $('input[name="checked_by"]').val(userName);
       } else {
-        $('input[name="arrival_date_text"]').val('');
-        $('input[name="arrival_checked_by"]').val('');
+        $('input[name="received_date"]').val('');
+        $('input[name="checked_by"]').val('');
       }
     });
 
-    $('#room_number').on('blur', function () {
+    $('#client_item').on('blur', function () {
       const roomNumber = $(this).val();
       if (!roomNumber) return;
 
       $.ajax({
         url: "{% url 'inventory_received_item_num' %}",
         type: "GET",
-        data: { room_number: roomNumber },
+        data: { client_item: roomNumber },
         success: function (data) {
           if (data.success) {
-            $('#room_type').val(data.room_type);
+            $('#product_item').val(data.product_item);
           } else {
             toastr.error("Room number does not exist");
-            $('#room_type').val('');
+            $('#product_item').val('');
           }
         },
         error: function () {
           toastr.error("Error fetching room type");
-          $('#room_type').val('');
+          $('#product_item').val('');
         }
       });
     });
 
-    {% if toast_message %}
+    // Toastr for Django messages
+    {% if messages %}
     toastr.options = {
       "closeButton": true,
       "progressBar": true,
       "timeOut": "4000"
     };
-    toastr.success("{{ toast_message }}");
+    {% for message in messages %}
+      {% if message.tags == "success" %}
+        toastr.success("{{ message|escapejs }}");
+      {% elif message.tags == "error" %}
+        toastr.error("{{ message|escapejs }}");
+      {% endif %}
+    {% endfor %}
     {% endif %}
   });
 </script>

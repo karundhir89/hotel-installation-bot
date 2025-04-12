@@ -140,6 +140,7 @@ class ProductData(models.Model):
     # qty_ordered = models.IntegerField(null=True, blank=True)
     price = models.FloatField(null=True, blank=True)
     client_selected = models.TextField(null=True, blank=True)
+    supplier = models.TextField(null=True, blank=True)
 
     class Meta:
         db_table = 'product_data'  # Ensures it maps to the correct table
@@ -178,29 +179,25 @@ class Shipping(models.Model):
     ship_date = models.DateField()
     ship_qty = models.PositiveIntegerField()
     supplier = models.CharField(max_length=255)
-    supplier_date = models.DateField(null=True, blank=True)
     bol = models.CharField("Bill of Lading", max_length=100, unique=True)
-    date = models.DateTimeField(auto_now_add=True)
-    by = models.CharField("Handled By", max_length=255)
-    notes = models.TextField(blank=True)
+    checked_by = models.ForeignKey(InvitedUser, on_delete=models.SET_NULL, null=True, blank=True,db_column='checked_by')
+    checked_on = models.DateTimeField(default=None,null=True, blank=True)
 
     def __str__(self):
         return f"Shipment {self.bol} - {self.item} to Client {self.client_id}"
     class Meta:
-        db_table = "Shipping"
+        db_table = "shipping"
 
 
 class PullInventory(models.Model):
     client_id =  models.CharField(max_length=255)
     item = models.CharField(max_length=255)
     available_qty = models.PositiveIntegerField(default=0)
-    is_pulled = models.BooleanField(default=False)
     pulled_date = models.DateField(null=True, blank=True)
-    qty_pulled_for_install = models.PositiveIntegerField(default=0)
-    pulled_by = models.CharField(max_length=255)
-    floor = models.CharField(max_length=100, blank=True)
     qty_pulled = models.PositiveIntegerField(default=0)
-    notes = models.TextField(blank=True)
+    pulled_by = models.ForeignKey(InvitedUser, on_delete=models.SET_NULL, null=True, blank=True,db_column='checked_by')
+    floor = models.CharField(max_length=100, blank=True)
+    qty_available_after_pull = models.PositiveIntegerField(default=0)
 
     def __str__(self):
         return f"Pull - {self.item} for Client {self.client_id}"
@@ -232,3 +229,17 @@ class ProductRoomModel(models.Model):
 
     class Meta:
         db_table = "product_room_model"
+
+class InventoryReceived(models.Model):
+    client_id = models.CharField(max_length=255)
+    item = models.CharField(max_length=255)
+    received_date = models.DateTimeField()
+    received_qty = models.PositiveIntegerField()
+    damaged_qty = models.PositiveIntegerField()
+    checked_by = models.ForeignKey(InvitedUser, on_delete=models.SET_NULL, null=True, blank=True)
+
+    def __str__(self):
+        return f"Received {self.received_qty} of {self.item} for {self.client_id}"
+
+    class Meta:
+        db_table = "inventory_received"
