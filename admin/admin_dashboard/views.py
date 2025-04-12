@@ -21,7 +21,7 @@ def my_view(request):
 				return HttpResponseRedirect("/user_management")
 	except Exception as e:
 		print("error in my_view :::::::::::",e)
-	return HttpResponseRedirect("/accounts/login")
+	return HttpResponseRedirect("/admin/login")
 
 @login_required
 def change_password(request):
@@ -68,7 +68,7 @@ def dashboard(request):
 def logout_view(request):
 	try:
 		logout(request)
-		return HttpResponseRedirect("/accounts/login")
+		return HttpResponseRedirect("/admin/login")
 	except Exception as e:
 		print("error in logout :::::::::::",e)
 
