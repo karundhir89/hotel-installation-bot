@@ -185,7 +185,7 @@
 <div class="content" id="modal-content">
     <div class="container mt-5">
         <div class="chat-container mx-auto">
-            <h2 style="text-align:center;">Chatbot</h2>
+            <h2 style="text-align:center;">PksBot</h2>
             <div class="chat-box" id="chat-box"></div>
             <div class="input-box">
                 <span class="bmd-form-group">
@@ -224,7 +224,7 @@
         userInputField.value = "";
 
         // Show temporary typing message
-        appendMessage("Hero Bot is typing...", "bot-message", true);
+        appendMessage("PksBot is typing...", "bot-message", true);
 
         fetch("/api/chatbot/", {
             method: "POST",
@@ -308,7 +308,7 @@
     appendMessage(userInput, "user-message");
     userInputField.value = "";
 
-    appendMessage("Hero Bot is typing...", "bot-message", true);
+    appendMessage("PksBot is typing...", "bot-message", true);
 
     fetch("/api/chatbot/", {
         method: "POST",

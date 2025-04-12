@@ -151,6 +151,7 @@ class ProductData(models.Model):
 class Prompt(models.Model):
     id = models.AutoField(primary_key=True)
     prompt_number = models.IntegerField(unique=True)
+    prompt_name = models.CharField(max_length=255)
     description = models.TextField()
 
     def __str__(self):

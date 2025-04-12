@@ -63,16 +63,25 @@ th.sorting, th.sorting_asc, th.sorting_desc {
     z-index: 1001;
     padding: 20px;
     border-radius: 5px;
+    border: 2ox solid green;
 }
 .modal-content {
-    width: 60%;
-    height: 80vh;
+    width: 42%;
+    height: 74vh;
     overflow: auto;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
 }
 .form-group {
     padding: 10px;
     position: relative;
     margin: 20px 0 0;
+}
+.main-panel{
+    position: fixed;
+    right: 0;
 }
 </style>
 
@@ -146,9 +155,9 @@ th.sorting, th.sorting_asc, th.sorting_desc {
                                                     data-to_be_renovated="{{ room.to_be_renovated }}">
                                                 Edit
                                             </button>
-                                            <button class="btn deleteRoomBtn" data-id="{{ room.id }}">
+                                            <!-- <button class="btn deleteRoomBtn" data-id="{{ room.id }}">
                                                 Delete
-                                            </button>                                            
+                                            </button>                                             -->
                                         </td>
                                         
                                     </tr>

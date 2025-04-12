@@ -63,69 +63,6 @@ def extract_values(json_obj, keys):
     return table_selected
 
 
-# @csrf_exempt
-# def chatbot_api(request):
-#     if request.method == "POST":
-#         data = json.loads(request.body)
-#         user_message = data.get("message", "")
-
-#         session_id = request.session.get("chat_session_id")
-#         if not session_id:
-#             session = ChatSession.objects.create()
-#             request.session["chat_session_id"] = session.id
-#         else:
-#             session = get_object_or_404(ChatSession, id=session_id)
-
-#         ChatHistory.objects.create(session=session, message=user_message, role="user")
-
-#         if not user_message.strip():
-#             return JsonResponse({"response": "⚠️ No message sent."}, status=400)
-
-#         try:
-#             # Generate first prompt to analyze user message
-#             DB_SCHEMA = load_database_schema()
-#             prompt_first = format_gpt_prompt(
-#                 user_message, DB_SCHEMA
-#             )  # Construct prompt dynamically
-
-#             prompt_response = gpt_call_json_func(
-#                 [{"role": "user", "content": prompt_first}],
-#                 gpt_model="gpt-4o",
-#                 json_required=False,
-#             )
-#             print("First prompt response:", prompt_response)
-
-#             # Process the response and generate SQL query
-#             sql_query = prompt_response.get("query")
-#             rows = None
-#             if sql_query:
-#                 verify_sql_query(user_message, sql_query, DB_SCHEMA)
-#                 rows = fetch_data_from_sql(sql_query)
-
-#                 # Format rows into a readable string
-#             bot_message = generate_final_response(user_message, rows)
-#             # prompt_response = gpt_call_json_func([{"role": "user", "content": prompt_first}], gpt_model="gpt-4o",
-#             print("\n\n\final reponse", bot_message)
-#             ChatHistory.objects.create(
-#                 session=session, message=bot_message, role="assistant"
-#             )
-#             return JsonResponse({"response": bot_message})
-#         except Exception as e:
-#             print("Error occurred:", e)
-#             error_message = f"Sorry, I couldn't process that due to: {str(e)}"
-#             ChatHistory.objects.create(
-#                 session=session, message=error_message, role="assistant"
-#             )
-#             return JsonResponse({"response": error_message})
-
-#     return JsonResponse({"error": "Invalid request"}, status=400)
-
-from django.views.decorators.csrf import csrf_exempt
-from django.http import JsonResponse
-from django.shortcuts import get_object_or_404
-from hotel_bot_app.models import ChatSession, ChatHistory
-
-
 @csrf_exempt
 def chatbot_api(request):
     if request.method == "POST":
@@ -136,11 +73,21 @@ def chatbot_api(request):
             return JsonResponse({"response": "⚠️ No message sent."}, status=400)
 
         session_id = request.session.get("chat_session_id")
+        print("session_idddd", session_id)
         if not session_id:
             session = ChatSession.objects.create()
             request.session["chat_session_id"] = session.id
+            request.session.set_expiry(3600*8)  # Session expires in 1 hour (3600 seconds) * 8 hours
+            session_id = session.id  # Update the local variable
+            print("session_idddd", session_id)
         else:
-            session = get_object_or_404(ChatSession, id=session_id)
+            try:
+                session = ChatSession.objects.get(id=session_id)
+            except ChatSession.DoesNotExist:
+                session = ChatSession.objects.create()
+                request.session["chat_session_id"] = session.id
+                request.session.set_expiry(3600)
+                session_id = session.id
 
         ChatHistory.objects.create(session=session, message=user_message, role="user")
 
@@ -399,6 +346,7 @@ def add_room(request):
                 room_model_id=room_model,
                 description=description,
             )
+            print("RoomData id", RoomData.id)
             return JsonResponse({"success": "Room added successfully"})
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=400)
@@ -444,18 +392,18 @@ def edit_room(request):
 
 @login_required
 def delete_room(request):
-    if request.method == "POST":
-        room_id = request.POST.get("room_id")
-        room = get_object_or_404(RoomData, id=room_id)
+    # if request.method == "POST":
+    #     room_id = request.POST.get("room_id")
+    #     room = get_object_or_404(RoomData, id=room_id)
 
-        try:
-            room.delete()
-            return JsonResponse({"success": "Room deleted successfully!"})
-        except Exception as e:
-            return JsonResponse({"error": str(e)}, status=400)
+    #     try:
+    #         room.delete()
+    #         return JsonResponse({"success": "Room deleted successfully!"})
+    #     except Exception as e:
+    #         return JsonResponse({"error": str(e)}, status=400)
 
-    return JsonResponse({"error": "Invalid request"}, status=400)
-
+    # return JsonResponse({"error": "Invalid request"}, status=400)
+    pass
 
 @login_required
 def room_model_list(request):
@@ -1122,27 +1070,9 @@ def save_product_data(request):
         item = post_data.get("item", "").strip()
         client_id = post_data.get("client_id", "").strip()
         description = post_data.get("description") or 0
-        qty_ordered = post_data.get("qty_ordered") or 0
         price = post_data.get("price") or 0
-        a = post_data.get("a") or 0
-        a_col = post_data.get("a_col") or 0
-        a_lo = post_data.get("a_lo") or 0
-        a_lo_dr = post_data.get("a_lo_dr") or 0
-        b = post_data.get("b") or 0
-        c_pn = post_data.get("c_pn") or 0
-        c = post_data.get("c") or 0
-        curva_24 = post_data.get("curva_24") or 0
-        curva = post_data.get("curva") or 0
-        curva_dis = post_data.get("curva_dis") or 0
-        d = post_data.get("d") or 0
-        dlx = post_data.get("dlx") or 0
-        presidential_suite = post_data.get("presidential_suite") or 0
-        st_c = post_data.get("st_c") or 0
-        suite_a = post_data.get("suite_a") or 0
-        suite_b = post_data.get("suite_b") or 0
-        suite_c = post_data.get("suite_c") or 0
-        suite_mini = post_data.get("suite_mini") or 0
-        curva_35 = post_data.get("curva_35") or 0
+
+        # qty_ordered = post_data.get("qty_ordered") or 0
         client_selected = post_data.get("client_selected") or 0
         try:
             if product_id:
@@ -1152,29 +1082,9 @@ def save_product_data(request):
                 installation.item = item
                 installation.client_id = client_id
                 installation.description = description
-                installation.qty_ordered = qty_ordered
+                # installation.qty_ordered = qty_ordered
                 installation.price = price
-                installation.a = a
-                installation.a_col = a_col
-                installation.a_lo = a_lo
-                installation.a_lo_dr = a_lo_dr
-                installation.b = b
-                installation.c_pn = c_pn
-                installation.c = c
-                installation.curva_24 = curva_24
-                installation.curva = curva
-                installation.curva_dis = curva_dis
-                installation.d = d
-                installation.dlx = dlx
-                installation.presidential_suite = presidential_suite
-                installation.st_c = st_c
-                installation.suite_a = suite_a
-                installation.suite_b = suite_b
-                installation.suite_c = suite_c
-                installation.suite_mini = suite_mini
-                installation.curva_35 = curva_35
                 installation.client_selected = client_selected
-
                 installation.save()
             else:
                 print("Adding new row")
@@ -1182,27 +1092,8 @@ def save_product_data(request):
                     item=item,
                     client_id=client_id,
                     description=description,
-                    qty_ordered=qty_ordered,
+                    # qty_ordered=qty_ordered,
                     price=price,
-                    a=a,
-                    a_col=a_col,
-                    a_lo=a_lo,
-                    a_lo_dr=a_lo_dr,
-                    b=b,
-                    c_pn=c_pn,
-                    c=c,
-                    curva_24=curva_24,
-                    curva=curva,
-                    curva_dis=curva_dis,
-                    d=d,
-                    dlx=dlx,
-                    presidential_suite=presidential_suite,
-                    st_c=st_c,
-                    suite_a=suite_a,
-                    suite_b=suite_b,
-                    suite_c=suite_c,
-                    suite_mini=suite_mini,
-                    curva_35=curva_35,
                     client_selected=client_selected,
                 )
 
