@@ -34,7 +34,7 @@ class Installation(models.Model):
     )
     post_work_check_on = models.DateTimeField(null=True, blank=True)
     day_install_began = models.DateTimeField(null=True, blank=True)
-    day_instal_complete = models.DateTimeField(null=True, blank=True)
+    day_install_complete = models.DateTimeField(null=True, blank=True)
     product_arrived_at_floor= models.TextField(null=True, blank=True)
     product_arrived_at_floor_checked_by = models.ForeignKey(
         InvitedUser, null=True, blank=True, on_delete=models.SET_NULL, related_name='product_arrived_checked_by'
@@ -102,6 +102,34 @@ class RoomData(models.Model):
     def __str__(self):
         return f"Room {self.room} - Floor {self.floor}"
     
+    def save(self, *args, **kwargs):
+        # Store the previous room_model_id before save
+        old_room_model_id = None
+        if self.pk:
+            old = RoomData.objects.filter(pk=self.pk).first()
+            if old:
+                old_room_model_id = old.room_model_id_id
+
+        super().save(*args, **kwargs)
+
+        # Update totals for both old and new room_model_ids
+        if old_room_model_id and old_room_model_id != self.room_model_id_id:
+            RoomModel.objects.filter(id=old_room_model_id).update(
+                total=RoomData.objects.filter(room_model_id=old_room_model_id).count()
+            )
+
+        if self.room_model_id_id:
+            RoomModel.objects.filter(id=self.room_model_id_id).update(
+                total=RoomData.objects.filter(room_model_id=self.room_model_id_id).count()
+            )
+
+    def delete(self, *args, **kwargs):
+        room_model_id = self.room_model_id_id
+        super().delete(*args, **kwargs)
+        if room_model_id:
+            RoomModel.objects.filter(id=room_model_id).update(
+                total=RoomData.objects.filter(room_model_id=room_model_id).count()
+            )
 
 class Schedule(models.Model):
     id = models.AutoField(primary_key=True)
@@ -137,7 +165,6 @@ class ProductData(models.Model):
     item = models.TextField(null=True, blank=True)
     client_id = models.TextField(null=True, blank=True)
     description = models.TextField(null=True, blank=True)
-    # qty_ordered = models.IntegerField(null=True, blank=True)
     price = models.FloatField(null=True, blank=True)
     client_selected = models.TextField(null=True, blank=True)
     supplier = models.TextField(null=True, blank=True)
@@ -151,7 +178,7 @@ class ProductData(models.Model):
 class Prompt(models.Model):
     id = models.AutoField(primary_key=True)
     prompt_number = models.IntegerField(unique=True)
-    prompt_name = models.CharField(max_length=255)
+    prompt_name = models.CharField(max_length=255, null=True)
     description = models.TextField()
 
     def __str__(self):

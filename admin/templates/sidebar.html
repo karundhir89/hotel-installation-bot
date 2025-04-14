@@ -43,7 +43,7 @@
 </style>
 
 <!-- Sidebar Toggle Button (visible only on mobile) -->
-<button id="mobileSidebarToggle" class="btn btn-outline-secondary d-lg-none" style="position: fixed; top: 10px; right: 32px; z-index: 1050;">
+<button id="mobileSidebarToggle" class="btn btn-outline-secondary d-lg-none" style="position: absolute; top: 10px; right: 32px; z-index: 1050;">
     <i class="material-icons">menu</i>
 </button>
 
@@ -74,7 +74,7 @@
                     <p class="user_management-link">User Management</p>
                 </a>
             </li>
-			<li class="nav-item manage-lean-more">
+			<li class="nav-item manage-rooms">
 				<a class="nav-link" data-toggle="collapse" href="#collapseRoom" role="button" aria-expanded="false" aria-controls="collapseRoom">
 					<i class="material-icons">room</i>
 					<p style="color:#666666 !important">
@@ -100,19 +100,19 @@
 						<li class="nav-item inventory li-elements-js" id="inventory_list">
 							<a class="nav-link" id="inventory-link" href="{% url 'inventory_list' %}">
 								<i class="material-icons">inventory</i>
-								<p class="inventorys-link">inventory</p>
+								<p class="inventory-link">inventory</p>
 							</a>
 						</li>
 						<li class="nav-item install li-elements-js" id="install_list">
 							<a class="nav-link" id="install-link" href="{% url 'install_list' %}">
 								<i class="material-icons">build</i>
-								<p class="installs-link">install</p>
+								<p class="install-link">install</p>
 							</a>
 						</li>	
-						<li class="nav-item product_data li-elements-js" id="product_data_list">
-							<a class="nav-link" id="product_data-link" href="{% url 'product_data_list' %}">
+						<li class="nav-item products li-elements-js" id="product_data_list">
+							<a class="nav-link" id="products-link" href="{% url 'product_data_list' %}">
 								<i class="material-icons">settings</i>
-								<p class="product_data-link">Product Data</p>
+								<p class="products-link">Product Data</p>
 							</a>
 						</li>
 						<li class="nav-item schedule li-elements-js" id="schedule_list">
@@ -196,42 +196,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
 	$('.caret-down').css('display','block')
 	$('.caret-up').css('display','none')
-	$('.tech-Onboarding').on('click',function(){
+	$('.manage-rooms').on('click',function(){
 		if($(this).find('.caret-down').css('display') === 'block'){
-			$('.caret-down').css('display','none')
-			$('.caret-up').css('display','block')
-		}
-		else{
-			$('.caret-up').css('display','none')
-			$('.caret-down').css('display','block')
-		}
-	})
-
-	$('.all-requests').on('click',function(){
-		if($(this).find('.caret-down').css('display') === 'block'){
-			console.log("block caree")
-			$('.caret-down').css('display','none')
-			$('.caret-up').css('display','block')
-		}
-		else{
-			$('.caret-up').css('display','none')
-			$('.caret-down').css('display','block')
-		}
-	})
-	$('.reports').on('click',function(){
-		if($(this).find('.caret-down').css('display') === 'block'){
-			$('.caret-down').css('display','none')
-			$('.caret-up').css('display','block')
-		}
-		else{
-			$('.caret-up').css('display','none')
-			$('.caret-down').css('display','block')
-		}
-	})
-	
-	$('.inactive-customers').on('click',function(){
-		if($(this).find('.caret-down').css('display') === 'block'){
-			console.log("block caree")
 			$('.caret-down').css('display','none')
 			$('.caret-up').css('display','block')
 		}
