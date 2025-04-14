@@ -54,16 +54,6 @@ th.sorting, th.sorting_asc, th.sorting_desc {
     position: relative;
     margin: 20px 0 0;
 }
-.main-panel{
-    position: fixed;
-    right: 0;
-}
-@media (max-width: 768px) {
-    .main-panel{
-    position: absolute;
-    right: 0;
-    }
-}
 </style>
 
 <!-- Loader -->
@@ -156,7 +146,7 @@ th.sorting, th.sorting_asc, th.sorting_desc {
             </div>
             <div class="form-group">
                 <label for="client_id">Client ID:</label>
-                <input type="text" id="client_id" name="client_id" class="form-control">
+                <input type="text" id="client_id" name="client_id" class="form-control" required>
             </div>
             <div class="form-group">
                 <label for="qty_ordered">Quantity Ordered:</label>
@@ -198,7 +188,9 @@ $(document).ready(function () {
         $('#modelModalTitle').text("Add Inventory");
         $('#model-id').val("");
         $('#item').val("");
+        $('#item').prop('readonly', false);
         $('#client_id').val("");
+        $('#client_id').prop('readonly', false);
         $('#qty_ordered').val("");
         $('#qty_received').val("");
         $('#quantity_installed').val("");
@@ -211,7 +203,9 @@ $(document).ready(function () {
         $('#modelModalTitle').text("Edit Inventory");
         $('#model-id').val($(this).data('id'));
         $('#item').val($(this).data('item'));
+        $('#item').prop('readonly', true);
         $('#client_id').val($(this).data('client_id'));
+        $('#client_id').prop('readonly', true);
         $('#qty_ordered').val($(this).data('qty_ordered'));
         $('#qty_received').val($(this).data('qty_received'));
         $('#quantity_installed').val($(this).data('quantity_installed'));

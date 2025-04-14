@@ -44,7 +44,7 @@ tables:
   - name: day_install_began
     type: timestamp with time zone
     description: Start time for installation.
-  - name: day_instal_complete
+  - name: day_install_complete
     type: timestamp with time zone
     description: Completion time for installation .
   example:
@@ -55,7 +55,7 @@ tables:
     install: 'NO'
     post_work: 'NO'
     day_install_began: null
-    day_instal_complete: null
+    day_install_complete: null
   - id: 2
     room: 1608
     product_available: 'NO'
@@ -63,7 +63,7 @@ tables:
     install: 'NO'
     post_work: 'NO'
     day_install_began: null
-    day_instal_complete: null
+    day_install_complete: null
 - name: inventory
   description: 'Represents current inventory for all furniture/products ordered by
     the client. Helps track ordered, received, available, and installed quantities.

@@ -401,18 +401,17 @@ def edit_room(request):
 
 @login_required
 def delete_room(request):
-    # if request.method == "POST":
-    #     room_id = request.POST.get("room_id")
-    #     room = get_object_or_404(RoomData, id=room_id)
+    if request.method == "POST":
+        room_id = request.POST.get("room_id")
+        room = get_object_or_404(RoomData, id=room_id)
 
-    #     try:
-    #         room.delete()
-    #         return JsonResponse({"success": "Room deleted successfully!"})
-    #     except Exception as e:
-    #         return JsonResponse({"error": str(e)}, status=400)
+        try:
+            room.delete()
+            return JsonResponse({"success": "Room deleted successfully!"})
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=400)
 
-    # return JsonResponse({"error": "Invalid request"}, status=400)
-    pass
+    return JsonResponse({"error": "Invalid request"}, status=400)
 
 @login_required
 def room_model_list(request):
@@ -422,7 +421,19 @@ def room_model_list(request):
 
 @login_required
 def install_list(request):
+    # Get all installation records
     install = Installation.objects.all()
+    
+    # Convert the dates to a proper format for use in the template
+    for installation in install:
+        if installation.day_install_began:
+            installation.formatted_day_install_began = installation.day_install_began.strftime('%Y-%m-%d')
+            installation.day_install_began = installation.day_install_began.strftime('%m-%d-%Y')
+        if installation.day_install_complete:
+            installation.formatted_day_install_complete = installation.day_install_complete.strftime('%Y-%m-%d')
+            installation.day_install_complete = installation.day_install_complete.strftime('%m-%d-%Y')
+    
+    # Pass the modified install data to the template
     return render(request, "install.html", {"install": install})
 
 
@@ -437,6 +448,72 @@ def product_data_list(request):
 @login_required
 def schedule_list(request):
     schedule = Schedule.objects.all()
+    # Convert the dates to a proper format for use in the template
+    for one_schedule in schedule:
+        if one_schedule.production_starts:
+            one_schedule.formatted_production_starts = one_schedule.production_starts.strftime('%Y-%m-%d')
+            one_schedule.production_starts = one_schedule.production_starts.strftime('%m-%d-%Y')
+            
+        if one_schedule.production_ends:
+            one_schedule.formatted_production_ends = one_schedule.production_ends.strftime('%Y-%m-%d')
+            one_schedule.production_ends = one_schedule.production_ends.strftime('%m-%d-%Y')
+            
+        if one_schedule.shipping_arrival:
+            one_schedule.formatted_shipping_arrival = one_schedule.shipping_arrival.strftime('%Y-%m-%d')
+            one_schedule.shipping_arrival = one_schedule.shipping_arrival.strftime('%m-%d-%Y')
+
+        if one_schedule.shipping_depature:
+            one_schedule.formatted_shipping_depature = one_schedule.shipping_depature.strftime('%Y-%m-%d')
+            one_schedule.shipping_depature = one_schedule.shipping_depature.strftime('%m-%d-%Y')
+
+        if one_schedule.custom_clearing_starts:
+            one_schedule.formatted_custom_clearing_starts = one_schedule.custom_clearing_starts.strftime('%Y-%m-%d')
+            one_schedule.custom_clearing_starts = one_schedule.custom_clearing_starts.strftime('%m-%d-%Y')
+
+        if one_schedule.custom_clearing_ends:
+            one_schedule.formatted_custom_clearing_ends = one_schedule.custom_clearing_ends.strftime('%Y-%m-%d')
+            one_schedule.custom_clearing_ends = one_schedule.custom_clearing_ends.strftime('%m-%d-%Y')
+
+        if one_schedule.arrive_on_site:
+            one_schedule.formatted_arrive_on_site = one_schedule.arrive_on_site.strftime('%Y-%m-%d')
+            one_schedule.arrive_on_site = one_schedule.arrive_on_site.strftime('%m-%d-%Y')
+
+        if one_schedule.pre_work_starts:
+            one_schedule.formatted_pre_work_starts = one_schedule.pre_work_starts.strftime('%Y-%m-%d')
+            one_schedule.pre_work_starts = one_schedule.pre_work_starts.strftime('%m-%d-%Y')
+
+        if one_schedule.pre_work_ends:
+            one_schedule.formatted_pre_work_ends = one_schedule.pre_work_ends.strftime('%Y-%m-%d')
+            one_schedule.pre_work_ends = one_schedule.pre_work_ends.strftime('%m-%d-%Y')
+
+        if one_schedule.post_work_starts:
+            one_schedule.formatted_post_work_starts = one_schedule.post_work_starts.strftime('%Y-%m-%d')
+            one_schedule.post_work_starts = one_schedule.post_work_starts.strftime('%m-%d-%Y')
+
+        if one_schedule.post_work_ends:
+            one_schedule.formatted_post_work_ends = one_schedule.post_work_ends.strftime('%Y-%m-%d')
+            one_schedule.post_work_ends = one_schedule.post_work_ends.strftime('%m-%d-%Y')
+
+        if one_schedule.install_starts:
+            one_schedule.formatted_install_starts = one_schedule.install_starts.strftime('%Y-%m-%d')
+            one_schedule.install_starts = one_schedule.install_starts.strftime('%m-%d-%Y')
+
+        if one_schedule.install_ends:
+            one_schedule.formatted_install_ends = one_schedule.install_ends.strftime('%Y-%m-%d')
+            one_schedule.install_ends = one_schedule.install_ends.strftime('%m-%d-%Y')
+
+        if one_schedule.floor_opens:
+            one_schedule.formatted_floor_opens = one_schedule.floor_opens.strftime('%Y-%m-%d')
+            one_schedule.floor_opens = one_schedule.floor_opens.strftime('%m-%d-%Y')
+
+        if one_schedule.floor_closes:
+            one_schedule.formatted_floor_closes = one_schedule.floor_closes.strftime('%Y-%m-%d')
+            one_schedule.floor_closes = one_schedule.floor_closes.strftime('%m-%d-%Y')
+
+        if one_schedule.floor_completed:
+            one_schedule.formatted_floor_completed = one_schedule.floor_completed.strftime('%Y-%m-%d')
+            one_schedule.floor_completed = one_schedule.floor_completed.strftime('%m-%d-%Y')
+
     return render(request, "schedule.html", {"schedule": schedule})
 
 
@@ -954,11 +1031,10 @@ def save_installation(request):
         install = request.POST.get("install", "").strip()
         post_work = request.POST.get("post_work", "").strip()
         day_install_began = request.POST.get("day_install_began", "").strip()
-        day_instal_complete = request.POST.get("day_instal_complete", "").strip()
+        day_install_complete = request.POST.get("day_install_complete", "").strip()
 
         if not room:
             return JsonResponse({"error": "Room field is required."}, status=400)
-
         try:
             if installation_id:
                 print("inside")
@@ -968,8 +1044,8 @@ def save_installation(request):
                 installation.prework = prework
                 installation.install = install
                 installation.post_work = post_work
-                installation.day_install_began = day_install_began
-                installation.day_instal_complete = day_instal_complete
+                installation.day_install_began = parse_date(day_install_began)
+                installation.day_install_complete = parse_date(day_install_complete)
                 installation.save()
             else:
                 print("Adding new row")
@@ -979,8 +1055,8 @@ def save_installation(request):
                     prework=prework,
                     install=install,
                     post_work=post_work,
-                    day_install_began=day_install_began,
-                    day_instal_complete=day_instal_complete,
+                    day_install_began=parse_date(day_install_began),
+                    day_install_complete=parse_date(day_install_complete),
                 )
 
             return JsonResponse({"success": True})
@@ -1022,22 +1098,22 @@ def save_schedule(request):
                 installation = Schedule.objects.get(id=schedule_id)
                 installation.phase = phase
                 installation.floor = floor
-                installation.production_starts = production_starts
-                installation.production_ends = production_ends
-                installation.shipping_depature = shipping_depature
-                installation.shipping_arrival = shipping_arrival
-                installation.custom_clearing_starts = custom_clearing_starts
-                installation.custom_clearing_ends = custom_clearing_ends
-                installation.arrive_on_site = arrive_on_site
-                installation.pre_work_starts = pre_work_starts
-                installation.pre_work_ends = pre_work_ends
-                installation.install_starts = install_starts
-                installation.install_ends = install_ends
-                installation.post_work_starts = post_work_starts
-                installation.post_work_ends = post_work_ends
-                installation.floor_completed = floor_completed
-                installation.floor_closes = floor_closes
-                installation.floor_opens = floor_opens
+                installation.production_starts = parse_date(production_starts)
+                installation.production_ends = parse_date(production_ends)
+                installation.shipping_depature = parse_date(shipping_depature)
+                installation.shipping_arrival = parse_date(shipping_arrival)
+                installation.custom_clearing_starts = parse_date(custom_clearing_starts)
+                installation.custom_clearing_ends = parse_date(custom_clearing_ends)
+                installation.arrive_on_site = parse_date(arrive_on_site)
+                installation.pre_work_starts = parse_date(pre_work_starts)
+                installation.pre_work_ends = parse_date(pre_work_ends)
+                installation.install_starts = parse_date(install_starts)
+                installation.install_ends = parse_date(install_ends)
+                installation.post_work_starts = parse_date(post_work_starts)
+                installation.post_work_ends = parse_date(post_work_ends)
+                installation.floor_completed = parse_date(floor_completed)
+                installation.floor_closes = parse_date(floor_closes)
+                installation.floor_opens = parse_date(floor_opens)
                 installation.save()
             else:
                 print("under new")
@@ -1045,22 +1121,22 @@ def save_schedule(request):
                 Schedule.objects.create(
                     phase=phase,
                     floor=floor,
-                    production_starts=production_starts,
-                    production_ends=production_ends,
-                    shipping_depature=shipping_depature,
-                    shipping_arrival=shipping_arrival,
-                    custom_clearing_starts=custom_clearing_starts,
-                    custom_clearing_ends=custom_clearing_ends,
-                    arrive_on_site=arrive_on_site,
-                    pre_work_starts=pre_work_starts,
-                    pre_work_ends=pre_work_ends,
-                    install_starts=install_starts,
-                    install_ends=install_ends,
-                    post_work_starts=post_work_starts,
-                    post_work_ends=post_work_ends,
-                    floor_completed=floor_completed,
-                    floor_closes=floor_closes,
-                    floor_opens=floor_opens,
+                    production_starts=parse_date(production_starts),
+                    production_ends=parse_date(production_ends),
+                    shipping_depature=parse_date(shipping_depature),
+                    shipping_arrival=parse_date(shipping_arrival),
+                    custom_clearing_starts=parse_date(custom_clearing_starts),
+                    custom_clearing_ends=parse_date(custom_clearing_ends),
+                    arrive_on_site=parse_date(arrive_on_site),
+                    pre_work_starts=parse_date(pre_work_starts),
+                    pre_work_ends=parse_date(pre_work_ends),
+                    install_starts=parse_date(install_starts),
+                    install_ends=parse_date(install_ends),
+                    post_work_starts=parse_date(post_work_starts),
+                    post_work_ends=parse_date(post_work_ends),
+                    floor_completed=parse_date(floor_completed),
+                    floor_closes=parse_date(floor_closes),
+                    floor_opens=parse_date(floor_opens),
                 )
             return JsonResponse({"success": True})
 
@@ -1082,7 +1158,7 @@ def save_product_data(request):
         description = post_data.get("description") or 0
         price = post_data.get("price") or 0
 
-        # qty_ordered = post_data.get("qty_ordered") or 0
+        supplier = post_data.get("supplier")
         client_selected = post_data.get("client_selected") or 0
         try:
             if product_id:
@@ -1092,7 +1168,7 @@ def save_product_data(request):
                 installation.item = item
                 installation.client_id = client_id
                 installation.description = description
-                # installation.qty_ordered = qty_ordered
+                installation.supplier = supplier
                 installation.price = price
                 installation.client_selected = client_selected
                 installation.save()
@@ -1102,7 +1178,7 @@ def save_product_data(request):
                     item=item,
                     client_id=client_id,
                     description=description,
-                    # qty_ordered=qty_ordered,
+                    supplier=supplier,
                     price=price,
                     client_selected=client_selected,
                 )
@@ -1237,3 +1313,9 @@ def installation_form(request):
     return render(request, "installation_form.html", {
         "invited_user": invited_user_instance,
     })
+
+def parse_date(date_str):
+    try:
+        return datetime.strptime(date_str.strip(), "%Y-%m-%d") if date_str and date_str.strip() else None
+    except ValueError:
+        return None
