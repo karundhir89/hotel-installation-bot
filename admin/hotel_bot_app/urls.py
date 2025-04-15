@@ -39,7 +39,9 @@ urlpatterns = [
     path('inventory_received/', inventory_received, name='inventory_received'),
     path('inventory_received_item_num/', inventory_received_item_num, name='inventory_received_item_num'),
     path('inventory_pull/', inventory_pull, name='inventory_pull'),
-    path('inventory_pull_item/', inventory_pull_item, name='inventory_pull_item')
+    path('inventory_pull_item/', inventory_pull_item, name='inventory_pull_item'),
+    path('chat_history/', chat_history, name='chat_history'),
+    path('chat_history/<int:session_id>/', view_chat_history, name='view_chat_history'),
 
     
 

@@ -28,6 +28,7 @@ from openai import OpenAI
 from .models import *
 from .models import ChatSession
 from django.utils.timezone import localtime
+from django.core.paginator import Paginator
 
 env = environ.Env()
 environ.Env.read_env()
@@ -1319,3 +1320,17 @@ def parse_date(date_str):
         return datetime.strptime(date_str.strip(), "%Y-%m-%d") if date_str and date_str.strip() else None
     except ValueError:
         return None
+
+@login_required
+def chat_history(request):
+    sessions = ChatSession.objects.prefetch_related('chat_history').order_by('-created_at')
+    return render(request, 'chat_history.html', {'sessions': sessions})
+
+@login_required
+def view_chat_history(request, session_id):
+    session = get_object_or_404(ChatSession, id=session_id)
+    chat_messages = session.chat_history.order_by('created_at')[:100]  # from related_name
+    return render(request, 'view_chat_history.html', {
+        'session': session,
+        'chat_messages': chat_messages
+    })
