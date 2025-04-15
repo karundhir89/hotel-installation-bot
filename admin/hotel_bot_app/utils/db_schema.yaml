@@ -1,437 +1,279 @@
 description: 'This database schema is part of a hotel furniture installation and renovation
-  tracking system. It helps manage inventory, room models, product mappings, installation
-  progress, and scheduling. The data is used by planners, vendors, and project managers
-  to track readiness, progress, and requirements.
+  tracking system. Helps manage inventory, room models, product mappings, installation
+  progress, and scheduling.
 
-  ### Query Generation Rules: - Always use human-readable columns (e.g., `product_data.description`
-  for product names instead of `inventory.item` SKUs). - Match column types exactly
-  in comparisons (e.g., `text` to `text`, `integer` to `integer`). - Use explicit
-  JOINs with foreign keys or shared columns (e.g., `client_id`) instead of subqueries
-  where possible. - Avoid aggregating (e.g., SUM) unless explicitly requested; return
-  raw data for clarity. - Include table aliases (e.g., `i` for `inventory`) in queries
-  for readability. - If no direct relationship exists, explain in the query comment
-  why and use logical assumptions (e.g., `client_id` linking).
-
+  ### Query Generation Rules:
+  - Use human-readable columns (e.g., `product_data.description` for names).
+  - Match column types strictly (e.g., `text` to `text`, `integer` to `integer`).
+  - Use explicit JOINs following the described relationships. `client_id` links `inventory` and `product_data`. `floor` links `schedule` and `room_data`.
+  - Do NOT aggregate (SUM, COUNT) unless specifically asked.
+  - Use table aliases for readability (e.g., `inv` for `inventory`).
+  - Default `LIMIT` is 50.
   '
+# High-level description of how tables connect for complex queries
+relationships:
+  - description: 'To find schedule information (like shipping_arrival) for a specific product (e.g., by product_data.description):
+      1. Find the product in `product_data` using `description`.
+      2. Get its `id` and JOIN with `product_room_model` ON `product_data.id = product_room_model.product_id`.
+      3. JOIN with `room_model` ON `product_room_model.room_model_id = room_model.id`.
+      4. JOIN with `room_data` ON `room_model.id = room_data.room_model_id`.
+      5. JOIN with `schedule` ON `room_data.floor = schedule.floor`.
+      6. Select desired columns from `schedule` (e.g., `shipping_arrival`).'
+  - description: 'To link inventory levels to product names:
+      1. JOIN `inventory` and `product_data` ON `inventory.client_id = product_data.client_id`.
+      2. Use `product_data.description` for the name and `inventory.quantity_available`, `inventory.qty_received` etc. for quantities.'
+  - description: 'To link installation progress to room details:
+      1. JOIN `install` and `room_data` ON `install.room = room_data.room`.' # Assuming room number is unique key for this join
+
 tables:
 - name: install
-  description: 'Tracks installation progress and lifecycle for a specific room. Captures
-    timestamps and notes about prework, install, and post-install activities.
-
-    '
+  description: 'Tracks installation progress for a specific room.'
   columns:
   - name: id
     type: integer
-    constraints:
-    - primary key
-    - auto-increment
+    constraints: [primary key, auto-increment]
     description: Unique ID for the installation record.
   - name: room
-    type: integer
-    description: Room number being worked on (matches `room_data.room`).
+    type: integer # Changed from text to integer if room numbers are numeric
+    description: 'Room number being worked on. Joins with `room_data.room`.'
   - name: product_available
     type: text
-    description: Description of product availability status.
+    description: Status of product availability (e.g., YES, NO).
   - name: prework
     type: text
-    description: Notes or checklist for pre-installation tasks.
+    description: Notes/status for pre-installation tasks.
   - name: install
     type: text
-    description: Notes during the installation phase.
+    description: Notes/status during the installation phase.
   - name: post_work
     type: text
-    description: Notes for post-installation tasks or cleanup.
+    description: Notes/status for post-installation tasks.
   - name: day_install_began
     type: timestamp with time zone
-    description: Start time for installation.
-  - name: day_instal_complete
+    description: Start timestamp for installation.
+  - name: day_instal_complete # Typo 'instal' kept as likely reflects DB
     type: timestamp with time zone
-    description: Completion time for installation .
+    description: Completion timestamp for installation.
   example:
-  - id: 1
-    room: 1607
-    product_available: 'NO'
-    prework: 'NO'
-    install: 'NO'
-    post_work: 'NO'
-    day_install_began: null
-    day_instal_complete: null
-  - id: 2
-    room: 1608
-    product_available: 'NO'
-    prework: 'NO'
-    install: 'NO'
-    post_work: 'NO'
-    day_install_began: null
-    day_instal_complete: null
+  - {id: 1, room: 1607, product_available: 'NO', prework: 'NO', install: 'NO', post_work: 'NO', day_install_began: null, day_instal_complete: null}
+  - {id: 2, room: 1608, product_available: 'NO', prework: 'NO', install: 'NO', post_work: 'NO', day_install_began: null, day_instal_complete: null}
+
 - name: inventory
-  description: 'Represents current inventory for all furniture/products ordered by
-    the client. Helps track ordered, received, available, and installed quantities.
-
-    ### Query Hint: To find inventory for a specific product: 1. Search `product_data.description`
-    for the product name. 2. Use `product_data.client_id` to match `inventory.client_id`.
-    3. Return `inventory.quantity_available` and `product_data.description` for clarity.
-
-    '
+  description: 'Tracks ordered, received, available, and installed quantities for products, linked by client_id.'
   columns:
   - name: id
     type: integer
-    constraints:
-    - primary key
-    - auto-increment
+    constraints: [primary key, auto-increment]
     description: Unique ID for each inventory entry.
   - name: item
     type: text
-    description: SKU of the item (not the name; use `product_data.description` for
-      name).
+    description: SKU of the item (use `product_data.description` via JOIN for name).
   - name: client_id
     type: text
-    description: Client identifier (links to `product_data.client_id`).
+    description: 'Client identifier (text). JOIN key with `product_data.client_id`.'
   - name: qty_ordered
     type: integer
-    description: Total quantity ordered for this client and do not need to sum up
-      as its alrady total.
+    description: Total quantity ordered.
   - name: qty_received
     type: integer
     description: Quantity received so far.
   - name: quantity_installed
     type: integer
-    description: Quantity already installed at the site.
+    description: Quantity already installed.
   - name: quantity_available
     type: integer
     description: Quantity currently available for installation.
   example:
-  - id: 1
-    item: KS-JWM-113
-    client_id: P125
-    qty_ordered: 320
-    qty_received: 0
-    quantity_installed: 0
-    quantity_available: 0
-  - id: 2
-    item: KS-JWM-702A
-    client_id: P123
-    qty_ordered: 176
-    qty_received: 0
-    quantity_installed: 0
-    quantity_available: 0
+  - {id: 1, item: KS-JWM-113, client_id: P125, qty_ordered: 320, qty_received: 0, quantity_installed: 0, quantity_available: 0}
+  - {id: 2, item: KS-JWM-702A, client_id: P123, qty_ordered: 176, qty_received: 0, quantity_installed: 0, quantity_available: 0}
+
 - name: product_data
-  description: 'Contains catalog data about products including price, description,
-    and quantities. Used for planning and referencing against inventory and installation.
-
-    ### Query Hint: Use `description` as the human-readable product name instead of
-    `item` (SKU).
-
-    '
+  description: 'Catalog data about products (name, price, etc.), linked by client_id.'
   columns:
   - name: id
     type: integer
-    constraints:
-    - primary key
-    - auto-increment
-    description: Unique product ID.
+    constraints: [primary key, auto-increment]
+    description: 'Unique product ID. Used as FK in `product_room_model.product_id`.'
   - name: item
     type: text
-    description: Product code (SKU; use `description` for name).
+    description: Product code/SKU (use `description` for name).
   - name: client_id
     type: text
-    description: Client identifier (links to `inventory.client_id`).
+    description: 'Client identifier (text). JOIN key with `inventory.client_id`.'
   - name: description
     type: text
-    description: Product name (human-readable).
+    description: Product name (human-readable). Use this for display.
   - name: price
-    type: real
+    type: real # Assuming decimal price
     description: Price per unit.
   - name: client_selected
-    type: text
-    description: Indicates if the client has selected this product (e.g., 'yes', 'no').
+    type: text # Consider boolean if appropriate
+    description: Indicates if the client has selected this product (e.g., '1', '0', 'yes', 'no').
   example:
-  - id: 3
-    item: KS-JVM-715-SABC
-    client_id: P120
-    description: Sofa SUITE A, B, C
-    qty_ordered: 9
-    price: 1646.6615
-    client_selected: '1'
-  - id: 4
-    item: KS-JVM-715-CURVADIS
-    client_id: P121
-    description: Sofa CURVA DIS
-    qty_ordered: 2
-    price: 1646.6615
-    client_selected: '1'
-- name: product_room_model
-  description: 'Mapping between products and room models, defining what furniture
-    goes into each room model. Used to plan inventory allocation and installations
-    for different room types.
+  - {id: 3, item: KS-JVM-715-SABC, client_id: P120, description: Sofa SUITE A, B, C, qty_ordered: 9, price: 1646.66, client_selected: '1'}
+  - {id: 4, item: KS-JVM-715-CURVADIS, client_id: P121, description: Sofa CURVA DIS, qty_ordered: 2, price: 1646.66, client_selected: '1'}
 
-    '
+- name: product_room_model
+  description: 'Maps products to room models, defining quantity needed per model.'
   columns:
   - name: id
     type: integer
-    constraints:
-    - primary key
-    - auto-increment
+    constraints: [primary key, auto-increment]
     description: Unique mapping ID.
   - name: product_id
     type: integer
-    constraints:
-    - foreign key to product_data.id ON DELETE CASCADE
-    description: References `product_data.id` for the product.
+    constraints: [NOT NULL] # Removed FK constraint text to avoid confusion, describe below
+    description: 'Foreign key to `product_data.id`.'
   - name: room_model_id
     type: integer
-    constraints:
-    - foreign key to room_model.id ON DELETE CASCADE
-    description: References `room_model.id` for the room model.
+    constraints: [NOT NULL] # Removed FK constraint text
+    description: 'Foreign key to `room_model.id`.'
   - name: quantity
     type: integer
-    constraints:
-    - NOT NULL
-    description: Number of product units required for this room model.
-  constraints:
-  - name: product_room_model_product_id_fkey
-    definition: FOREIGN KEY (product_id) REFERENCES product_data(id) ON DELETE CASCADE
-  - name: product_room_model_room_model_id_fkey
-    definition: FOREIGN KEY (room_model_id) REFERENCES room_model(id) ON DELETE CASCADE
+    constraints: [NOT NULL]
+    description: Number of units required for this room model.
+  # Explicitly defining FK relationships for clarity to the LLM
+  foreign_keys:
+    - column: product_id
+      references: product_data(id)
+    - column: room_model_id
+      references: room_model(id)
   example:
-  - id: 2
-    product_id: 1
-    room_model_id: 2
-    quantity: 1
-  - id: 3
-    product_id: 1
-    room_model_id: 3
-    quantity: 1
+  - {id: 2, product_id: 1, room_model_id: 2, quantity: 1}
+  - {id: 3, product_id: 1, room_model_id: 3, quantity: 1}
+
 - name: room_data
-  description: 'Stores per-room configuration and characteristics. Includes room type,
-    floor, renovation status, and links to room model templates.
-
-    ### Query Hint: Use `room` to link with `install.room`; use `room_model_id` for
-    `room_model` joins.
-
-    '
+  description: 'Stores configuration for each room (floor, type, model).'
   columns:
   - name: id
     type: integer
-    constraints:
-    - primary key
-    - auto-increment
+    constraints: [primary key, auto-increment]
     description: Unique room ID.
   - name: room
-    type: integer
-    description: Room number (links to `install.room`).
+    type: integer # Changed from text if numeric
+    description: 'Room number. Joins with `install.room`.'
   - name: floor
     type: integer
-    description: Floor number (links to `schedule.floor`).
+    description: 'Floor number. Joins with `schedule.floor`.'
   - name: king
     type: text
-    description: Indicator if king bed is present (e.g., 'yes', 'no').
+    description: Indicator if king bed present (e.g., 'yes', 'no').
   - name: double
     type: text
     description: Indicator for double bed (e.g., 'yes', 'no').
   - name: exec_king
     type: text
-    description: Executive king room indicator (e.g., 'yes', 'no').
+    description: Indicator for executive king (e.g., 'yes', 'no').
   - name: bath_screen
     type: text
-    description: Whether room includes bath screen (e.g., 'yes', 'no').
-  - name: room_model
+    description: Indicator for bath screen (e.g., 'yes', 'no').
+  - name: room_model # Kept for reference, but join via room_model_id
     type: text
-    description: Name of associated room model (human-readable; see `room_model.room_model`).
+    description: 'Name of associated room model (human-readable, use `room_model.room_model` via JOIN).'
   - name: left_desk
     type: text
-    description: Flag or description of left-side desk presence.
+    description: Flag/description of left-side desk.
   - name: right_desk
     type: text
-    description: Flag or description of right-side desk.
+    description: Flag/description of right-side desk.
   - name: to_be_renovated
     type: text
-    description: Whether the room is scheduled for renovation (e.g., 'yes', 'no').
+    description: Renovation status (e.g., 'yes', 'no').
   - name: description
     type: text
-    description: Any notes or additional description.
+    description: Any notes or additional description for the room.
   - name: room_model_id
     type: integer
-    constraints:
-    - foreign key to room_model.id DEFERRABLE INITIALLY DEFERRED
-    description: Links to `room_model.id`.
-  - name: room_model_id_id
-    type: integer
-    constraints:
-    - foreign key to room_model.id DEFERRABLE INITIALLY DEFERRED
-    description: Additional/legacy link to `room_model.id`.
-  constraints:
-  - name: room_data_room_model_id_782034fb_fk_room_model_id
-    definition: FOREIGN KEY (room_model_id) REFERENCES room_model(id) DEFERRABLE INITIALLY
-      DEFERRED
-  - name: room_data_room_model_id_id_15ee5e24_fk_room_model_id
-    definition: FOREIGN KEY (room_model_id_id) REFERENCES room_model(id) DEFERRABLE
-      INITIALLY DEFERRED
-  indexes:
-  - name: room_data_room_model_id_782034fb
-    definition: INDEX ON room_model_id
-  - name: room_data_room_model_id_id_15ee5e24
-    definition: INDEX ON room_model_id_id
-  example:
-  - id: 2
-    room: 1609
-    floor: 16
-    king: 'NO'
-    double: 'YES'
-    exec_king: 'NO'
-    bath_screen: 'YES'
-    room_model: A LO
-    left_desk: 'YES'
-    right_desk: 'NO'
-    to_be_renovated: 'YES'
-    description: Double, Long desk, w screen, custom ceiling and closet wall covering
-    room_model_id: 3
-    room_model_id_id: null
-  - id: 3
-    room: 1611
-    floor: 16
-    king: 'YES'
-    double: 'NO'
-    exec_king: 'NO'
-    bath_screen: 'YES'
-    room_model: A COL
-    left_desk: 'YES'
-    right_desk: 'NO'
-    to_be_renovated: 'YES'
-    description: King, Long desk, w screen, custom ceiling and closet wall covering
-    room_model_id: 2
-    room_model_id_id: null
-- name: room_model
-  description: 'Master list of room templates/models, defining standard layouts or
-    furniture needs.
+    description: 'Foreign key to `room_model.id`. Use this for joining.'
+  # Explicitly defining FK relationship for clarity
+  foreign_keys:
+   - column: room_model_id
+     references: room_model(id)
+  example: # Example uses room_model_id: 3
+  - {id: 2, room: 1609, floor: 16, king: 'NO', double: 'YES', exec_king: 'NO', bath_screen: 'YES', room_model: 'A LO', left_desk: 'YES', right_desk: 'NO', to_be_renovated: 'YES', description: 'Double, Long desk, w screen...', room_model_id: 3}
+  - {id: 3, room: 1611, floor: 16, king: 'YES', double: 'NO', exec_king: 'NO', bath_screen: 'YES', room_model: 'A COL', left_desk: 'YES', right_desk: 'NO', to_be_renovated: 'YES', description: 'King, Long desk, w screen...', room_model_id: 2}
 
-    '
+- name: room_model
+  description: 'Master list of room templates/models.'
   columns:
   - name: id
     type: integer
-    constraints:
-    - primary key
-    - auto-increment
-    description: Unique ID for each room model.
+    constraints: [primary key, auto-increment]
+    description: 'Unique ID for each room model. Used as FK target by `product_room_model` and `room_data`.'
   - name: room_model
     type: text
-    description: Name or code for room model (human-readable).
+    description: Name or code for the room model (human-readable).
   - name: total
     type: integer
     description: Total number of rooms with this model.
   example:
-  - id: 2
-    room_model: A COL
-    total: 72
-  - id: 3
-    room_model: A LO
-    total: 36
-- name: schedule
-  description: 'Detailed installation and project timeline schedule for each floor
-    or phase. Used to coordinate shipping, clearing, pre-work, installation, and post-work.
-    if asked for when an floor is going to get complete or work will get done you
-    can consider floor_completed date as completed date
+  - {id: 2, room_model: A COL, total: 72}
+  - {id: 3, room_model: A LO, total: 36}
 
-    '
+- name: schedule
+  description: 'Detailed project timeline schedule per floor. Provides dates for various stages like shipping and installation.'
   columns:
   - name: id
     type: integer
-    constraints:
-    - primary key
-    - auto-increment
-    description: Unique ID for the schedule.
+    constraints: [primary key, auto-increment]
+    description: Unique ID for the schedule entry.
   - name: phase
     type: integer
-    description: Phase number (milestone reference).
+    description: Project phase number.
   - name: floor
     type: integer
-    description: Floor number (links to `room_data.floor`).
+    description: 'Floor number. Joins with `room_data.floor` to link schedule to rooms.'
   - name: production_starts
     type: timestamp with time zone
-    description: When production begins.
+    description: Production start date.
   - name: production_ends
     type: timestamp with time zone
-    description: When production ends.
-  - name: shipping_depature
+    description: Production end date.
+  - name: shipping_depature # Typo 'depature' kept as likely reflects DB
     type: timestamp with time zone
-    description: Product shipment departure time (typo 'depature' intentional per
-      DB).
+    description: Shipment departure date.
   - name: shipping_arrival
     type: timestamp with time zone
-    description: When shipment arrives on site.
+    description: Estimated or actual shipment arrival date.
   - name: custom_clearing_starts
     type: timestamp with time zone
-    description: Customs clearance starts.
+    description: Customs clearance start date.
   - name: custom_clearing_ends
     type: timestamp with time zone
-    description: Customs clearance ends.
+    description: Customs clearance end date.
   - name: arrive_on_site
     type: timestamp with time zone
-    description: Furniture arrival on site.
+    description: Date furniture arrives on site.
   - name: pre_work_starts
     type: timestamp with time zone
-    description: Pre-installation work start.
+    description: Pre-installation work start date.
   - name: pre_work_ends
     type: timestamp with time zone
-    description: Pre-installation work end.
+    description: Pre-installation work end date.
   - name: install_starts
     type: timestamp with time zone
-    description: Installation start time.
+    description: Installation start date.
   - name: install_ends
     type: timestamp with time zone
-    description: Installation end time.
+    description: Installation end date.
   - name: post_work_starts
     type: timestamp with time zone
-    description: Post-installation work begins.
+    description: Post-installation work start date.
   - name: post_work_ends
     type: timestamp with time zone
-    description: Post-installation work ends.
+    description: Post-installation work end date.
   - name: floor_completed
     type: timestamp with time zone
-    description: Floor officially marked complete and its also treated as completed
-      date the final date
+    description: 'Date floor work is completed.'
   - name: floor_closes
     type: timestamp with time zone
-    description: Date the floor is closed for access.
+    description: Date floor closes for work.
   - name: floor_opens
     type: timestamp with time zone
-    description: Floor reopens after work.
-  example:
-  - id: 2
-    phase: 1
-    floor: 17
-    production_starts: '2025-03-10T18:30:00+00:00'
-    production_ends: '2025-06-18T18:30:00+00:00'
-    shipping_depature: '2025-06-19T18:30:00+00:00'
-    shipping_arrival: '2025-08-03T18:30:00+00:00'
-    custom_clearing_starts: '2025-08-03T18:30:00+00:00'
-    custom_clearing_ends: '2025-08-09T18:30:00+00:00'
-    arrive_on_site: '2025-08-10T18:30:00+00:00'
-    pre_work_starts: '2025-07-27T18:30:00+00:00'
-    pre_work_ends: '2025-08-10T18:30:00+00:00'
-    install_starts: '2025-08-10T18:30:00+00:00'
-    install_ends: '2025-08-24T18:30:00+00:00'
-    post_work_starts: '2025-08-24T18:30:00+00:00'
-    post_work_ends: '2025-08-31T18:30:00+00:00'
-    floor_completed: '2025-08-31T18:30:00+00:00'
-    floor_closes: '2025-07-27T18:30:00+00:00'
-    floor_opens: '2025-08-31T18:30:00+00:00'
-  - id: 3
-    phase: 1
-    floor: 18
-    production_starts: '2025-03-10T18:30:00+00:00'
-    production_ends: '2025-06-18T18:30:00+00:00'
-    shipping_depature: '2025-06-19T18:30:00+00:00'
-    shipping_arrival: '2025-08-03T18:30:00+00:00'
-    custom_clearing_starts: '2025-08-03T18:30:00+00:00'
-    custom_clearing_ends: '2025-08-09T18:30:00+00:00'
-    arrive_on_site: '2025-08-10T18:30:00+00:00'
-    pre_work_starts: '2025-08-10T18:30:00+00:00'
-    pre_work_ends: '2025-08-24T18:30:00+00:00'
-    install_starts: '2025-08-24T18:30:00+00:00'
-    install_ends: '2025-09-07T18:30:00+00:00'
-    post_work_starts: '2025-09-07T18:30:00+00:00'
-    post_work_ends: '2025-09-14T18:30:00+00:00'
-    floor_completed: '2025-09-14T18:30:00+00:00'
-    floor_closes: '2025-08-10T18:30:00+00:00'
-    floor_opens: '2025-09-14T18:30:00+00:00'
+    description: Date floor reopens after work.
+  example: # Example uses floor: 17
+  - {id: 2, phase: 1, floor: 17, production_starts: '2025-03-10T18:30:00+00:00', production_ends: '2025-06-18T18:30:00+00:00', shipping_depature: '2025-06-19T18:30:00+00:00', shipping_arrival: '2025-08-03T18:30:00+00:00', custom_clearing_starts: '2025-08-03T18:30:00+00:00', custom_clearing_ends: '2025-08-09T18:30:00+00:00', arrive_on_site: '2025-08-10T18:30:00+00:00', pre_work_starts: '2025-07-27T18:30:00+00:00', pre_work_ends: '2025-08-10T18:30:00+00:00', install_starts: '2025-08-10T18:30:00+00:00', install_ends: '2025-08-24T18:30:00+00:00', post_work_starts: '2025-08-24T18:30:00+00:00', post_work_ends: '2025-08-31T18:30:00+00:00', floor_completed: '2025-08-31T18:30:00+00:00', floor_closes: '2025-07-27T18:30:00+00:00', floor_opens: '2025-08-31T18:30:00+00:00'}
+  - {id: 3, phase: 1, floor: 18, production_starts: '2025-03-10T18:30:00+00:00', production_ends: '2025-06-18T18:30:00+00:00', shipping_depature: '2025-06-19T18:30:00+00:00', shipping_arrival: '2025-08-03T18:30:00+00:00', custom_clearing_starts: '2025-08-03T18:30:00+00:00', custom_clearing_ends: '2025-08-09T18:30:00+00:00', arrive_on_site: '2025-08-10T18:30:00+00:00', pre_work_starts: '2025-08-10T18:30:00+00:00', pre_work_ends: '2025-08-24T18:30:00+00:00', install_starts: '2025-08-24T18:30:00+00:00', install_ends: '2025-09-07T18:30:00+00:00', post_work_starts: '2025-09-07T18:30:00+00:00', post_work_ends: '2025-09-14T18:30:00+00:00', floor_completed: '2025-09-14T18:30:00+00:00', floor_closes: '2025-08-10T18:30:00+00:00', floor_opens: '2025-09-14T18:30:00+00:00'}
+
+# Add other tables if they exist (e.g., Shipping, PullInventory, ChatSession, ChatHistory, InvitedUser)
+# Ensure their descriptions and relationships are also clearly defined.

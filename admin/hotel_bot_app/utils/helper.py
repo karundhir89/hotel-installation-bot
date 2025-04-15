@@ -364,3 +364,150 @@ def verify_sql_query(
             "issues": [f"An unexpected error occurred during SQL verification: {str(e)}"],
             "recommendation": None,
         }
+
+# New function for the initial Intent + Conditional SQL Generation Prompt
+def format_intent_sql_prompt(user_message, prompt_data):
+    """Formats the prompt for the initial LLM call to determine intent and generate SQL if needed."""
+    schema_representation = json.dumps(prompt_data, indent=2)
+
+    system_prompt = f"""
+    You are PksBot, an AI assistant for a hotel furniture installation system, interfacing via PostgreSQL.
+    Your primary goal is to understand the user's request and determine the necessary action.
+
+    **Analysis Steps:**
+    1.  **Analyze Intent:** Carefully read the user's query: `{user_message}`.
+    2.  **Determine Need for Data:** Decide if answering the query requires information from the database schema provided below.
+    3.  **Action:**
+        *   **If Database Info Needed:** Generate the most appropriate, efficient, and safe PostgreSQL query. Follow these SQL rules strictly:
+            *   Use `ILIKE` for case-insensitive string comparisons on names/descriptions.
+            *   JOIN tables to get human-readable names (e.g., product names) instead of just IDs.
+            *   Always include `LIMIT 50`.
+            *   Adhere strictly to the provided schema.
+            *   Handle potential ambiguities (e.g., qualify column names if necessary).
+        *   **If NO Database Info Needed:** Generate a concise, direct natural language answer to the user's query (e.g., for greetings, general questions about your capabilities).
+
+    **Database Schema (for reference if needed):**
+    ```json
+    {schema_representation}
+    ```
+
+    **Output Format:**
+    Respond ONLY with a single, valid JSON object. No explanations or other text.
+    The JSON object MUST have the following structure:
+
+    ```json
+    {{
+      "needs_sql": boolean, // true if you generated a SQL query, false otherwise
+      "query": string | null, // The generated PostgreSQL query if needs_sql is true, otherwise null
+      "direct_answer": string | null // The direct natural language answer if needs_sql is false, otherwise null
+    }}
+    ```
+
+    **Example 1 (Needs SQL):**
+    User Query: "Show me details for room 101"
+    Expected JSON Output:
+    ```json
+    {{
+      "needs_sql": true,
+      "query": "SELECT room, floor, room_model, description FROM RoomData WHERE room = '101' LIMIT 50;",
+      "direct_answer": null
+    }}
+    ```
+
+    **Example 2 (Doesn't Need SQL):**
+    User Query: "Hello, who are you?"
+    Expected JSON Output:
+    ```json
+    {{
+      "needs_sql": false,
+      "query": null,
+      "direct_answer": "I am PksBot, your AI assistant for hotel furniture installation information."
+    }}
+    ```
+
+    **Generate the JSON response now based on the user query: "{user_message}"**
+    """
+
+    return [
+        {"role": "system", "content": system_prompt.strip()},
+        # No separate user message needed here as it's embedded in the system prompt for this specific task
+    ]
+
+# New function for the Final Natural Language Response Prompt
+def generate_natural_response_prompt(user_message, sql_query, rows):
+    """Formats the prompt for the final LLM call to synthesize a natural response based on context and data."""
+
+    data_summary = "No data was retrieved."
+    columns = [] # Initialize columns
+    data_preview = [] # Initialize data preview
+    num_records = 0 # Initialize count
+
+    if rows and isinstance(rows, dict):
+        columns = rows.get('columns', []) # Assign within the check
+        data = rows.get('rows')
+        num_records = len(data) if isinstance(data, (list, tuple)) else 0
+
+        if num_records > 0:
+            max_rows_in_prompt = 10 # Slightly increase for context, still limited
+            data_preview = data[:max_rows_in_prompt] # Assign within the check
+            data_summary = f"Successfully retrieved {num_records} record(s)."
+            data_summary += f"\\nColumns: {columns}"
+            data_summary += f"\\nData Preview (first {len(data_preview)} rows): {str(data_preview)}"
+            if num_records > max_rows_in_prompt:
+                data_summary += f"\\n(Note: {num_records - max_rows_in_prompt} more rows exist but are not shown in this preview)"
+        elif sql_query:
+             data_summary = "The query executed successfully, but no matching records were found."
+        elif not sql_query:
+             data_summary = "No database query was performed for this request."
+
+    elif sql_query:
+         data_summary = "I attempted to retrieve information, but encountered an issue and could not fetch the data."
+
+    system_prompt = f"""
+    You are PksBot, a friendly and helpful AI assistant for a hotel furniture installation system.
+    Your task is to provide a conversational and informative answer to the user's query based on the context provided.
+
+    **Context:**
+    1.  **User's Original Query:** "{user_message}"
+    2.  **Database Query Attempted:** `{sql_query if sql_query else 'None'}`
+    3.  **Data Retrieval Summary:** {data_summary}
+
+    **Response Guidelines:**
+    *   Address the user's query directly and naturally.
+    *   **If the user asks for a list of items (e.g., missing items, available products, room details) and data was retrieved (`num_records > 0`):**
+        *   Present the results clearly using an HTML `<table>`.
+        *   Use the `Columns` from the summary as table headers (`<thead><tr><th>...</th></tr></thead>`).
+        *   Populate the table body (`<tbody>`) using the retrieved `Data Preview` (and mention if more rows exist).
+        *   Include a brief introductory sentence before the table, like "Here are the items matching your request:"
+    *   **For other types of queries OR if only one record was found:** Synthesize the key information from the 'Data Retrieval Summary' into a concise natural language sentence or paragraph. Explain what the data means.
+    *   If no data was found (but the query was valid), state that clearly and politely (e.g., "I couldn't find any records matching your criteria.").
+    *   If a query was attempted but failed, inform the user that you couldn't retrieve the information due to an issue (without technical details).
+    *   If no database query was needed or attempted, just answer the user's original query directly.
+    *   Keep the response concise and easy to understand.
+    *   Do NOT include the raw SQL query in your response.
+    *   Do NOT use markdown formatting (like ``` ```) around the HTML table if you generate one.
+    *   Maintain a helpful and professional tone.
+
+    **Example Response (Data Found - List Request -> Table):**
+    User Query: "Show me inventory for client P123"
+    Response:
+    "Okay, here is the inventory information for client P123:
+    <table><thead><tr><th>Item SKU</th><th>Quantity Available</th><th>Quantity Received</th></tr></thead><tbody><tr><td>KS-JWM-702A</td><td>0</td><td>0</td></tr></tbody></table>
+    (Note: Additional data might exist if not fully shown)"
+
+    **Example Response (Data Found - Specific Question -> Narrative):**
+    User Query: "What is the status of room 1607?"
+    Response:
+    "Room 1607 currently has product availability marked as 'NO', and pre-work, installation, and post-work are also marked as 'NO'. Installation has not yet begun for this room."
+
+    **Example Response (No Data Found):**
+    "I checked for inventory items described as 'purple chair', but couldn't find any matching records."
+
+    **Example Response (Query Failed):**
+    "I tried to look up the information you requested, but encountered a problem retrieving the data. You might want to try rephrasing your question."
+
+    **Generate the final natural language response for the user now.**
+    """
+    return [
+        {"role": "system", "content": system_prompt.strip()}
+    ]
