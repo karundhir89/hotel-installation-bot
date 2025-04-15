@@ -231,11 +231,11 @@ def add_users_roles(request):
             email=email,
             password=bcrypt.hashpw(password_generated.encode(), bcrypt.gensalt()),
         )
-        send_test_email(email, password_generated)
+        send_emails(email, password_generated)
 
     return render(request, "add_users_roles.html")
 
-def send_test_email(recipient_email, password):
+def send_emails(recipient_email, password):
     subject = "Your Access to Hotel Installation Admin"
     from_email = env("EMAIL_HOST_USER")
     recipient_list = [recipient_email]
