@@ -4,8 +4,6 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import PasswordChangeForm
 from django.contrib import messages
 from .models import *
-from django.http.response import JsonResponse
-import json
 
 # Create your views here.
 @login_required
@@ -21,7 +19,7 @@ def my_view(request):
 				return HttpResponseRedirect("/user_management")
 	except Exception as e:
 		print("error in my_view :::::::::::",e)
-	return HttpResponseRedirect("/accounts/login")
+	return HttpResponseRedirect("/admin/login")
 
 @login_required
 def change_password(request):
@@ -68,33 +66,6 @@ def dashboard(request):
 def logout_view(request):
 	try:
 		logout(request)
-		return HttpResponseRedirect("/accounts/login")
+		return HttpResponseRedirect("/admin/login")
 	except Exception as e:
 		print("error in logout :::::::::::",e)
-
-@login_required
-def get_permissions(request):
-	try:
-		permissions_list = []
-		all_permissions = SectionPermissions.objects.all()
-		for permission in all_permissions:
-			temp = []
-			print(permission)
-			temp.append(permission.sectionType)
-			temp.append(permission.sectionDisplayName)
-			permissions = []
-			for i in permission.permissions:
-				permissions.append(i['displayName'])   
-			temp.append(permissions)
-			btn_html = '<button class="btn btn-info">edit</button><button class="btn btn-danger">delete</button>'
-			temp.append(btn_html)
-			permissions_list.append(temp)
-		return JsonResponse({'permissions_list':permissions_list,'success':True})
-	except Exception as e:
-		print("error in get_permissions :::::::::::",e)	
-
-def section_permissions(request):
-	try:
-		return render(request,'section_permissions.html')
-	except Exception as e:
-		print("error in section_permissions :::::::::::",e)	

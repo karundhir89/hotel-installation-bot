@@ -17,7 +17,7 @@ urlpatterns = [
     path('rooms/edit/', edit_room, name='edit_room'),
     path('delete-room/', delete_room, name='delete_room'),
     path('room-models/', room_model_list, name='room_model_list'),
-    path('inventory_list/', inventory_list, name='inventory_list'),
+    path('inventory/', inventory_list, name='inventory_list'),
     path('room-models/save/', save_room_model, name='save_room_model'),
     path('room-models/delete/', delete_room_model, name='delete_room_model'),
     path('installation-form/', installation_form, name='installation_form'),
@@ -28,10 +28,10 @@ urlpatterns = [
     path('delete_inventory/',delete_inventory,name='delete_inventory'),
     path('delete_products_data/',delete_products_data,name='delete_products_data'),
     path('delete_installation/',delete_installation,name='delete_installation'),
-    path('install_list/',install_list,name='install_list'),
-    path('product_data_list/',product_data_list,name='product_data_list'),
+    path('install/',install_list,name='install_list'),
+    path('products/',product_data_list,name='product_data_list'),
     path('save_product_data/',save_product_data,name='save_product_data'),
-    path('schedule_list/',schedule_list,name='schedule_list'),
+    path('schedule/',schedule_list,name='schedule_list'),
     path('save_schedule/',save_schedule,name='save_schedule'),
     path('delete_schedule/',delete_schedule,name='delete_schedule'),
     path('inventory_shipment/', inventory_shipment, name='inventory_shipment'),
@@ -40,8 +40,8 @@ urlpatterns = [
     path('inventory_received_item_num/', inventory_received_item_num, name='inventory_received_item_num'),
     path('inventory_pull/', inventory_pull, name='inventory_pull'),
     path('inventory_pull_item/', inventory_pull_item, name='inventory_pull_item'),
-    path('installation_control_form/', installation_control_form, name='installation_control_form'),
-    path('inventory_pull_form/', inventory_pull_form, name='inventory_pull_form'),
+    path('chat_history/', chat_history, name='chat_history'),
+    path('chat_history/<int:session_id>/', view_chat_history, name='view_chat_history'),
 
     
 

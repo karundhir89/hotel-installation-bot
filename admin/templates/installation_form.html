@@ -5,47 +5,39 @@
 
 {% block content %}
 <div class="container my-5">
-    <h3 class="mb-4 text-center text-secondary">Installation Control Form</h3>
+    <div class="card shadow-sm rounded-4">
+        <div class="card-body p-4">
+            <h3 class="mb-4 text-center text-secondary py-4">Installation Control Form</h3>
 
-    <form method="post">
-        {% csrf_token %}
-        <div class="form-row mb-3">
-            <div class="col-md-4">
-                <label>Room #</label>
-                <input type="text" class="form-control" name="room_number" id="room_number" required>
-            </div>
-            <div class="col-md-4">
-                <label>Room Type</label>
-                <input type="text" class="form-control" name="room_type" id="room_type" readonly required>
-            </div>
+            <form method="post">
+                {% csrf_token %}
+
+                <!-- Room Info -->
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <label for="room_number" class="form-label">Room #</label>
+                        <input type="text" class="form-control" name="room_number" id="room_number" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="room_type" class="form-label">Room Type</label>
+                        <input type="text" class="form-control" name="room_type" id="room_type" readonly required>
+                    </div>
+                </div>
+
+                <hr class="my-4">
+
+                <!-- Dynamic Check Items Render Here -->
+                <div id="check-items-wrapper"></div>
+
+                <hr class="my-4">
+
+                <!-- Submit Button -->
+                <div class="text-center">
+                    <button type="submit" class="btn btn-secondary btn-lg px-5">Submit</button>
+                </div>
+            </form>
         </div>
-
-        <hr>
-
-        <!-- Dynamic check items will be inserted here -->
-        <div id="check-items-wrapper"></div>
-
-        <hr>
-
-        <div class="form-group row mt-4">
-            <div class="col-md-3">
-                <label>Date</label>
-                <input type="date" class="form-control" name="final_date">
-            </div>
-            <div class="col-md-4">
-                <label>By</label>
-                <input type="text" class="form-control" name="final_by" placeholder="Name">
-            </div>
-            <div class="col-md-5">
-                <label>Notes</label>
-                <textarea class="form-control" name="final_notes" rows="2" placeholder="Additional notes..."></textarea>
-            </div>
-        </div>
-
-        <div class="text-center mt-4">
-            <button type="submit" class="btn btn-secondary px-5">Submit</button>
-        </div>
-    </form>
+    </div>
 </div>
 {% endblock %}
 
@@ -61,10 +53,10 @@
         type: "GET",
         data: { room_number: roomNumber },
         success: function (data) {
-          console.log("Received data:", data);  // Debug output
+          console.log("Received data:", data);
           if (data.success) {
             $('#room_type').val(data.room_type);
-            renderCheckItems(data.check_items);
+            renderCheckItems(data.check_items, data.saved_items);
           } else {
             toastr.error("Room number does not exist");
             $('#room_type').val('');
@@ -79,26 +71,51 @@
       });
     });
 
-    function renderCheckItems(items) {
+    function renderCheckItems(items, savedItems = []) {
       const wrapper = $('#check-items-wrapper');
-      wrapper.html(''); // Clear existing items
+      wrapper.html('');
+
+      const savedItemsMap = {};
+      savedItems.forEach(item => {
+        if (item.install_id !== undefined) {
+          savedItemsMap[`detail-${item.install_id}`] = item;
+        }
+      });
 
       items.forEach(item => {
+        const key = `${item.type}-${item.id}`;
+        const saved = savedItemsMap[key] || {};
+
+        let isChecked = false;
+        let installedBy = "";
+        let installedOn = "";
+
+        if (item.type === "installation") {
+          isChecked = item.status === "YES";
+          installedBy = item.checked_by || "";
+          installedOn = item.check_on ? item.check_on.split("T")[0] : "";
+        } else if (item.type === "detail") {
+          isChecked = saved.status === "YES";
+          installedBy = saved.installed_by || "";
+          installedOn = saved.installed_on ? saved.installed_on.split("T")[0] : "";
+        }
+
         const html = `
-          <div class="form-group row align-items-center">
+          <div class="form-group row align-items-center mb-3">
             <div class="col-md-5">
               <div class="form-check">
-                <input class="form-check-input" type="checkbox" name="step_${item.id}" id="step_${item.id}">
-                <label class="form-check-label" for="step_${item.id}">
+                <input type="hidden" name="step_${item.type}_${item.id}" value="off">
+                <input class="form-check-input" type="checkbox" name="step_${item.type}_${item.id}" id="step_${item.type}_${item.id}" value="on" ${isChecked ? 'checked' : ''}>
+                <label class="form-check-label" for="step_${item.type}_${item.id}">
                   ${item.label}
                 </label>
               </div>
             </div>
             <div class="col-md-3">
-              <input type="date" class="form-control" name="date_${item.id}">
+              <input type="date" class="form-control" name="date_${item.type}_${item.id}" value="${installedOn}">
             </div>
             <div class="col-md-4">
-              <input type="text" class="form-control" name="checked_by_${item.id}" placeholder="Checked by">
+              <input type="text" class="form-control" name="checked_by_${item.type}_${item.id}" value="${installedBy}" placeholder="Checked by">
             </div>
           </div>
         `;
@@ -106,13 +123,40 @@
       });
     }
 
-    {% if toast_message %}
+    // Fill checked_by and check_on when checkbox is ticked
+    $(document).on("change", ".form-check-input", function () {
+      const checkbox = $(this);
+      const idParts = checkbox.attr("id").split("_"); // ["step", "detail", "23"]
+      const type = idParts[1];
+      const id = idParts[2];
+
+      const isChecked = checkbox.is(":checked");
+      const currentDate = new Date().toISOString().split("T")[0];
+      const currentUser = "{{ invited_user.name|escapejs }}";
+
+      if (isChecked) {
+        $(`input[name="date_${type}_${id}"]`).val(currentDate);
+        $(`input[name="checked_by_${type}_${id}"]`).val(currentUser);
+      } else {
+        $(`input[name="date_${type}_${id}"]`).val("");
+        $(`input[name="checked_by_${type}_${id}"]`).val("");
+      }
+    });
+
+    // Toastr for Django messages
+    {% if messages %}
     toastr.options = {
       "closeButton": true,
       "progressBar": true,
       "timeOut": "4000"
     };
-    toastr.success("{{ toast_message }}");
+    {% for message in messages %}
+      {% if message.tags == "success" %}
+        toastr.success("{{ message|escapejs }}");
+      {% elif message.tags == "error" %}
+        toastr.error("{{ message|escapejs }}");
+      {% endif %}
+    {% endfor %}
     {% endif %}
   });
 </script>
