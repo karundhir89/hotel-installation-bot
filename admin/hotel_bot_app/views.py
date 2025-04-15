@@ -235,8 +235,7 @@ def add_users_roles(request):
 
     return render(request, "add_users_roles.html")
 
-@login_required
-def send_test_email(recipient_email, password):
+def send_test_email(request,recipient_email, password):
     subject = "Your Access to Hotel Installation Admin"
     from_email = env("EMAIL_HOST_USER")
     recipient_list = [recipient_email]
