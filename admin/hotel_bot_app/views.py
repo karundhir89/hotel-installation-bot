@@ -65,100 +65,168 @@ from  .utils.update_db_schema import load_and_enrich_yaml_with_examples
 @csrf_exempt
 def chatbot_api(request):
     if request.method == "POST":
-        data = json.loads(request.body)
-        user_message = data.get("message", "").strip()
-        load_and_enrich_yaml_with_examples()
-        if not user_message:
-            return JsonResponse({"response": "⚠️ No message sent."}, status=400)
+        try:
+            data = json.loads(request.body)
+            user_message = data.get("message", "").strip()
+        except json.JSONDecodeError:
+            return JsonResponse({"response": "⚠️ Invalid request format."}, status=400)
 
+        if not user_message:
+            return JsonResponse({"response": "⚠️ Please enter a message."}, status=400)
+
+        # --- Session Management ---
         session_id = request.session.get("chat_session_id")
-        print("session_idddd", session_id)
-        if not session_id:
-            session = ChatSession.objects.create()
-            request.session["chat_session_id"] = session.id
-            request.session.set_expiry(3600*8)  # Session expires in 1 hour (3600 seconds) * 8 hours
-            session_id = session.id  # Update the local variable
-            print("session_idddd", session_id)
-        else:
+        session = None
+        if session_id:
             try:
                 session = ChatSession.objects.get(id=session_id)
             except ChatSession.DoesNotExist:
-                session = ChatSession.objects.create()
-                request.session["chat_session_id"] = session.id
-                request.session.set_expiry(3600)
-                session_id = session.id
+                session_id = None # Force creation of a new session
 
-        ChatHistory.objects.create(session=session, message=user_message, role="user")
+        if not session_id:
+            session = ChatSession.objects.create()
+            request.session["chat_session_id"] = session.id
+            request.session.set_expiry(3600 * 8) # 8 hours
+            print(f"Created new chat session: {session.id}")
+        else:
+             print(f"Using existing chat session: {session_id}")
 
+
+        # --- Log User Message ---
         try:
-            DB_SCHEMA = load_database_schema()
+            ChatHistory.objects.create(session=session, message=user_message, role="user")
+        except Exception as e:
+            print(f"Error saving user message to chat history: {e}")
+            # Non-critical, proceed with generation but log the issue
 
-            # Prompt GPT to generate SQL
-            # prompt_first = format_gpt_prompt(user_message, DB_SCHEMA)
-            # prompt_response = gpt_call_json_func(
-            #     [{"role": "user", "content": prompt_first}],
-            #     gpt_model="gpt-4o",
-            #     json_required=False,
-            # )
-            messages = format_gpt_prompt(user_message, DB_SCHEMA)
-            prompt_response = gpt_call_json_func(
-                messages,
-                gpt_model="gpt-4o",
-                json_required=False,
-            )
 
-            print("First GPT response:", prompt_response)   
+        # --- Core Chatbot Logic ---
+        bot_message = "Sorry, I encountered an unexpected issue and couldn't process your request. Please try again later." # Default error message
+        try:
+            # 1. Load Schema (Potentially expensive, consider caching/optimizing later)
+            try:
+                # load_and_enrich_yaml_with_examples() # Consider if this needs to run every time
+                DB_SCHEMA = load_database_schema()
+            except Exception as e:
+                print(f"Critical Error loading database schema: {e}")
+                raise Exception("Failed to load schema information.") # Re-raise to be caught by outer try-except
+
+            # 2. Format Prompt for SQL Generation
+            try:
+                messages = format_gpt_prompt(user_message, DB_SCHEMA)
+            except Exception as e:
+                print(f"Error formatting GPT prompt: {e}")
+                raise Exception("Failed to prepare request.") # Re-raise
+
+            # 3. Call GPT for SQL Generation
+            prompt_response = None
+            try:
+                prompt_response = gpt_call_json_func(
+                    messages,
+                    gpt_model="gpt-4o",
+                    json_required=True, # Expecting JSON {"query": "..."}
+                )
+            except Exception as e:
+                print(f"Error during GPT call for SQL generation: {e}")
+                # Fall through, prompt_response will be None
+
+            if not prompt_response or not isinstance(prompt_response, dict):
+                print("Error: Failed to get valid JSON response from SQL generation LLM.")
+                raise Exception("Failed to generate SQL query.") # Re-raise
 
             sql_query = prompt_response.get("query")
-            rows = None
-            bot_message = None
+            print(f"Generated SQL Query: {sql_query}")
 
-            if sql_query:
-                print("Query", sql_query)
+            if not sql_query or not isinstance(sql_query, str):
+                 print("Error: No SQL query found in the LLM response or invalid format.")
+                 # If no SQL is needed (e.g., greeting), maybe handle differently later.
+                 # For now, assume SQL is expected if the LLM responded.
+                 # Attempt to generate a direct response without data.
+                 rows = None # Indicate no data fetched
+                 # Proceed to generate_final_response
+
+            # 4. Execute SQL (and verify/retry if needed)
+            rows = None
+            if sql_query: # Only proceed if we have a query string
                 try:
-                    # Try executing the query directly
+                    # Initial attempt
                     rows = fetch_data_from_sql(sql_query)
-                    print("Rows", rows)
+                    print(f"Initial query execution successful. Rows: {rows}")
 
                 except Exception as db_error:
-                    print("DB execution error:", db_error)
+                    print(f"Initial DB execution error: {db_error}")
+                    print(f"Attempting verification for query: {sql_query}")
 
                     # Run GPT SQL verifier
-                    verification = verify_sql_query(
-                        user_message=user_message,
-                        sql_query=sql_query,
-                        prompt_data=DB_SCHEMA,
-                        error_message=str(db_error),
-                        gpt_model="gpt-4o"
-                    )
+                    verification = None
+                    try:
+                        verification = verify_sql_query(
+                            user_message=user_message,
+                            sql_query=sql_query,
+                            prompt_data=DB_SCHEMA,
+                            error_message=str(db_error),
+                            gpt_model="gpt-4o"
+                        )
+                    except Exception as verify_e:
+                         print(f"Error during SQL verification call: {verify_e}")
+                         # Proceed without verification results
 
-                    print("Verification result:", verification)
+                    print(f"Verification result: {verification}")
 
-                    # If GPT recommends a fixed query, retry with that
-                    if not verification["is_valid"] and verification.get("recommendation"):
+                    if verification and isinstance(verification, dict) and not verification.get("is_valid") and verification.get("recommendation"):
+                        recommended_query = verification["recommendation"]
+                        print(f"Verification recommended new query: {recommended_query}")
                         try:
-                            rows = fetch_data_from_sql(verification["recommendation"])
-                            sql_query = verification["recommendation"]
+                            # Retry with recommended query
+                            rows = fetch_data_from_sql(recommended_query)
+                            sql_query = recommended_query # Update the query used
+                            print("Retry with recommended query successful.")
                         except Exception as second_error:
-                            print("Retry failed:", second_error)
-                            raise second_error  # Let it get caught below
+                            print(f"Retry with recommended query failed: {second_error}")
+                            # Raise the *second* error as it's the most recent failure point
+                            raise Exception(f"Failed to execute corrected query: {second_error}")
                     else:
-                        raise db_error  # Re-raise if no fix recommended
+                        # If verification failed, didn't return a recommendation, or deemed original query valid despite error
+                        print("SQL Verification did not provide a usable correction or original query failed verification.")
+                        raise Exception(f"Failed to execute query: {db_error}") # Re-raise the original DB error
 
-            bot_message = generate_final_response(user_message, rows)
+            # 5. Generate Final Response
+            try:
+                # Pass 'rows' which might be None if no query was generated/executed, or if execution failed before this point
+                # The helper function should handle rows=None
+                bot_message = generate_final_response(user_message, rows)
+                if not bot_message or not isinstance(bot_message, str):
+                     print(f"Error: generate_final_response returned invalid data: {bot_message}")
+                     raise Exception("Failed to format the final response.")
 
-            # Save assistant's response
-            ChatHistory.objects.create(session=session, message=bot_message, role="assistant")
+            except Exception as e:
+                print(f"Error generating final response: {e}")
+                # Use default error message
+                raise Exception("Failed to generate final response.") # Re-raise
 
-            return JsonResponse({"response": bot_message})
 
         except Exception as e:
-            print("Error occurred:", e)
-            error_message = f"Sorry, I couldn't process that due to: {str(e)}"
-            ChatHistory.objects.create(session=session, message=error_message, role="assistant")
-            return JsonResponse({"response": error_message})
+            print(f"Error in chatbot_api main logic: {e}")
+            # Use the default error message initialized earlier:
+            # bot_message = "Sorry, I encountered an unexpected issue..."
+            # Log the specific internal error for debugging
+            internal_error_message = f"Failed processing user message '{user_message}'. Error: {str(e)}"
+            # Potentially log this to a file or monitoring system
+            print(internal_error_message)
 
-    return JsonResponse({"error": "Invalid request"}, status=400)
+        # --- Log Assistant Message ---
+        try:
+            ChatHistory.objects.create(session=session, message=bot_message, role="assistant")
+        except Exception as e:
+             print(f"Error saving assistant message to chat history: {e}")
+             # Non-critical
+
+
+        # --- Return Response ---
+        return JsonResponse({"response": bot_message})
+
+    # --- Handle Non-POST Requests ---
+    return JsonResponse({"error": "Invalid request method. Only POST is allowed."}, status=405)
 
 
 @csrf_exempt
