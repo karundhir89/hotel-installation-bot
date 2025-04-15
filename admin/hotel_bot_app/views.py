@@ -180,7 +180,7 @@ def get_chat_history(request):
 def chatbot(request):
     return render(request, "chatbot.html")
 
-
+@login_required
 def display_prompts(request):
     print(request)
     prompts = Prompt.objects.all()  # Fetch all records
@@ -188,7 +188,7 @@ def display_prompts(request):
         print(prompt.id, prompt.prompt_number, prompt.description)
     return render(request, "edit_prompt.html", {"prompts": prompts})
 
-
+@login_required
 def update_prompt(request):
     if request.method == "POST":
         prompt_id = request.POST.get("prompt_id")  # Get the ID
@@ -206,14 +206,14 @@ def update_prompt(request):
 
     return render(request, "edit_prompt.html")
 
-
+@login_required
 def user_management(request):
     prompts = InvitedUser.objects.all()
     print("users", prompts)
 
     return render(request, "user_management.html", {"prompts": prompts})
 
-
+@login_required
 def add_users_roles(request):
     print(request.POST)
     if request.method == "POST":
@@ -235,7 +235,7 @@ def add_users_roles(request):
 
     return render(request, "add_users_roles.html")
 
-
+@login_required
 def send_test_email(recipient_email, password):
     subject = "Your Access to Hotel Installation Admin"
     from_email = env("EMAIL_HOST_USER")
@@ -873,7 +873,7 @@ def inventory_shipment(request):
 
     return render(request, "inventory_shipment.html", {"user_name": user_name})
 
-
+@session_login_requireds
 def get_product_item_num(request):
     clientId = request.GET.get("room_number")
     try:
@@ -993,7 +993,7 @@ def inventory_pull(request):
         },
     )
 
-
+@session_login_required
 def inventory_pull_item(request):
     clientId = request.GET.get("client_id")
     try:
@@ -1009,7 +1009,7 @@ def inventory_pull_item(request):
     except RoomData.DoesNotExist:
         return JsonResponse({"success": False})
 
-
+@session_login_required
 def inventory_received_item_num(request):
     clientId = request.GET.get("client_item")
     try:
@@ -1319,3 +1319,17 @@ def parse_date(date_str):
         return datetime.strptime(date_str.strip(), "%Y-%m-%d") if date_str and date_str.strip() else None
     except ValueError:
         return None
+
+@login_required
+def chat_history(request):
+    sessions = ChatSession.objects.prefetch_related('chat_history').order_by('-created_at')
+    return render(request, 'chat_history.html', {'sessions': sessions})
+
+@login_required
+def view_chat_history(request, session_id):
+    session = get_object_or_404(ChatSession, id=session_id)
+    chat_messages = session.chat_history.order_by('created_at')[:100]  # from related_name
+    return render(request, 'view_chat_history.html', {
+        'session': session,
+        'chat_messages': chat_messages
+    })
