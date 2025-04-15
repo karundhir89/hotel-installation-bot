@@ -873,7 +873,7 @@ def inventory_shipment(request):
 
     return render(request, "inventory_shipment.html", {"user_name": user_name})
 
-@session_login_requireds
+@session_login_required
 def get_product_item_num(request):
     clientId = request.GET.get("room_number")
     try:
