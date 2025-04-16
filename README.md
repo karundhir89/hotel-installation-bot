@@ -91,7 +91,7 @@ All development **must** happen on feature branches based on the `dev` branch.
 
 ## Key Technologies
 
-*   Python / Django
+*   Python / Django (Backend)
 *   PostgreSQL
 *   OpenAI API
 *   HTML / CSS / JavaScript (Frontend) 
