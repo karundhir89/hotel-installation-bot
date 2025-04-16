@@ -100,12 +100,12 @@ All development **must** happen on feature branches based on the `dev` branch.
 
 Once the development server is running (usually at `http://127.0.0.1:8000`), you can access the following login pages:
 
-*   **Admin/Superuser Login:** Navigate to `/accounts/login/`
-    *   Example URL: `http://127.0.0.1:8000/accounts/login/`
+*   **Admin/Superuser Login:** Navigate to `/admin/login/`
+    *   Example URL: `http://127.0.0.1:8000/admin/login/`
     *   ![Admin Login Screen](superadmin.png)
 
 *   **Normal User Login (Chatbot Interface):** Navigate to the root path `/`
-    *   Example URL: `http://127.0.0.1:8000/`
+    *   Example URL: `http://127.0.0.1:8000/user_login/`
     *   ![Normal User Login Screen](normaluser.png)
 
 *(Replace `http://127.0.0.1:8000` with your actual base URL if different)* 
