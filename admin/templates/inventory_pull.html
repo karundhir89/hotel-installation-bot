@@ -1,0 +1,162 @@
+{% extends "frontend_base.html" %}
+{% load static %}
+
+{% block title %}Inventory Pull Form{% endblock %}
+
+{% block content %}
+<div class="container my-5">
+  <div class="card shadow-sm rounded-4 p-4">
+    <h3 class="mb-4 text-center text-secondary py-4">Inventory Pull Form</h3>
+
+    <form method="post">
+      {% csrf_token %}
+
+      <div class="row mb-3">
+        <div class="col-md-4">
+          <label class="form-label">Client Item</label>
+          <input type="text" class="form-control rounded-3" name="client_id" id="client_id" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Product Item Number</label>
+          <input type="text" class="form-control rounded-3" name="item_number" id="item_number" readonly required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Available Qty Received Ready to Pull</label>
+          <input type="number" class="form-control rounded-3" id="available_qty" name="qty_available_ready_to_pull" readonly>
+        </div>
+      </div>
+
+      <div class="border rounded-3 p-3 mb-4 bg-light">
+
+        <div class="row mb-3 align-items-center">
+          <div class="col-md-1">
+            <input type="checkbox" name="pull_checked" id="pull_checked">
+          </div>
+          <div class="col-md-11">
+            <label class="fw-bold mb-0">1. PULL</label>
+          </div>
+        </div>
+
+        <div class="row mb-3">
+          <div class="col-md-6">
+            <label class="form-label">Date</label>
+            <input type="date" class="form-control rounded-3" name="pull_date_text">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Checked By</label>
+            <input type="text" class="form-control rounded-3" name="pull_checked_by" placeholder="Name">
+          </div>
+        </div>
+
+        <div class="row mb-3">
+          <div class="col-md-6">
+            <label class="form-label">Qty Pulled for Install</label>
+            <input type="number" class="form-control rounded-3" name="qty_pulled_for_install" min="0">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Floor Where It's Going</label>
+            <select class="form-select form-control rounded-3 py-2" name="floor_where_going" style="font-size: 1rem;">
+              <option value="" disabled selected hidden>Select Floor</option>
+            </select>            
+          </div>
+        </div>
+
+        <div class="row mb-3">
+          <div class="col-md-6">
+            <label class="form-label">Inventory Available After Pull</label>
+            <input type="number" class="form-control rounded-3" name="inventory_available_after_pull" min="0">
+          </div>
+        </div>
+      </div>
+
+      <div class="text-center mt-4">
+        <button type="submit" class="btn btn-secondary px-5 rounded-3 shadow-sm">Submit</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  $(document).ready(function () {
+    const currentDate = new Date(); // YYYY-MM-DD
+    const userName = "{{ user_name }}";
+    const isoDate = currentDate.toISOString().split('T')[0]; // "YYYY-MM-DD"
+
+    $('#pull_checked').on('change', function () {
+      if ($(this).is(':checked')) {
+        $('input[name="pull_date_text"]').val(isoDate);
+        $('input[name="pull_checked_by"]').val(userName);
+      } else {
+        $('input[name="pull_date_text"]').val('');
+        $('input[name="pull_checked_by"]').val('');
+      }
+    });
+
+    $('#client_id').on('blur', function () {
+      const roomNumber = $(this).val();
+      if (!roomNumber) return;
+
+      $.ajax({
+        url: "{% url 'inventory_pull_item' %}",
+        type: "GET",
+        data: { client_id: roomNumber },
+        success: function (data) {
+          if (data.success) {
+            $('#item_number').val(data.item_number);
+            $('#available_qty').val(data.available_qty);
+
+            const floorDropdown = $('select[name="floor_where_going"]');
+            floorDropdown.empty();
+            floorDropdown.append('<option value="" disabled selected hidden>Select Floor</option>');
+
+            data.floors.forEach(floor => {
+              floorDropdown.append(`<option value="${floor}">${floor}</option>`);
+            });
+
+          } else {
+            toastr.error("Room number does not exist");
+            $('#item_number').val('');
+            $('#available_qty').val('');
+          }
+        },
+        error: function () {
+          toastr.error("Error fetching room type");
+          $('#item_number').val('');
+        }
+      });
+    });
+
+    // Logic for qty pulled validation and calculation
+    $('input[name="qty_pulled_for_install"]').on('input', function () {
+      const qtyPulled = parseInt($(this).val()) || 0;
+      const availableQty = parseInt($('#available_qty').val()) || 0;
+
+      if (qtyPulled > availableQty) {
+        toastr.warning("Qty Pulled cannot be greater than Available Qty");
+        $(this).val(availableQty);
+        $('input[name="inventory_available_after_pull"]').val(0);
+      } else {
+        const remaining = availableQty - qtyPulled;
+        $('input[name="inventory_available_after_pull"]').val(remaining);
+      }
+    });
+
+    {% if messages %}
+    toastr.options = {
+      "closeButton": true,
+      "progressBar": true,
+      "timeOut": "4000"
+    };
+    {% for message in messages %}
+      {% if message.tags == "success" %}
+        toastr.success("{{ message|escapejs }}");
+      {% elif message.tags == "error" %}
+        toastr.error("{{ message|escapejs }}");
+      {% endif %}
+    {% endfor %}
+    {% endif %}
+  });
+</script>
+{% endblock %}
