@@ -99,7 +99,7 @@ th.sorting, th.sorting_asc, th.sorting_desc {
                                         <td>{{ installation.install }}</td>
                                         <td>{{ installation.post_work }}</td>
                                         <td>{{ installation.day_install_began }}</td>
-                                        <td>{{ installation.day_instal_complete }}</td>
+                                        <td>{{ installation.day_install_complete }}</td>
                                         <td>
                                             <button class="btn editModelBtn"
                                                 data-id="{{ installation.id }}"
@@ -108,8 +108,8 @@ th.sorting, th.sorting_asc, th.sorting_desc {
                                                 data-prework="{{ installation.prework }}"
                                                 data-install="{{ installation.install }}"
                                                 data-post_work="{{ installation.post_work }}"
-                                                data-day_install_began="{{ installation.day_install_began }}"
-                                                data-day_instal_complete="{{ installation.day_instal_complete }}">
+                                                data-day_install_began="{{ installation.formatted_day_install_began }}"
+                                                data-day_install_complete="{{ installation.formatted_day_install_complete }}">
                                                 Edit
                                             </button>
                                             <button class="btn deleteModelBtn" data-id="{{ installation.id }}">
@@ -148,27 +148,39 @@ th.sorting, th.sorting_asc, th.sorting_desc {
             </div>
             <div class="form-group">
                 <label for="product_available">Product Available:</label>
-                <input type="text" id="product_available" name="product_available" class="form-control">
+                <select id="product_available" name="product_available" class="form-control" required>
+                    <option value="YES">YES</option>
+                    <option value="NO">NO</option>
+                </select>
             </div>
             <div class="form-group">
                 <label for="prework">Prework:</label>
-                <input type="text" id="prework" name="prework" class="form-control">
+                <select id="prework" name="prework" class="form-control" required>
+                    <option value="YES">YES</option>
+                    <option value="NO">NO</option>
+                </select>
             </div>
             <div class="form-group">
                 <label for="install">Install:</label>
-                <input type="text" id="install" name="install" class="form-control">
+                <select id="install" name="install" class="form-control" required>
+                    <option value="YES">YES</option>
+                    <option value="NO">NO</option>
+                </select>
             </div>
             <div class="form-group">
                 <label for="post_work">Post Work:</label>
-                <input type="text" id="post_work" name="post_work" class="form-control">
+                <select id="post_work" name="post_work" class="form-control" required>
+                    <option value="YES">YES</option>
+                    <option value="NO">NO</option>
+                </select>
             </div>
             <div class="form-group">
                 <label for="day_install_began">Install Start Date:</label>
-                <input type="text" id="day_install_began" name="day_install_began" class="form-control">
+                <input type="date" id="day_install_began" name="day_install_began" class="form-control">
             </div>
             <div class="form-group">
-                <label for="day_instal_complete">Install Complete Date:</label>
-                <input type="text" id="day_instal_complete" name="day_instal_complete" class="form-control">
+                <label for="day_install_complete">Install Complete Date:</label>
+                <input type="date" id="day_install_complete" name="day_install_complete" class="form-control">
             </div>
             <button type="submit" class="btn float-right">Save Installation</button>
         </form>        
@@ -194,7 +206,14 @@ th.sorting, th.sorting_asc, th.sorting_desc {
         $('#addModelBtn').click(function () {
             $('#modelModalTitle').text("Add Installation");
             $('#model-id').val(""); // clear ID
-            $('#modelForm')[0].reset(); // clear all fields
+            $('#room-no').val("");
+            $('#room-no').prop('readonly', false);
+            $('#product_available').val("");
+            $('#prework').val("");
+            $('#install').val("");
+            $('#post_work').val("");
+            $('#day_install_began').val("");
+            $('#day_install_complete').val("");
             $('#modelModal').fadeIn();
             $('#modelModalOverlay').fadeIn();
         });
@@ -207,12 +226,13 @@ th.sorting, th.sorting_asc, th.sorting_desc {
             $('#modelModalTitle').text("Edit Installation");
             $('#model-id').val(id);
             $('#room-no').val($(this).data('room'));
+            $('#room-no').prop('readonly', true);
             $('#product_available').val($(this).data('product_available'));
             $('#prework').val($(this).data('prework'));
             $('#install').val($(this).data('install'));
             $('#post_work').val($(this).data('post_work'));
             $('#day_install_began').val($(this).data('day_install_began'));
-            $('#day_instal_complete').val($(this).data('day_instal_complete'));
+            $('#day_install_complete').val($(this).data('day_install_complete'));
             $('#modelModal').fadeIn();
             $('#modelModalOverlay').fadeIn();
         });

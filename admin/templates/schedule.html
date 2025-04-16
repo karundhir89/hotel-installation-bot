@@ -54,16 +54,6 @@ th.sorting, th.sorting_asc, th.sorting_desc {
     position: relative;
     margin: 20px 0 0;
 }
-.main-panel{
-    position: fixed;
-    right: 0;
-}
-@media (max-width: 768px) {
-    .main-panel{
-    position: absolute;
-    right: 0;
-    }
-}
 </style>
 
 <!-- Loader -->
@@ -120,43 +110,43 @@ th.sorting, th.sorting_asc, th.sorting_desc {
                                         <td>{{ schedule.id }}</td>
                                         <td>{{ schedule.phase }}</td>
                                         <td>{{ schedule.floor }}</td>
-                                        <td>{{ schedule.production_starts }}</td>
-                                        <td>{{ schedule.production_ends }}</td>
-                                        <td>{{ schedule.shipping_depature }}</td>
-                                        <td>{{ schedule.shipping_arrival }}</td>
-                                        <td>{{ schedule.custom_clearing_starts }}</td>
-                                        <td>{{ schedule.custom_clearing_ends }}</td>
-                                        <td>{{ schedule.arrive_on_site }}</td>
-                                        <td>{{ schedule.pre_work_starts }}</td>
-                                        <td>{{ schedule.pre_work_ends }}</td>
-                                        <td>{{ schedule.install_starts }}</td>
-                                        <td>{{ schedule.install_ends }}</td>
-                                        <td>{{ schedule.post_work_starts }}</td>
-                                        <td>{{ schedule.post_work_ends }}</td>
-                                        <td>{{ schedule.floor_completed }}</td>
-                                        <td>{{ schedule.floor_closes }}</td>
-                                        <td>{{ schedule.floor_opens }}</td>
+                                        <td>{{ schedule.production_starts | default:"" }}</td>
+                                        <td>{{ schedule.production_ends | default:"" }}</td>
+                                        <td>{{ schedule.shipping_depature | default:"" }}</td>
+                                        <td>{{ schedule.shipping_arrival | default:"" }}</td>
+                                        <td>{{ schedule.custom_clearing_starts | default:"" }}</td>
+                                        <td>{{ schedule.custom_clearing_ends | default:"" }}</td>
+                                        <td>{{ schedule.arrive_on_site | default:"" }}</td>
+                                        <td>{{ schedule.pre_work_starts | default:"" }}</td>
+                                        <td>{{ schedule.pre_work_ends | default:"" }}</td>
+                                        <td>{{ schedule.install_starts | default:"" }}</td>
+                                        <td>{{ schedule.install_ends | default:"" }}</td>
+                                        <td>{{ schedule.post_work_starts | default:"" }}</td>
+                                        <td>{{ schedule.post_work_ends | default:"" }}</td>
+                                        <td>{{ schedule.floor_completed | default:"" }}</td>
+                                        <td>{{ schedule.floor_closes | default:"" }}</td>
+                                        <td>{{ schedule.floor_opens | default:"" }}</td>
                                         <td>
                                             <button class="btn editModelBtn"
                                             data-id="{{ schedule.id }}"
                                             data-phase="{{ schedule.phase }}"
                                             data-floor="{{ schedule.floor }}"
-                                            data-production_starts="{{ schedule.production_starts }}"
-                                            data-production_ends="{{ schedule.production_ends }}"
-                                            data-shipping_depature="{{ schedule.shipping_depature }}"
-                                            data-shipping_arrival="{{ schedule.shipping_arrival }}"
-                                            data-custom_clearing_starts="{{ schedule.custom_clearing_starts }}"
-                                            data-custom_clearing_ends="{{ schedule.custom_clearing_ends }}"
-                                            data-arrive_on_site="{{ schedule.arrive_on_site }}"
-                                            data-pre_work_starts="{{ schedule.pre_work_starts }}"
-                                            data-pre_work_ends="{{ schedule.pre_work_ends }}"
-                                            data-install_starts="{{ schedule.install_starts }}"
-                                            data-install_ends="{{ schedule.install_ends }}"
-                                            data-post_work_starts="{{ schedule.post_work_starts }}"
-                                            data-post_work_ends="{{ schedule.post_work_ends }}"
-                                            data-floor_completed="{{ schedule.floor_completed }}"
-                                            data-floor_closes="{{ schedule.floor_closes }}"
-                                            data-floor_opens="{{ schedule.floor_opens }}">
+                                            data-production_starts="{{ schedule.formatted_production_starts }}"
+                                            data-production_ends="{{ schedule.formatted_production_ends }}"
+                                            data-shipping_depature="{{ schedule.formatted_shipping_depature }}"
+                                            data-shipping_arrival="{{ schedule.formatted_shipping_arrival }}"
+                                            data-custom_clearing_starts="{{ schedule.formatted_custom_clearing_starts }}"
+                                            data-custom_clearing_ends="{{ schedule.formatted_custom_clearing_ends }}"
+                                            data-arrive_on_site="{{ schedule.formatted_arrive_on_site }}"
+                                            data-pre_work_starts="{{ schedule.formatted_pre_work_starts }}"
+                                            data-pre_work_ends="{{ schedule.formatted_pre_work_ends }}"
+                                            data-install_starts="{{ schedule.formatted_install_starts }}"
+                                            data-install_ends="{{ schedule.formatted_install_ends }}"
+                                            data-post_work_starts="{{ schedule.formatted_post_work_starts }}"
+                                            data-post_work_ends="{{ schedule.formatted_post_work_ends }}"
+                                            data-floor_completed="{{ schedule.formatted_floor_completed }}"
+                                            data-floor_closes="{{ schedule.formatted_floor_closes }}"
+                                            data-floor_opens="{{ schedule.formatted_floor_opens }}">
                                             Edit
                                             </button>
                                             <button class="btn deleteModelBtn" data-id="{{ schedule.id }}">
@@ -198,67 +188,67 @@ th.sorting, th.sorting_asc, th.sorting_desc {
             </div>
             <div class="form-group">
                 <label for="production_starts">Production Starts:</label>
-                <input type="datetime-local" id="production_starts" name="production_starts" class="form-control">
+                <input type="date" id="production_starts" name="production_starts" class="form-control">
             </div>
             <div class="form-group">
                 <label for="production_ends">Production Ends:</label>
-                <input type="datetime-local" id="production_ends" name="production_ends" class="form-control">
+                <input type="date" id="production_ends" name="production_ends" class="form-control">
             </div>
             <div class="form-group">
                 <label for="shipping_depature">Shipping Departure:</label>
-                <input type="datetime-local" id="shipping_depature" name="shipping_depature" class="form-control">
+                <input type="date" id="shipping_depature" name="shipping_depature" class="form-control">
             </div>
             <div class="form-group">
                 <label for="shipping_arrival">Shipping Arrival:</label>
-                <input type="datetime-local" id="shipping_arrival" name="shipping_arrival" class="form-control">
+                <input type="date" id="shipping_arrival" name="shipping_arrival" class="form-control">
             </div>
             <div class="form-group">
                 <label for="custom_clearing_starts">Custom Clearing Starts:</label>
-                <input type="datetime-local" id="custom_clearing_starts" name="custom_clearing_starts" class="form-control">
+                <input type="date" id="custom_clearing_starts" name="custom_clearing_starts" class="form-control">
             </div>
             <div class="form-group">
                 <label for="custom_clearing_ends">Custom Clearing Ends:</label>
-                <input type="datetime-local" id="custom_clearing_ends" name="custom_clearing_ends" class="form-control">
+                <input type="date" id="custom_clearing_ends" name="custom_clearing_ends" class="form-control">
             </div>
             <div class="form-group">
                 <label for="arrive_on_site">Arrive on Site:</label>
-                <input type="datetime-local" id="arrive_on_site" name="arrive_on_site" class="form-control">
+                <input type="date" id="arrive_on_site" name="arrive_on_site" class="form-control">
             </div>
             <div class="form-group">
                 <label for="pre_work_starts">Pre-Work Starts:</label>
-                <input type="datetime-local" id="pre_work_starts" name="pre_work_starts" class="form-control">
+                <input type="date" id="pre_work_starts" name="pre_work_starts" class="form-control">
             </div>
             <div class="form-group">
                 <label for="pre_work_ends">Pre-Work Ends:</label>
-                <input type="datetime-local" id="pre_work_ends" name="pre_work_ends" class="form-control">
+                <input type="date" id="pre_work_ends" name="pre_work_ends" class="form-control">
             </div>
             <div class="form-group">
                 <label for="install_starts">Install Starts:</label>
-                <input type="datetime-local" id="install_starts" name="install_starts" class="form-control">
+                <input type="date" id="install_starts" name="install_starts" class="form-control">
             </div>
             <div class="form-group">
                 <label for="install_ends">Install Ends:</label>
-                <input type="datetime-local" id="install_ends" name="install_ends" class="form-control">
+                <input type="date" id="install_ends" name="install_ends" class="form-control">
             </div>
             <div class="form-group">
                 <label for="post_work_starts">Post-Work Starts:</label>
-                <input type="datetime-local" id="post_work_starts" name="post_work_starts" class="form-control">
+                <input type="date" id="post_work_starts" name="post_work_starts" class="form-control">
             </div>
             <div class="form-group">
                 <label for="post_work_ends">Post-Work Ends:</label>
-                <input type="datetime-local" id="post_work_ends" name="post_work_ends" class="form-control">
+                <input type="date" id="post_work_ends" name="post_work_ends" class="form-control">
             </div>
             <div class="form-group">
                 <label for="floor_completed">Floor Completed:</label>
-                <input type="datetime-local" id="floor_completed" name="floor_completed" class="form-control">
+                <input type="date" id="floor_completed" name="floor_completed" class="form-control">
             </div>
             <div class="form-group">
                 <label for="floor_closes">Floor Closes:</label>
-                <input type="datetime-local" id="floor_closes" name="floor_closes" class="form-control">
+                <input type="date" id="floor_closes" name="floor_closes" class="form-control">
             </div>
             <div class="form-group">
                 <label for="floor_opens">Floor Opens:</label>
-                <input type="datetime-local" id="floor_opens" name="floor_opens" class="form-control">
+                <input type="date" id="floor_opens" name="floor_opens" class="form-control">
             </div>            
             <button type="submit" class="btn float-right">Save Schedule</button>
         </form>        
@@ -284,7 +274,9 @@ $(document).ready(function () {
     $('#modelModalTitle').text("Add Schedule");
     $('#model-id').val("");
     $('#phase').val("");
+    $('#phase').prop('readonly', false);
     $('#floor').val("");
+    $('#floor').prop('readonly', false);
     $('#production_starts').val("");
     $('#production_ends').val("");
     $('#shipping_depature').val("");
@@ -309,7 +301,9 @@ $(document).on('click', '.editModelBtn', function () {
     $('#modelModalTitle').text("Edit Schedule");
     $('#model-id').val($(this).data('id'));
     $('#phase').val($(this).data('phase'));
+    $('#phase').prop('readonly', true);
     $('#floor').val($(this).data('floor'));
+    $('#floor').prop('readonly', true);
     $('#production_starts').val($(this).data('production_starts'));
     $('#production_ends').val($(this).data('production_ends'));
     $('#shipping_depature').val($(this).data('shipping_depature'));
