@@ -384,12 +384,10 @@ def format_intent_sql_prompt(user_message, prompt_data):
             *   Always include `LIMIT 50`.
             *   Adhere strictly to the provided schema.
             *   Handle potential ambiguities (e.g., qualify column names if necessary).
+            *   Use `GROUP BY` and aggregation functions (`COUNT`, `MAX`, etc.) when data can be grouped for summarization or deduplication..
         *   **If NO Database Info Needed:** Generate a concise, direct natural language answer to the user's query (e.g., for greetings, general questions about your capabilities).
 
     **Database Schema (for reference if needed):**
-    ```json
-    {schema_representation}
-    ```
 
     **Output Format:**
     Respond ONLY with a single, valid JSON object. No explanations or other text.
@@ -424,13 +422,29 @@ def format_intent_sql_prompt(user_message, prompt_data):
       "direct_answer": "I am PksBot, your AI assistant for hotel furniture installation information."
     }}
     ```
+    **Example 3 (Grouped SQL Query):**
+    User Query: "Which products are arriving this week?"
+    Expected JSON Output:
+    ```json
+    {{
+    "needs_sql": true,
+    "query": "SELECT pd.description, COUNT(*) AS total_units, s.shipping_arrival FROM product_data pd JOIN product_room_model prm ON pd.id = prm.product_id JOIN room_model rm ON prm.room_model_id = rm.id JOIN room_data rd ON rm.id = rd.room_model_id JOIN schedule s ON rd.floor = s.floor WHERE s.shipping_arrival BETWEEN NOW() AND NOW() + INTERVAL '7 days' GROUP BY pd.description, s.shipping_arrival ORDER BY s.shipping_arrival ASC LIMIT 50;",
+    "direct_answer": null
+    }}
 
     **Generate the JSON response now based on the user query: "{user_message}"**
     """
 
+    user_prompt = f"""  
+    **User Query:** "{user_message}"
+    **Database Schema:**
+    ```json
+    {schema_representation}
+    ``` 
+    """
     return [
         {"role": "system", "content": system_prompt.strip()},
-        # No separate user message needed here as it's embedded in the system prompt for this specific task
+        {"role": "user", "content": user_prompt.strip()},
     ]
 
 # New function for the Final Natural Language Response Prompt
@@ -467,14 +481,11 @@ def generate_natural_response_prompt(user_message, sql_query, rows):
     You are PksBot, a friendly and helpful AI assistant for a hotel furniture installation system.
     Your task is to provide a conversational and informative answer to the user's query based on the context provided.
 
-    **Context:**
-    1.  **User's Original Query:** "{user_message}"
-    2.  **Database Query Attempted:** `{sql_query if sql_query else 'None'}`
-    3.  **Data Retrieval Summary:** {data_summary}
-
     **Response Guidelines:**
+    *   Aggregate data where applicable.
     *   Address the user's query directly and naturally.
     *   **If the user asks for a list of items (e.g., missing items, available products, room details) and data was retrieved (`num_records > 0`):**
+        
         *   Present the results clearly using an HTML `<table>`.
         *   Use the `Columns` from the summary as table headers (`<thead><tr><th>...</th></tr></thead>`).
         *   Populate the table body (`<tbody>`) using the retrieved `Data Preview` (and mention if more rows exist).
@@ -487,27 +498,20 @@ def generate_natural_response_prompt(user_message, sql_query, rows):
     *   Do NOT include the raw SQL query in your response.
     *   Do NOT use markdown formatting (like ``` ```) around the HTML table if you generate one.
     *   Maintain a helpful and professional tone.
-
-    **Example Response (Data Found - List Request -> Table):**
-    User Query: "Show me inventory for client P123"
-    Response:
-    "Okay, here is the inventory information for client P123:
-    <table><thead><tr><th>Item SKU</th><th>Quantity Available</th><th>Quantity Received</th></tr></thead><tbody><tr><td>KS-JWM-702A</td><td>0</td><td>0</td></tr></tbody></table>
-    (Note: Additional data might exist if not fully shown)"
-
-    **Example Response (Data Found - Specific Question -> Narrative):**
-    User Query: "What is the status of room 1607?"
-    Response:
-    "Room 1607 currently has product availability marked as 'NO', and pre-work, installation, and post-work are also marked as 'NO'. Installation has not yet begun for this room."
-
-    **Example Response (No Data Found):**
-    "I checked for inventory items described as 'purple chair', but couldn't find any matching records."
-
-    **Example Response (Query Failed):**
-    "I tried to look up the information you requested, but encountered a problem retrieving the data. You might want to try rephrasing your question."
+    
 
     **Generate the final natural language response for the user now.**
+
+    
+    """
+
+    user_prompt = f"""  
+    **Context:**
+    1.  **User's Original Query:** "{user_message}"
+    2.  **Database Query Attempted:** `{sql_query if sql_query else 'None'}`
+    3.  **Data Retrieval Summary:** {data_summary}
     """
     return [
-        {"role": "system", "content": system_prompt.strip()}
+        {"role": "system", "content": system_prompt.strip()},
+        {"role": "user", "content": user_prompt.strip()},
     ]

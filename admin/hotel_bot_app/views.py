@@ -332,7 +332,7 @@ def send_emails(recipient_email, password):
         fail_silently=False,
     )
 
-
+@csrf_exempt
 def user_login(request):
     # Redirect to dashboard if already logged in
     if request.session.get("user_id"):
