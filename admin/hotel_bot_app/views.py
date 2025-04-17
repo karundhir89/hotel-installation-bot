@@ -20,7 +20,7 @@ from django.views.decorators.csrf import csrf_exempt
 from hotel_bot_app.utils.helper import (fetch_data_from_sql,
                                          format_gpt_prompt,
                                          generate_final_response,
-                                         gpt_call_json_func,
+                                         gpt_call_json_func,gpt_call_json_func_two,
                                          load_database_schema,
                                          verify_sql_query,
                                          format_intent_sql_prompt,
@@ -65,6 +65,24 @@ def extract_values(json_obj, keys):
     print("table selected ,,,,,,", table_selected)
     return table_selected
 
+
+def get_chat_history_from_db(session_id):
+
+    if not session_id:
+        return JsonResponse({"chat_history": []})  # No session, return empty history
+
+    session = get_object_or_404(ChatSession, id=session_id)
+    history_messages = list(
+        ChatHistory.objects.filter(session=session).values("role", "message")
+    )
+    converted_messages = [
+    {'role': msg['role'], 'content': msg['message']}
+    for msg in history_messages
+    ]
+
+    return converted_messages
+
+
 @csrf_exempt
 def chatbot_api(request):
     if request.method == "POST":
@@ -80,6 +98,7 @@ def chatbot_api(request):
         # --- Session Management ---
         session_id = request.session.get("chat_session_id")
         session = None
+        print('session id',session_id)
         if session_id:
             try:
                 session = ChatSession.objects.get(id=session_id)
@@ -119,12 +138,21 @@ def chatbot_api(request):
             # 2. First LLM Call: Intent Recognition & Conditional SQL Generation
             intent_response = None
             try:
-                intent_prompt = format_intent_sql_prompt(user_message, DB_SCHEMA)
-                intent_response = gpt_call_json_func(
-                    intent_prompt,
+                intent_prompt ={"role":"user","content":format_intent_sql_prompt(user_message, DB_SCHEMA)}
+                print(intent_prompt)
+                data=get_chat_history_from_db(session_id)
+                data.append(intent_prompt)
+                print('data ...........',data)
+                if len(data) > 10:
+                    data = data[-10:]
+
+                intent_response = json.loads(gpt_call_json_func_two(
+                    data,
                     gpt_model="gpt-4o",
+                    openai_key=open_ai_key,
                     json_required=True
-                )
+                ))
+                print('intent response .....',intent_response)
             except Exception as e:
                 print(f"Error during Intent/SQL Generation LLM call: {e}")
                 # Fall through, intent_response remains None
@@ -199,6 +227,7 @@ def chatbot_api(request):
                         json_required=False,
                         temperature=0.7 # Allow slightly more creativity for natural language
                     )
+                    print("bot message")
                     if not bot_message or not isinstance(bot_message, str):
                          print(f"Error: Natural response generation returned invalid data: {bot_message}")
                          raise Exception("Failed to format the final natural response.")

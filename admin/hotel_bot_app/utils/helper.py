@@ -121,6 +121,34 @@ def gpt_call_json_func(message, gpt_model, json_required=False, temperature=0):
         return {"query": None}
 
 
+
+def gpt_call_json_func_two(message,gpt_model,openai_key,json_required=True,temperature=0):
+	try:
+		print("gpt function call")
+		json_payload = {
+			'model': gpt_model,
+			'temperature': temperature,
+			'messages': message
+		}
+		
+		if json_required:
+			json_payload['response_format'] = {"type": "json_object"}
+		
+		gpt_response = requests.post(
+			'https://api.openai.com/v1/chat/completions',
+			json=json_payload,
+			headers={
+				'Authorization': f'Bearer {openai_key}',
+				'Content-Type': 'application/json'
+			}
+		)
+		print("gpt response got is ",gpt_response.json())
+		print("gpt function ended with ....",gpt_response.json()['choices'][0]['message']['content'])
+		# print("gpt response got is ",gpt_response.json()['choices'])
+		return gpt_response.json()['choices'][0]['message']['content']
+	except Exception as e:
+		print("gpt call error",e)
+
 def generate_final_response(user_message, rows):
     # --- Input Validation ---
     if rows is None:
@@ -428,10 +456,8 @@ def format_intent_sql_prompt(user_message, prompt_data):
     **Generate the JSON response now based on the user query: "{user_message}"**
     """
 
-    return [
-        {"role": "system", "content": system_prompt.strip()},
+    return system_prompt.strip()
         # No separate user message needed here as it's embedded in the system prompt for this specific task
-    ]
 
 # New function for the Final Natural Language Response Prompt
 def generate_natural_response_prompt(user_message, sql_query, rows):
