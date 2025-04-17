@@ -361,7 +361,7 @@ def send_emails(recipient_email, password):
         fail_silently=False,
     )
 
-
+@csrf_exempt
 def user_login(request):
     # Redirect to dashboard if already logged in
     if request.session.get("user_id"):
@@ -773,7 +773,6 @@ def delete_products_data(request):
 @session_login_required
 def get_room_type(request):
     room_number = request.GET.get("room_number")
-    installed_on = date.today()
 
     try:
         room_data = RoomData.objects.get(room=room_number)
@@ -832,8 +831,7 @@ def get_room_type(request):
                     product_id=prm.product_id,
                     room_id=room_data,
                     room_model_id=room_model,
-                    product_name=prm.product_id.description,
-                    installed_on=installed_on,
+                    product_name=prm.product_id.description
                 )
                 install_details_to_create.append(install)
 

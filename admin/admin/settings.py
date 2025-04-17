@@ -138,9 +138,13 @@ STATICFILES_DIRS = (
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LOGIN_REDIRECT_URL = 'user_management'
 LOGOUT_REDIRECT_URL = '/admin/login'
+LOGIN_URL = '/admin/login'
 CRISPY_TEMPLATE_PACK = 'bootstrap4'
 
-
+CSRF_COOKIE_HTTPONLY = False # Default, but explicit
+# Set based on whether you use HTTP or HTTPS
+CSRF_COOKIE_SECURE = False # For HTTP development
+# CSRF_COOKIE_SECURE = True # For HTTPS deployment
 
 # Email settings for SMTP with Gmail
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'  # Use the SMTP backend
