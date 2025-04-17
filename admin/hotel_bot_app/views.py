@@ -1231,7 +1231,6 @@ def save_product_data(request):
         item = post_data.get("item", "").strip()
         client_id = post_data.get("client_id", "").strip()
         description = post_data.get("description") or 0
-        price = post_data.get("price") or 0
 
         supplier = post_data.get("supplier")
         client_selected = post_data.get("client_selected") or 0
@@ -1244,7 +1243,6 @@ def save_product_data(request):
                 installation.client_id = client_id
                 installation.description = description
                 installation.supplier = supplier
-                installation.price = price
                 installation.client_selected = client_selected
                 installation.save()
             else:
@@ -1254,7 +1252,6 @@ def save_product_data(request):
                     client_id=client_id,
                     description=description,
                     supplier=supplier,
-                    price=price,
                     client_selected=client_selected,
                 )
 

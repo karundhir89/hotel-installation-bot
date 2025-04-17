@@ -88,7 +88,7 @@ tables:
   - {id: 2, item: KS-JWM-702A, client_id: P123, qty_ordered: 176, qty_received: 0, quantity_installed: 0, quantity_available: 0}
 
 - name: product_data
-  description: 'Catalog data about products (name, price, etc.), linked by client_id.'
+  description: 'Catalog data about products (name, etc.), linked by client_id.'
   columns:
   - name: id
     type: integer
@@ -103,15 +103,12 @@ tables:
   - name: description
     type: text
     description: Product name (human-readable). Use this for display.
-  - name: price
-    type: real # Assuming decimal price
-    description: Price per unit.
   - name: client_selected
     type: text # Consider boolean if appropriate
     description: Indicates if the client has selected this product (e.g., '1', '0', 'yes', 'no').
   example:
-  - {id: 3, item: KS-JVM-715-SABC, client_id: P120, description: Sofa SUITE A, B, C, qty_ordered: 9, price: 1646.66, client_selected: '1'}
-  - {id: 4, item: KS-JVM-715-CURVADIS, client_id: P121, description: Sofa CURVA DIS, qty_ordered: 2, price: 1646.66, client_selected: '1'}
+  - {id: 3, item: KS-JVM-715-SABC, client_id: P120, description: Sofa SUITE A, B, C, qty_ordered: 9, client_selected: '1'}
+  - {id: 4, item: KS-JVM-715-CURVADIS, client_id: P121, description: Sofa CURVA DIS, qty_ordered: 2, client_selected: '1'}
 
 - name: product_room_model
   description: 'Maps products to room models, defining quantity needed per model.'

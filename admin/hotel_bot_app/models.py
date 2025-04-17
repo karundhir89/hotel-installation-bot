@@ -165,7 +165,6 @@ class ProductData(models.Model):
     item = models.TextField(null=True, blank=True)
     client_id = models.TextField(null=True, blank=True)
     description = models.TextField(null=True, blank=True)
-    price = models.FloatField(null=True, blank=True)
     client_selected = models.TextField(null=True, blank=True)
     supplier = models.TextField(null=True, blank=True)
 
