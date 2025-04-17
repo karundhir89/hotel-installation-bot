@@ -10,6 +10,8 @@ import requests
 import yaml
 from django.db import connection
 from openai import OpenAI
+from ..models import ChatSession
+from django.utils.timezone import localtime
 
 env = environ.Env()
 environ.Env.read_env()
@@ -48,9 +50,9 @@ def format_gpt_prompt(user_message, prompt_data):
     3.  **Use Human-Readable Data:** Prioritize returning meaningful names/descriptions over IDs. JOIN tables when necessary (e.g., join `ProductData` on `id` with `InstallDetail` on `product_id`).
     4.  **Case-Insensitive Search:** ALWAYS use `ILIKE` for string comparisons involving names, descriptions, or any potentially case-variable text. Example: `WHERE item ILIKE '%sofa%'`.
     5.  **Avoid Type Mismatches:** Ensure correct data types in comparisons (string vs. numeric).
-    6.  **Safety & Performance:** ALWAYS include a `LIMIT` clause (e.g., `LIMIT 50`) to prevent overly large results.
+    6.  **Safety & Performance:** ALWAYS include a `LIMIT` clause (e.g., `LIMIT 150`) to prevent overly large results.
     7.  **Strict Schema Adherence:** ONLY use tables and columns defined in the provided schema. Do NOT hallucinate.
-    8.  **JSON Output:** Return ONLY a valid JSON object containing the SQL query. Format: `{"query": "SELECT ... FROM ... WHERE ... ILIKE ... LIMIT 50;"}`.
+    8.  **JSON Output:** Return ONLY a valid JSON object containing the SQL query. Format: `{"query": "SELECT ... FROM ... WHERE ... ILIKE ... LIMIT 150;"}`.
     9.  **No Explanations:** Do not add any explanations, markdown, or code blocks outside the JSON structure.
 
     **Schema Information (including examples):**
@@ -157,6 +159,7 @@ def generate_final_response(user_message, rows):
     **Output Rules:**
     1.  **Data Found (num_records > 0):**
         - Generate ONLY an HTML `<table>`.
+        - Use pagination in HTML table
         - Use the exact `columns` provided for the table headers (`<thead><tr><th>...</th></tr></thead>`).
         - Populate the table body (`<tbody>`) with the `data`. Each inner list/tuple in `data` is a row (`<tr>`), and each item within it is a cell (`<td>`).
         - Escape HTML special characters within data cells (e.g., '<', '>') to prevent XSS issues.
@@ -305,7 +308,7 @@ def verify_sql_query(
     ```
 
     **Example Valid Scenario:**
-    If the original query is `SELECT room FROM RoomData WHERE floor = 5 LIMIT 50;` and it's correct:
+    If the original query is `SELECT room FROM RoomData WHERE floor = 5 LIMIT 150;` and it's correct:
     ```json
     {{
       "is_valid": true,
@@ -323,7 +326,7 @@ def verify_sql_query(
         "Type mismatch: qty_received is numeric but compared against a string '10'.",
         "Potentially ambiguous column 'name'; consider specifying table if joins are possible."
       ],
-      "recommendation": "SELECT item FROM Inventory WHERE qty_received = 10 LIMIT 50;"
+      "recommendation": "SELECT item FROM Inventory WHERE qty_received = 10 LIMIT 150;"
     }}
     ```
 
@@ -381,7 +384,7 @@ def format_intent_sql_prompt(user_message, prompt_data):
         *   **If Database Info Needed:** Generate the most appropriate, efficient, and safe PostgreSQL query. Follow these SQL rules strictly:
             *   Use `ILIKE` for case-insensitive string comparisons on names/descriptions.
             *   JOIN tables to get human-readable names (e.g., product names) instead of just IDs.
-            *   Always include `LIMIT 50`.
+            *   Always include `LIMIT 150`.
             *   Adhere strictly to the provided schema.
             *   Handle potential ambiguities (e.g., qualify column names if necessary).
         *   **If NO Database Info Needed:** Generate a concise, direct natural language answer to the user's query (e.g., for greetings, general questions about your capabilities).
@@ -409,7 +412,7 @@ def format_intent_sql_prompt(user_message, prompt_data):
     ```json
     {{
       "needs_sql": true,
-      "query": "SELECT room, floor, room_model, description FROM RoomData WHERE room = '101' LIMIT 50;",
+      "query": "SELECT room, floor, room_model, description FROM RoomData WHERE room = '101' LIMIT 150;",
       "direct_answer": null
     }}
     ```
@@ -463,51 +466,110 @@ def generate_natural_response_prompt(user_message, sql_query, rows):
     elif sql_query:
          data_summary = "I attempted to retrieve information, but encountered an issue and could not fetch the data."
 
+    # system_prompt = f"""
+    # You are PksBot, a friendly and helpful AI assistant for a hotel furniture installation system.
+    # Your task is to provide a conversational and informative answer to the user's query based on the context provided.
+
+    # **Context:**
+    # 1.  **User's Original Query:** "{user_message}"
+    # 2.  **Database Query Attempted:** `{sql_query if sql_query else 'None'}`
+    # 3.  **Data Retrieval Summary:** {data_summary}
+
+    # **Response Guidelines:**
+    # *   Address the user's query directly and naturally.
+    # *   **If the user asks for a list of items (e.g., missing items, available products, room details) and data was retrieved (`num_records > 0`):**
+    #     *   Present the results clearly using an HTML `<table>`.
+    #     *   Use the `Columns` from the summary as table headers (`<thead><tr><th>...</th></tr></thead>`).
+    #     *   Populate the table body (`<tbody>`) using the retrieved `Data Preview` (and mention if more rows exist).
+    #     *   Include a brief introductory sentence before the table, like "Here are the items matching your request:"
+    # *   **For other types of queries OR if only one record was found:** Synthesize the key information from the 'Data Retrieval Summary' into a concise natural language sentence or paragraph. Explain what the data means.
+    # *   If no data was found (but the query was valid), state that clearly and politely (e.g., "I couldn't find any records matching your criteria.").
+    # *   If a query was attempted but failed, inform the user that you couldn't retrieve the information due to an issue (without technical details).
+    # *   If no database query was needed or attempted, just answer the user's original query directly.
+    # *   Keep the response concise and easy to understand.
+    # *   Do NOT include the raw SQL query in your response.
+    # *   Do NOT use markdown formatting (like ``` ```) around the HTML table if you generate one.
+    # *   Maintain a helpful and professional tone.
+
+    # **Example Response (Data Found - List Request -> Table):**
+    # User Query: "Show me inventory for client P123"
+    # Response:
+    # "Okay, here is the inventory information for client P123:
+    # <table><thead><tr><th>Item SKU</th><th>Quantity Available</th><th>Quantity Received</th></tr></thead><tbody><tr><td>KS-JWM-702A</td><td>0</td><td>0</td></tr></tbody></table>
+    # (Note: Additional data might exist if not fully shown)"
+
+    # **Example Response (Data Found - Specific Question -> Narrative):**
+    # User Query: "What is the status of room 1607?"
+    # Response:
+    # "Room 1607 currently has product availability marked as 'NO', and pre-work, installation, and post-work are also marked as 'NO'. Installation has not yet begun for this room."
+
+    # **Example Response (No Data Found):**
+    # "I checked for inventory items described as 'purple chair', but couldn't find any matching records."
+
+    # **Example Response (Query Failed):**
+    # "I tried to look up the information you requested, but encountered a problem retrieving the data. You might want to try rephrasing your question."
+
+    # **Generate the final natural language response for the user now.**
+    # """
+    # return [
+    #     {"role": "system", "content": system_prompt.strip()}
+    # ]
     system_prompt = f"""
-    You are PksBot, a friendly and helpful AI assistant for a hotel furniture installation system.
-    Your task is to provide a conversational and informative answer to the user's query based on the context provided.
+        You are PksBot, a friendly and helpful AI assistant for a hotel furniture installation system.
+        Your task is to provide a conversational and informative answer to the user's query based on the context provided, presenting data in a full HTML table when appropriate.
 
-    **Context:**
-    1.  **User's Original Query:** "{user_message}"
-    2.  **Database Query Attempted:** `{sql_query if sql_query else 'None'}`
-    3.  **Data Retrieval Summary:** {data_summary}
+        **Context:**
+        1.  **User's Original Query:** "{user_message}"
+        2.  **Database Query Attempted:** `{sql_query if sql_query else 'None'}`
+        3.  **Data Retrieval Summary:** {data_summary}
+        4.  **Full Retrieved Data (for table generation if needed):**
+            - Columns: {columns if columns else 'N/A'}
+            - Number of Records: {num_records}
+            - Data: {str(rows.get('rows', [])) if rows and isinstance(rows, dict) else 'N/A'} # Pass full data here
 
-    **Response Guidelines:**
-    *   Address the user's query directly and naturally.
-    *   **If the user asks for a list of items (e.g., missing items, available products, room details) and data was retrieved (`num_records > 0`):**
-        *   Present the results clearly using an HTML `<table>`.
-        *   Use the `Columns` from the summary as table headers (`<thead><tr><th>...</th></tr></thead>`).
-        *   Populate the table body (`<tbody>`) using the retrieved `Data Preview` (and mention if more rows exist).
-        *   Include a brief introductory sentence before the table, like "Here are the items matching your request:"
-    *   **For other types of queries OR if only one record was found:** Synthesize the key information from the 'Data Retrieval Summary' into a concise natural language sentence or paragraph. Explain what the data means.
-    *   If no data was found (but the query was valid), state that clearly and politely (e.g., "I couldn't find any records matching your criteria.").
-    *   If a query was attempted but failed, inform the user that you couldn't retrieve the information due to an issue (without technical details).
-    *   If no database query was needed or attempted, just answer the user's original query directly.
-    *   Keep the response concise and easy to understand.
-    *   Do NOT include the raw SQL query in your response.
-    *   Do NOT use markdown formatting (like ``` ```) around the HTML table if you generate one.
-    *   Maintain a helpful and professional tone.
+        **Response Guidelines:**
+        *   Address the user's query directly and naturally.
+        *   **If the user asks for a list of items (e.g., missing items, available products, room details) and data was retrieved (`num_records > 0`):**
+            *   Provide a brief introductory sentence (e.g., "Here are the items matching your request:").
+            *   Generate a **complete** HTML `<table>` containing **all** retrieved records.
+            *   Assign the table the ID `results-table` (e.g., `<table id="results-table">`).
+            *   Use the exact `Columns` provided in the context for the table headers (`<thead><tr><th>...</th></tr></thead>`).
+            *   Populate the table body (`<tbody>`) with **all** the `Data` provided in the context. Each inner list/tuple in `Data` is a row (`<tr>`), and each item within it is a cell (`<td>`).
+            *   Ensure data within `<td>` elements is properly HTML-escaped.
+        *   **For other types of queries OR if only one record was found:** Synthesize the key information from the 'Data Retrieval Summary' into a concise natural language sentence or paragraph. Explain what the data means.
+        *   If no data was found (but the query was valid), state that clearly and politely (e.g., "I couldn't find any records matching your criteria.").
+        *   If a query was attempted but failed, inform the user that you couldn't retrieve the information due to an issue (without technical details).
+        *   If no database query was needed or attempted, just answer the user's original query directly.
+        *   Keep the response concise and easy to understand.
+        *   Do NOT include the raw SQL query in your response.
+        *   Do NOT use markdown formatting (like ``` ```) around the HTML table. Output raw HTML.
+        *   Do NOT add notes about data being truncated or mention pagination (the front-end will handle that).
+        *   Maintain a helpful and professional tone.
 
-    **Example Response (Data Found - List Request -> Table):**
-    User Query: "Show me inventory for client P123"
-    Response:
-    "Okay, here is the inventory information for client P123:
-    <table><thead><tr><th>Item SKU</th><th>Quantity Available</th><th>Quantity Received</th></tr></thead><tbody><tr><td>KS-JWM-702A</td><td>0</td><td>0</td></tr></tbody></table>
-    (Note: Additional data might exist if not fully shown)"
+        **Example Response (Data Found - List Request -> Full Table):**
+        User Query: "Show me inventory for client P123"
+        Response:
+        "Okay, here is the inventory information for client P123:
+        <table id="results-table"><thead><tr><th>Item SKU</th><th>Quantity Available</th><th>Quantity Received</th></tr></thead><tbody><tr><td>KS-JWM-702A</td><td>0</td><td>0</td></tr><tr><td>CH-XYZ-101</td><td>10</td><td>5</td></tr></tbody></table>" 
+        # (Table contains all rows from data)
 
-    **Example Response (Data Found - Specific Question -> Narrative):**
-    User Query: "What is the status of room 1607?"
-    Response:
-    "Room 1607 currently has product availability marked as 'NO', and pre-work, installation, and post-work are also marked as 'NO'. Installation has not yet begun for this room."
+        **Generate the final natural language response for the user now.**
+        """
+        # --- END OF MODIFIED SYSTEM PROMPT ---
 
-    **Example Response (No Data Found):**
-    "I checked for inventory items described as 'purple chair', but couldn't find any matching records."
-
-    **Example Response (Query Failed):**
-    "I tried to look up the information you requested, but encountered a problem retrieving the data. You might want to try rephrasing your question."
-
-    **Generate the final natural language response for the user now.**
-    """
     return [
-        {"role": "system", "content": system_prompt.strip()}
-    ]
+            {"role": "system", "content": system_prompt.strip()}
+        ]
+
+
+def get_or_create_chat_session(request):
+    session_id = request.session.get("chat_session_id")
+    session = ChatSession.objects.filter(id=session_id).first()
+    if not session:
+        session = ChatSession.objects.create()
+        request.session["chat_session_id"] = session.id
+        request.session.set_expiry(3600 * 8)
+        print(f"Created new chat session: {session.id}")
+    else:
+        print(f"Using existing chat session: {session.id}")
+    return session

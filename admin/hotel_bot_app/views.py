@@ -25,7 +25,8 @@ from hotel_bot_app.utils.helper import (fetch_data_from_sql,
                                          verify_sql_query,
                                          format_intent_sql_prompt,
                                          generate_natural_response_prompt,
-                                         output_praser_gpt)
+                                         output_praser_gpt,
+                                         get_or_create_chat_session)
 from openai import OpenAI
 
 from .models import *
@@ -67,177 +68,96 @@ def extract_values(json_obj, keys):
 
 @csrf_exempt
 def chatbot_api(request):
-    if request.method == "POST":
-        try:
-            data = json.loads(request.body)
-            user_message = data.get("message", "").strip()
-        except json.JSONDecodeError:
-            return JsonResponse({"response": "⚠️ Invalid request format."}, status=400)
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request method. Only POST is allowed."}, status=405)
 
+    try:
+        data = json.loads(request.body)
+        user_message = data.get("message", "").strip()
         if not user_message:
             return JsonResponse({"response": "⚠️ Please enter a message."}, status=400)
 
-        # --- Session Management ---
-        session_id = request.session.get("chat_session_id")
-        session = None
-        if session_id:
+    except json.JSONDecodeError:
+        return JsonResponse({"response": "⚠️ Invalid request format."}, status=400)
+
+    # --- Session Handling ---
+    session = get_or_create_chat_session(request)
+
+    # --- Log user input ---
+    try:
+        ChatHistory.objects.create(session=session, message=user_message, role="user")
+    except Exception as e:
+        print(f"Non-critical: Failed to save user message: {e}")
+
+    bot_message = "Sorry, I encountered an unexpected issue and couldn't process your request."
+    final_sql_query = None
+    rows = None
+
+    try:
+        DB_SCHEMA = load_database_schema()
+    except Exception as e:
+        print(f"Critical error loading DB schema: {e}")
+        return JsonResponse({"response": "⚠️ Could not load database schema."}, status=500)
+
+    # --- Intent Recognition ---
+    try:
+        intent_prompt = format_intent_sql_prompt(user_message, DB_SCHEMA)
+        intent_response = gpt_call_json_func(
+            intent_prompt, gpt_model="gpt-4o", json_required=True
+        )
+
+        if not isinstance(intent_response, dict):
+            raise ValueError("⚠️ Invalid GPT response for intent.")
+
+        needs_sql = intent_response.get("needs_sql")
+        initial_sql_query = intent_response.get("query")
+        direct_answer = intent_response.get("direct_answer")
+
+        if not needs_sql and direct_answer:
+            bot_message = direct_answer
+        elif needs_sql and initial_sql_query:
+            final_sql_query = initial_sql_query
+
             try:
-                session = ChatSession.objects.get(id=session_id)
-            except ChatSession.DoesNotExist:
-                session_id = None # Force creation of a new session
-
-        if not session_id:
-            session = ChatSession.objects.create()
-            request.session["chat_session_id"] = session.id
-            request.session.set_expiry(3600 * 8) # 8 hours
-            print(f"Created new chat session: {session.id}")
-        else:
-             print(f"Using existing chat session: {session_id}")
-
-
-        # --- Log User Message ---
-        try:
-            ChatHistory.objects.create(session=session, message=user_message, role="user")
-        except Exception as e:
-            print(f"Error saving user message to chat history: {e}")
-            # Non-critical, proceed with generation but log the issue
-
-
-        # --- New Core Chatbot Logic (Two-Stage LLM) ---
-        bot_message = "Sorry, I encountered an unexpected issue and couldn't process your request. Please try again later." # Default error
-        final_sql_query = None # Store the query that was actually executed
-        rows = None # Store the results
-
-        try:
-            # 1. Load Schema
-            try:
-                DB_SCHEMA = load_database_schema()
-            except Exception as e:
-                print(f"Critical Error loading database schema: {e}")
-                raise Exception("Failed to load schema information.")
-
-            # 2. First LLM Call: Intent Recognition & Conditional SQL Generation
-            intent_response = None
-            try:
-                intent_prompt = format_intent_sql_prompt(user_message, DB_SCHEMA)
-                intent_response = gpt_call_json_func(
-                    intent_prompt,
-                    gpt_model="gpt-4o",
-                    json_required=True
-                )
-            except Exception as e:
-                print(f"Error during Intent/SQL Generation LLM call: {e}")
-                # Fall through, intent_response remains None
-
-            if not intent_response or not isinstance(intent_response, dict):
-                print("Error: Failed to get valid JSON response from Intent/SQL LLM.")
-                raise Exception("Failed to understand request intent.")
-
-            needs_sql = intent_response.get("needs_sql")
-            initial_sql_query = intent_response.get("query")
-            direct_answer = intent_response.get("direct_answer")
-
-            # 3. Handle based on Intent
-            if needs_sql is False and direct_answer:
-                print("Intent LLM provided a direct answer.")
-                bot_message = direct_answer
-                # Skip SQL execution and proceed directly to logging/returning the direct answer
-
-            elif needs_sql is True and initial_sql_query:
-                print(f"Intent LLM requires SQL. Generated query: {initial_sql_query}")
-                final_sql_query = initial_sql_query # Tentatively set the final query
-
-                # 4. Execute SQL (and verify/retry if needed)
+                rows = fetch_data_from_sql(initial_sql_query)
+            except Exception as db_error:
+                print(f"Initial DB query failed: {db_error}")
                 try:
-                    # Initial attempt
-                    rows = fetch_data_from_sql(initial_sql_query)
-                    print(f"Initial query execution successful.")
-
-                except Exception as db_error:
-                    print(f"Initial DB execution error: {db_error}. Attempting verification.")
-
-                    verification = None
-                    try:
-                        verification = verify_sql_query(
-                            user_message=user_message,
-                            sql_query=initial_sql_query, # Verify the original query
-                            prompt_data=DB_SCHEMA,
-                            error_message=str(db_error),
-                            gpt_model="gpt-4o"
-                        )
-                    except Exception as verify_e:
-                        print(f"Error during SQL verification call: {verify_e}")
-
-                    print(f"Verification result: {verification}")
-
-                    if verification and isinstance(verification, dict) and not verification.get("is_valid") and verification.get("recommendation"):
-                        recommended_query = verification["recommendation"]
-                        print(f"Verification recommended new query: {recommended_query}")
-                        try:
-                            rows = fetch_data_from_sql(recommended_query)
-                            final_sql_query = recommended_query # Update the final query executed
-                            print("Retry with recommended query successful.")
-                        except Exception as second_error:
-                            print(f"Retry with recommended query failed: {second_error}")
-                            # Clear rows and final_sql_query as the attempt failed
-                            rows = None
-                            final_sql_query = initial_sql_query # Revert to indicate initial attempt failed
-                            # Don't raise here, let the final response generation handle the failure state
-                    else:
-                        print("SQL Verification did not provide a usable correction or retry failed.")
-                        # Clear rows as the query failed
-                        rows = None
-                        # Keep final_sql_query as the one that failed for context
-
-                # 5. Second LLM Call: Generate Natural Language Response (if SQL was attempted)
-                # This block runs whether SQL succeeded, failed, or returned no rows
-                try:
-                    response_prompt = generate_natural_response_prompt(user_message, final_sql_query, rows)
-                    bot_message = output_praser_gpt( # Use output_praser_gpt as we expect text
-                        response_prompt,
-                        gpt_model="gpt-4o",
-                        json_required=False,
-                        temperature=0.7 # Allow slightly more creativity for natural language
+                    verification = verify_sql_query(
+                        user_message=user_message,
+                        sql_query=initial_sql_query,
+                        prompt_data=DB_SCHEMA,
+                        error_message=str(db_error),
+                        gpt_model="gpt-4o"
                     )
-                    if not bot_message or not isinstance(bot_message, str):
-                         print(f"Error: Natural response generation returned invalid data: {bot_message}")
-                         raise Exception("Failed to format the final natural response.")
-                except Exception as e:
-                    print(f"Error during Natural Response Generation LLM call: {e}")
-                    raise Exception("Failed to generate the final natural response.")
+                    recommended_query = verification.get("recommendation")
+                    if recommended_query:
+                        rows = fetch_data_from_sql(recommended_query)
+                        final_sql_query = recommended_query
+                except Exception as retry_error:
+                    print(f"Retry also failed: {retry_error}")
 
-            else:
-                # Invalid state from first LLM call (e.g., needs_sql=true but no query)
-                print(f"Error: Invalid state from Intent LLM. Response: {intent_response}")
-                raise Exception("Received an inconsistent response from the intent analysis.")
+        # --- Response Generation ---
+        response_prompt = generate_natural_response_prompt(user_message, final_sql_query, rows)
+        response_text = output_praser_gpt(
+            response_prompt, gpt_model="gpt-4o", json_required=False, temperature=0.7
+        )
+        if isinstance(response_text, str):
+            bot_message = response_text
 
-        except Exception as e:
-            print(f"Error in chatbot_api main logic: {e}")
-            # Use the default error message
-            # bot_message = "Sorry, I encountered an unexpected issue..."
-            internal_error_message = f"Failed processing user message '{user_message}'. Error: {str(e)}"
-            print(internal_error_message)
-            # Ensure the default message is used if an exception occurred before natural response generation
-            if bot_message == "Sorry, I encountered an unexpected issue and couldn't process your request. Please try again later.":
-                 # If the default message is still set, it means we didn't reach the natural response stage or it failed.
-                 pass # Keep the default message
-            elif not bot_message or not isinstance(bot_message, str):
-                 # If bot_message got corrupted somehow during error handling
-                 bot_message = "Sorry, I encountered an unexpected issue and couldn't process your request. Please try again later."
+    except ValueError as ve:
+        print(f"ValueError: {ve}")
+        bot_message = str(ve)
+    except Exception as e:
+        print(f"General chatbot error: {e}")
 
-        # --- Log Assistant Message ---
-        try:
-            ChatHistory.objects.create(session=session, message=bot_message, role="assistant")
-        except Exception as e:
-             print(f"Error saving assistant message to chat history: {e}")
-             # Non-critical
+    # --- Save bot message ---
+    try:
+        ChatHistory.objects.create(session=session, message=bot_message, role="assistant")
+    except Exception as e:
+        print(f"Non-critical: Failed to save bot message: {e}")
 
-
-        # --- Return Response ---
-        return JsonResponse({"response": bot_message})
-
-    # --- Handle Non-POST Requests ---
-    return JsonResponse({"error": "Invalid request method. Only POST is allowed."}, status=405)
+    return JsonResponse({"response": bot_message})
 
 
 @csrf_exempt
