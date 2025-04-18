@@ -208,7 +208,7 @@ class Shipping(models.Model):
     supplier = models.CharField(max_length=255)
     bol = models.CharField("Bill of Lading", max_length=100, unique=True)
     checked_by = models.ForeignKey(InvitedUser, on_delete=models.SET_NULL, null=True, blank=True,db_column='checked_by')
-    checked_on = models.DateTimeField(default=None,null=True, blank=True)
+    expected_arrival_date = models.DateTimeField(default=None,null=True, blank=True)
 
     def __str__(self):
         return f"Shipment {self.bol} - {self.item} to Client {self.client_id}"

@@ -815,12 +815,13 @@ def get_room_type(request):
                     "installed_by": inst.installed_by.name if inst.installed_by else None,
                     "installed_on": inst.installed_on.isoformat() if inst.installed_on else None,
                     "status": inst.status,
+                    "product_client_id": inst.product_id.client_id if inst.product_id else None,
                 })
 
                 # Add to check_items with install_id as ID
                 check_items.append({
                     "id": inst.install_id,
-                    "label": f"{inst.product_name}",
+                    "label": f"{inst.product_name} -({inst.product_id.client_id})",
                     "type": "detail",
                 })
 
@@ -862,11 +863,12 @@ def get_room_type(request):
                     "installed_by": inst.installed_by.name if inst.installed_by else None,
                     "installed_on": inst.installed_on.isoformat() if inst.installed_on else None,
                     "status": inst.status,
+                    "product_client_id": inst.product_id.client_id if inst.product_id else None,
                 })
 
                 check_items.append({
                     "id": inst.install_id,
-                    "label": f"{inst.product_name}",
+                    "label": f"{inst.product_name} -({inst.product_id.client_id})",
                     "type": "detail",
                 })
 
@@ -951,7 +953,7 @@ def inventory_shipment(request):
             qty_shipped = int(request.POST.get("qty_shipped") or 0)
             supplier = request.POST.get("supplier")
             tracking_info = request.POST.get("tracking_info")
-            shipment_date_text = request.POST.get('shipment_date_text')
+            expected_arrival_date = request.POST.get('expected_arrival_date')
 
             # Save the shipping entry
             Shipping.objects.create(
@@ -962,7 +964,7 @@ def inventory_shipment(request):
                 supplier=supplier,
                 bol=tracking_info,
                 checked_by=user,
-                checked_on = shipment_date_text
+                expected_arrival_date = expected_arrival_date
             )
 
             # Update Inventory
