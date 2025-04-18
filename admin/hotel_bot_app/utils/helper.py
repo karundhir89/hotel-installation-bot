@@ -394,7 +394,6 @@ def verify_sql_query(
         }
 
 # New function for the initial Intent + Conditional SQL Generation Prompt
-import json
 
 def format_intent_sql_prompt(user_message, prompt_data):
     """Formats the prompt for the initial LLM call to determine intent and generate SQL if needed."""
