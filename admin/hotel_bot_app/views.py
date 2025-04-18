@@ -174,7 +174,7 @@ def chatbot_api(request):
                 # Skip SQL execution and proceed directly to logging/returning the direct answer
 
             elif needs_sql is True and initial_sql_query:
-                print(f"\n\n Generated query: \n\n{initial_sql_query}\n\n\n")
+                print(f"\n\nGenerated query: \n\n{initial_sql_query}\n\n\n")
                 final_sql_query = initial_sql_query # Tentatively set the final query
 
                 # 4. Execute SQL (and verify/retry if needed)
