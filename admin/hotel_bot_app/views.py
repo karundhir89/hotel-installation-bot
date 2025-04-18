@@ -79,7 +79,7 @@ def get_chat_history_from_db(session_id):
     {'role': msg['role'], 'content': msg['message']}
     for msg in history_messages
     ]
-
+    print('converted messages .......',converted_messages)
     return converted_messages
 
 
@@ -145,12 +145,12 @@ def chatbot_api(request):
                 data.append(intent_prompt_system_prompt)
                 data.append(intent_prompt_user_prompt)
                 print('data ...........',data)
-                if len(data) > 10:
-                    data = data[-10:]
+                if len(data) > 5:
+                    data = data[-5:]
 
                 intent_response = json.loads(gpt_call_json_func_two(
                     data,
-                    gpt_model="gpt-4-1106-preview",
+                    gpt_model="gpt-4o",
                     openai_key=open_ai_key,
                     json_required=True
                 ))
