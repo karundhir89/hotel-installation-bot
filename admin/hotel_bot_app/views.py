@@ -20,7 +20,7 @@ from django.views.decorators.csrf import csrf_exempt
 from hotel_bot_app.utils.helper import (fetch_data_from_sql,
                                          format_gpt_prompt,
                                          generate_final_response,
-                                         gpt_call_json_func,
+                                         gpt_call_json_func,gpt_call_json_func_two,
                                          load_database_schema,
                                          verify_sql_query,
                                          format_intent_sql_prompt,
@@ -65,6 +65,23 @@ def extract_values(json_obj, keys):
     print("table selected ,,,,,,", table_selected)
     return table_selected
 
+
+def get_chat_history_from_db(session_id):
+
+    if not session_id:
+        return JsonResponse({"chat_history": []})  # No session, return empty history
+
+    session = get_object_or_404(ChatSession, id=session_id)
+    history_messages = list(
+        ChatHistory.objects.filter(session=session).values("role", "message")
+    )
+    converted_messages = [
+    {'role': msg['role'], 'content': msg['message']}
+    for msg in history_messages
+    ]
+    return converted_messages
+
+
 @csrf_exempt
 def chatbot_api(request):
     if request.method == "POST":
@@ -80,6 +97,7 @@ def chatbot_api(request):
         # --- Session Management ---
         session_id = request.session.get("chat_session_id")
         session = None
+        print('session id',session_id)
         if session_id:
             try:
                 session = ChatSession.objects.get(id=session_id)
@@ -119,12 +137,24 @@ def chatbot_api(request):
             # 2. First LLM Call: Intent Recognition & Conditional SQL Generation
             intent_response = None
             try:
-                intent_prompt = format_intent_sql_prompt(user_message, DB_SCHEMA)
-                intent_response = gpt_call_json_func(
-                    intent_prompt,
+                intent_prompt_system_prompt,intent_prompt_user_prompt =format_intent_sql_prompt(user_message, DB_SCHEMA)
+                intent_prompt_system_prompt={"role":"system","content":intent_prompt_system_prompt}
+                intent_prompt_user_prompt={"role":"user","content":intent_prompt_user_prompt}
+                chat_history_memory=get_chat_history_from_db(session_id)
+
+                
+                if len(chat_history_memory) > 5:
+                    chat_history_memory = chat_history_memory[-5:]
+                
+                chat_history_memory=[intent_prompt_system_prompt]+chat_history_memory
+                
+                print('chat_history_memory ...........',chat_history_memory)
+                intent_response = json.loads(gpt_call_json_func_two(
+                    chat_history_memory,
                     gpt_model="gpt-4o",
+                    openai_key=open_ai_key,
                     json_required=True
-                )
+                ))
             except Exception as e:
                 print(f"Error during Intent/SQL Generation LLM call: {e}")
                 # Fall through, intent_response remains None
@@ -144,14 +174,14 @@ def chatbot_api(request):
                 # Skip SQL execution and proceed directly to logging/returning the direct answer
 
             elif needs_sql is True and initial_sql_query:
-                print(f"Intent LLM requires SQL. Generated query: {initial_sql_query}")
+                print(f"\n\nGenerated query: \n\n{initial_sql_query}\n\n\n")
                 final_sql_query = initial_sql_query # Tentatively set the final query
 
                 # 4. Execute SQL (and verify/retry if needed)
                 try:
                     # Initial attempt
                     rows = fetch_data_from_sql(initial_sql_query)
-                    print(f"Initial query execution successful.")
+                    print(f"Initial query execution successful.",rows)
 
                 except Exception as db_error:
                     print(f"Initial DB execution error: {db_error}. Attempting verification.")
@@ -193,6 +223,7 @@ def chatbot_api(request):
                 # This block runs whether SQL succeeded, failed, or returned no rows
                 try:
                     response_prompt = generate_natural_response_prompt(user_message, final_sql_query, rows)
+                    # print('response prompt is :::::::',response_prompt)
                     bot_message = output_praser_gpt( # Use output_praser_gpt as we expect text
                         response_prompt,
                         gpt_model="gpt-4o",
@@ -332,7 +363,7 @@ def send_emails(recipient_email, password):
         fail_silently=False,
     )
 
-
+@csrf_exempt
 def user_login(request):
     # Redirect to dashboard if already logged in
     if request.session.get("user_id"):
@@ -1231,7 +1262,6 @@ def save_product_data(request):
         item = post_data.get("item", "").strip()
         client_id = post_data.get("client_id", "").strip()
         description = post_data.get("description") or 0
-        price = post_data.get("price") or 0
 
         supplier = post_data.get("supplier")
         client_selected = post_data.get("client_selected") or 0
@@ -1244,7 +1274,6 @@ def save_product_data(request):
                 installation.client_id = client_id
                 installation.description = description
                 installation.supplier = supplier
-                installation.price = price
                 installation.client_selected = client_selected
                 installation.save()
             else:
@@ -1254,7 +1283,6 @@ def save_product_data(request):
                     client_id=client_id,
                     description=description,
                     supplier=supplier,
-                    price=price,
                     client_selected=client_selected,
                 )
 
