@@ -79,7 +79,6 @@ def get_chat_history_from_db(session_id):
     {'role': msg['role'], 'content': msg['message']}
     for msg in history_messages
     ]
-    print('converted messages .......',converted_messages)
     return converted_messages
 
 
@@ -139,15 +138,17 @@ def chatbot_api(request):
             intent_response = None
             try:
                 intent_prompt_system_prompt,intent_prompt_user_prompt =format_intent_sql_prompt(user_message, DB_SCHEMA)
-                intent_prompt_system_prompt={"role":"user","content":intent_prompt_system_prompt}
+                intent_prompt_system_prompt={"role":"system","content":intent_prompt_system_prompt}
                 intent_prompt_user_prompt={"role":"user","content":intent_prompt_user_prompt}
                 data=get_chat_history_from_db(session_id)
-                data.append(intent_prompt_system_prompt)
-                data.append(intent_prompt_user_prompt)
-                print('data ...........',data)
+
+                
                 if len(data) > 5:
                     data = data[-5:]
-
+                
+                data=[intent_prompt_system_prompt]+data
+                
+                print('data ...........',data)
                 intent_response = json.loads(gpt_call_json_func_two(
                     data,
                     gpt_model="gpt-4o",
