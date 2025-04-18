@@ -79,7 +79,6 @@ def get_chat_history_from_db(session_id):
     {'role': msg['role'], 'content': msg['message']}
     for msg in history_messages
     ]
-
     return converted_messages
 
 
@@ -138,21 +137,24 @@ def chatbot_api(request):
             # 2. First LLM Call: Intent Recognition & Conditional SQL Generation
             intent_response = None
             try:
-                intent_prompt ={"role":"user","content":format_intent_sql_prompt(user_message, DB_SCHEMA)}
-                print(intent_prompt)
-                data=get_chat_history_from_db(session_id)
-                data.append(intent_prompt)
-                print('data ...........',data)
-                if len(data) > 10:
-                    data = data[-10:]
+                intent_prompt_system_prompt,intent_prompt_user_prompt =format_intent_sql_prompt(user_message, DB_SCHEMA)
+                intent_prompt_system_prompt={"role":"system","content":intent_prompt_system_prompt}
+                intent_prompt_user_prompt={"role":"user","content":intent_prompt_user_prompt}
+                chat_history_memory=get_chat_history_from_db(session_id)
 
+                
+                if len(chat_history_memory) > 5:
+                    chat_history_memory = chat_history_memory[-5:]
+                
+                chat_history_memory=[intent_prompt_system_prompt]+chat_history_memory
+                
+                print('chat_history_memory ...........',chat_history_memory)
                 intent_response = json.loads(gpt_call_json_func_two(
-                    data,
+                    chat_history_memory,
                     gpt_model="gpt-4o",
                     openai_key=open_ai_key,
                     json_required=True
                 ))
-                print('intent response .....',intent_response)
             except Exception as e:
                 print(f"Error during Intent/SQL Generation LLM call: {e}")
                 # Fall through, intent_response remains None
@@ -172,14 +174,14 @@ def chatbot_api(request):
                 # Skip SQL execution and proceed directly to logging/returning the direct answer
 
             elif needs_sql is True and initial_sql_query:
-                print(f"Intent LLM requires SQL. Generated query: {initial_sql_query}")
+                print(f"\n\nGenerated query: \n\n{initial_sql_query}\n\n\n")
                 final_sql_query = initial_sql_query # Tentatively set the final query
 
                 # 4. Execute SQL (and verify/retry if needed)
                 try:
                     # Initial attempt
                     rows = fetch_data_from_sql(initial_sql_query)
-                    print(f"Initial query execution successful.")
+                    print(f"Initial query execution successful.",rows)
 
                 except Exception as db_error:
                     print(f"Initial DB execution error: {db_error}. Attempting verification.")
@@ -221,13 +223,13 @@ def chatbot_api(request):
                 # This block runs whether SQL succeeded, failed, or returned no rows
                 try:
                     response_prompt = generate_natural_response_prompt(user_message, final_sql_query, rows)
+                    # print('response prompt is :::::::',response_prompt)
                     bot_message = output_praser_gpt( # Use output_praser_gpt as we expect text
                         response_prompt,
                         gpt_model="gpt-4o",
                         json_required=False,
                         temperature=0.7 # Allow slightly more creativity for natural language
                     )
-                    print("bot message")
                     if not bot_message or not isinstance(bot_message, str):
                          print(f"Error: Natural response generation returned invalid data: {bot_message}")
                          raise Exception("Failed to format the final natural response.")
