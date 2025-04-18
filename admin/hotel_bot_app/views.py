@@ -25,7 +25,7 @@ from hotel_bot_app.utils.helper import (fetch_data_from_sql,
                                          verify_sql_query,
                                          format_intent_sql_prompt,
                                          generate_natural_response_prompt,
-                                         output_praser_gpt)
+                                         output_praser_gpt,intent_prompt_identification)
 from openai import OpenAI
 
 from .models import *
@@ -137,8 +137,25 @@ def chatbot_api(request):
             # 2. First LLM Call: Intent Recognition & Conditional SQL Generation
             intent_response = None
             try:
+
+                intent_prompt=[{"role":"user","content":intent_prompt_identification+'\n\n'+user_message}]
+                intent_prompt_first_output = json.loads(gpt_call_json_func_two(
+                    intent_prompt,
+                    gpt_model="gpt-4o",
+                    openai_key=open_ai_key,
+                    json_required=True
+                ))
+                print('intent_prompt_first_output',intent_prompt_first_output)
+                
+
                 intent_prompt_system_prompt,intent_prompt_user_prompt =format_intent_sql_prompt(user_message, DB_SCHEMA)
-                intent_prompt_system_prompt={"role":"system","content":intent_prompt_system_prompt}
+                if 'response' not in intent_prompt_first_output:
+                    print("we did no got response")
+                    intent_prompt_system_prompt={"role":"system","content":intent_prompt_system_prompt + f'## use the below suggested_query_logic  to make sql query : ##{intent_prompt_first_output}'}
+                else:
+                    print("we got response")
+                    intent_prompt_system_prompt={"role":"system","content":intent_prompt_system_prompt}
+
                 intent_prompt_user_prompt={"role":"user","content":intent_prompt_user_prompt}
                 chat_history_memory=get_chat_history_from_db(session_id)
 
@@ -155,6 +172,7 @@ def chatbot_api(request):
                     openai_key=open_ai_key,
                     json_required=True
                 ))
+                print('intent response ',intent_response)
             except Exception as e:
                 print(f"Error during Intent/SQL Generation LLM call: {e}")
                 # Fall through, intent_response remains None

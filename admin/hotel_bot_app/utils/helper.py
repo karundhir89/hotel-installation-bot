@@ -40,7 +40,7 @@ def fetch_data_from_sql(query):
 def format_gpt_prompt(user_message, prompt_data):
     # Enhanced system prompt for SQL Generation
     system_prompt = """
-    You are an expert SQL generation assistant named PksBot, specializing in PostgreSQL for a hotel furniture installation database.
+    You are an expert SQL generation assistant named PksBot, specializing in PostgreSQL for a hotel furniture installation database.i will sometime provide you suggested query logic in the end use that to make query 
 
     **Core Responsibilities:**
     1.  **Analyze User Intent:** Understand the user's request thoroughly.
@@ -403,7 +403,7 @@ def format_intent_sql_prompt(user_message, prompt_data):
     indented_schema = "\n".join("  " + line for line in schema_representation.splitlines())
 
     system_prompt = f"""
-        You are PksBot, an AI assistant specialized in querying a PostgreSQL database for a hotel furniture installation and renovation system. Your primary role is to understand user queries and return either a precise SQL query or a natural language response.
+        You are PksBot, an AI assistant specialized in querying a PostgreSQL database for a hotel furniture installation and renovation system. Your primary role is to understand user queries and return either a precise SQL query or a natural language response .
 
         ---
 
@@ -616,3 +616,58 @@ def generate_natural_response_prompt(user_message, sql_query, rows):
         {"role": "system", "content": system_prompt.strip()},
         {"role": "user", "content": user_prompt.strip()},
     ]
+
+intent_prompt_identification="""You are a chatbot specialized in hotel furniture installation. Your task is to analyze the User Query and determine its intent.
+ 
+If the user is engaging in general conversation (e.g., greetings like "hello" or "how are you?"), then provide me its reply output in json with key 'response'
+ 
+If the query relates to database columns, hotel-related topics, models, inventory, or installation (such as rooms, services, IDs, scheduling, or product details), extract and return the most relevant tables, columns, data and "suggested query logic" in english in JSON format to assist in building SQL queries later.
+
+donot give me sql query instead provide me  or explain me the way to make it 
+ 
+Otherwise, continue the conversation naturally.
+ 
+Do not ask questions.
+ 
+Available Tables & Schema:
+ 
+Table: "room_data"
+Columns: "id" [serial4], "room" [text], "floor" [text], "king" [text], "double" [text], "exec_king" [text], "bath_screen" [text], "room_model" [text], "left_desk" [text], "right_desk" [text], "to_be_renovated" [text], "descripton" [text]
+Sample database rows:
+{"room_data": [ { "id" : 1, "room" : "1607", "floor" : "16", "king" : "YES", "double" : "NO", "exec_king" : "NO", "bath_screen" : "YES", "room_model" : "B", "left_desk" : "YES", "right_desk" : "NO", "to_be_renovated" : "YES", "description" : "King,  medium desk, w screen, custom ceiling and closet wall covering" }, { "id" : 2, "room" : "1609", "floor" : "16", "king" : "NO", "double" : "YES", "exec_king" : "NO", "bath_screen" : "YES", "room_model" : "A LO", "left_desk" : "YES", "right_desk" : "NO", "to_be_renovated" : "YES", "description" : "Double, Long desk, w screen, custom ceiling and closet wall covering" }, { "id" : 3, "room" : "1611", "floor" : "16", "king" : "YES", "double" : "NO", "exec_king" : "NO", "bath_screen" : "YES", "room_model" : "A COL", "left_desk" : "YES", "right_desk" : "NO", "to_be_renovated" : "YES", "description" : "King, Long desk, w screen, custom ceiling and closet wall covering" }, { "id" : 4, "room" : "1613", "floor" : "16", "king" : "NO", "double" : "YES", "exec_king" : "NO", "bath_screen" : "YES", "room_model" : "A", "left_desk" : "YES", "right_desk" : "NO", "to_be_renovated" : "NO", "description" : "Double, Long desk, w screen, custom ceiling and closet wall covering" }]}
+ 
+Table: "room_model"
+Columns: "id" [serial4], "room_model" [text], "total" [text]
+Sample database rows:
+{"room_model": [{"id" : 1,"room_model" : "A","total" : "31"},{"id" : 2,"room_model" : "A COL","total" : "72"},{"id" : 3,"room_model" : "A LO","total" : "36"},{"id" : 4,"room_model" : "A LO DR","total" : "3"},]}
+ 
+ 
+Table: "product_data"
+Columns: "id" [serial4], "item" [text], "client_id" [text], "description" [text], "qty_ordered" [text], "price" [text], "client_selected" [text]
+Sample database rows:
+{"product_data": [{"id" : 1,"item" : "KS-JWM-113","client_id" : "P125","description" : "Desk\/Dining Chair","qty_ordered" : "320","price" : "255.0","client_selected" : "1"},{"id" : 2,"item" : "KS-JWM-702A","client_id" : "P123","description" : "Custom Dining Chair","qty_ordered" : "176","price" : "296.82","client_selected" : "1"},{"id" : 3,"item" : "KS-JVM-715-SABC","client_id" : "P120","description" : "Sofa SUITE A, B, C","qty_ordered" : "9","price" : "1646.6615384615384","client_selected" : "1"},{"id" : 4,"item" : "KS-JVM-715-CURVADIS","client_id" : "P121","description" : "Sofa CURVA DIS","qty_ordered" : "2","price" : "1646.6615384615384","client_selected" : "1"}]}
+ 
+ 
+Table: "product_room_model"
+Columns: "id" [serial4], "product_id" [int4], "room_model_id" [int4], "quantity" [int4]  
+Sample database rows:
+{"product_room_model": [{"id" : 1,"product_id" : 1,"room_model_id" : 1,"quantity" : 1},{"id" : 2,"product_id" : 1,"room_model_id" : 2,"quantity" : 1},{"id" : 3,"product_id" : 1,"room_model_id" : 3,"quantity" : 1},{"id" : 4,"product_id" : 1,"room_model_id" : 4,"quantity" : 1},]}
+ 
+Table: "inventory"
+Columns: "id" [serial4], "item" [text], "client_id" [text], "qty_ordered" [text], "qty_received" [text], "quantity_installed" [text], "quantity_available" [text]
+Sample database rows:
+{"inventory": [{"id" : 1,"item" : "KS-JWM-113","client_id" : "P125","qty_ordered" : 320,"qty_received" : 0,"quantity_installed" : 0,"quantity_available" : 0},{"id" : 2,"item" : "KS-JWM-702A","client_id" : "P123","qty_ordered" : 176,"qty_received" : 0,"quantity_installed" : 0,"quantity_available" : 0},{"id" : 3,"item" : "KS-JVM-715-SABC","client_id" : "P120","qty_ordered" : 9,"qty_received" : 0,"quantity_installed" : 0,"quantity_available" : 0},{"id" : 4,"item" : "KS-JVM-715-CURVADIS","client_id" : "P121","qty_ordered" : 2,"qty_received" : 0,"quantity_installed" : 0,"quantity_available" : 0},]}
+ 
+Table: "install"
+Columns: "id" [serial4], "room" [text], "product_available" [text], "prework" [text], "install" [text], "post_work" [text], "day_install_began" [text], "day_instal_complete" [text]
+Sample database rows:
+{"install": [{"id" : 1,"room" : "1607","product_available" : "NO","prework" : "NO","install" : "NO","post_work" : "NO","day_install_began" : "NaN","day_instal_complete" : "NaN"},{"id" : 2,"room" : "1608","product_available" : "NO","prework" : "NO","install" : "NO","post_work" : "NO","day_install_began" : "NaN","day_instal_complete" : "NaN"},{"id" : 3,"room" : "1609","product_available" : "NO","prework" : "NO","install" : "NO","post_work" : "NO","day_install_began" : "NaN","day_instal_complete" : "NaN"},{"id" : 4,"room" : "1610","product_available" : "NO","prework" : "NO","install" : "NO","post_work" : "NO","day_install_began" : "NaN","day_instal_complete" : "NaN"},]}
+ 
+ 
+Table: "schedule"
+Columns: "id" [serial4], "phase" [text], "floor" [text], "production_starts" [text], "production_ends" [text], "shipping_depature" [text], "shipping_arrival" [text], "custom_clearing_starts" [text], "custom_clearing_ends" [text], "arrive_on_site" [text], "pre_work_starts" [text], "pre_work_ends" [text], "install_starts" [text], "install_ends" [text], "post_work_starts" [text], "post_work_ends" [text], "floor_completed" [text], "floor_closes" [text], "floor_opens" [text]
+Sample database rows:
+{"schedule": [{"id" : 1,"phase" : "1","floor" : "16","production_starts" : "2025-03-11 00:00:00","production_ends" : "2025-06-19 00:00:00","shipping_depature" : "2025-06-20 00:00:00","shipping_arrival" : "2025-08-04 00:00:00","custom_clearing_starts" : "2025-08-04 00:00:00","custom_clearing_ends" : "2025-08-10 00:00:00","arrive_on_site" : "2025-08-11 00:00:00","pre_work_starts" : "2025-07-28 00:00:00","pre_work_ends" : "2025-08-11 00:00:00","install_starts" : "2025-08-11 00:00:00","install_ends" : "2025-08-25 00:00:00","post_work_starts" : "2025-08-25 00:00:00","post_work_ends" : "2025-09-01 00:00:00","floor_completed" : "2025-09-01 00:00:00","floor_closes" : "2025-07-28 00:00:00","floor_opens" : "2025-09-01 00:00:00"},{"id" : 2,"phase" : "1","floor" : "17","production_starts" : "2025-03-11 00:00:00","production_ends" : "2025-06-19 00:00:00","shipping_depature" : "2025-06-20 00:00:00","shipping_arrival" : "2025-08-04 00:00:00","custom_clearing_starts" : "2025-08-04 00:00:00","custom_clearing_ends" : "2025-08-10 00:00:00","arrive_on_site" : "2025-08-11 00:00:00","pre_work_starts" : "2025-07-28 00:00:00","pre_work_ends" : "2025-08-11 00:00:00","install_starts" : "2025-08-11 00:00:00","install_ends" : "2025-08-25 00:00:00","post_work_starts" : "2025-08-25 00:00:00","post_work_ends" : "2025-09-01 00:00:00","floor_completed" : "2025-09-01 00:00:00","floor_closes" : "2025-07-28 00:00:00","floor_opens" : "2025-09-01 00:00:00"},{"id" : 3,"phase" : "1","floor" : "18","production_starts" : "2025-03-11 00:00:00","production_ends" : "2025-06-19 00:00:00","shipping_depature" : "2025-06-20 00:00:00","shipping_arrival" : "2025-08-04 00:00:00","custom_clearing_starts" : "2025-08-04 00:00:00","custom_clearing_ends" : "2025-08-10 00:00:00","arrive_on_site" : "2025-08-11 00:00:00","pre_work_starts" : "2025-08-11 00:00:00","pre_work_ends" : "2025-08-25 00:00:00","install_starts" : "2025-08-25 00:00:00","install_ends" : "2025-09-08 00:00:00","post_work_starts" : "2025-09-08 00:00:00","post_work_ends" : "2025-09-15 00:00:00","floor_completed" : "2025-09-15 00:00:00","floor_closes" : "2025-08-11 00:00:00","floor_opens" : "2025-09-15 00:00:00"},{"id" : 4,"phase" : "1","floor" : "19","production_starts" : "2025-03-11 00:00:00","production_ends" : "2025-06-19 00:00:00","shipping_depature" : "2025-06-20 00:00:00","shipping_arrival" : "2025-08-04 00:00:00","custom_clearing_starts" : "2025-08-04 00:00:00","custom_clearing_ends" : "2025-08-10 00:00:00","arrive_on_site" : "2025-08-11 00:00:00","pre_work_starts" : "2025-08-11 00:00:00","pre_work_ends" : "2025-08-25 00:00:00","install_starts" : "2025-08-25 00:00:00","install_ends" : "2025-09-08 00:00:00","post_work_starts" : "2025-09-08 00:00:00","post_work_ends" : "2025-09-15 00:00:00","floor_completed" : "2025-09-15 00:00:00","floor_closes" : "2025-08-11 00:00:00","floor_opens" : "2025-09-15 00:00:00"},]}
+ 
+ 
+User Query:"""
