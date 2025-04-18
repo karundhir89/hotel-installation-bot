@@ -140,22 +140,21 @@ def chatbot_api(request):
                 intent_prompt_system_prompt,intent_prompt_user_prompt =format_intent_sql_prompt(user_message, DB_SCHEMA)
                 intent_prompt_system_prompt={"role":"system","content":intent_prompt_system_prompt}
                 intent_prompt_user_prompt={"role":"user","content":intent_prompt_user_prompt}
-                data=get_chat_history_from_db(session_id)
+                chat_history_memory=get_chat_history_from_db(session_id)
 
                 
-                if len(data) > 5:
-                    data = data[-5:]
+                if len(chat_history_memory) > 5:
+                    chat_history_memory = chat_history_memory[-5:]
                 
-                data=[intent_prompt_system_prompt]+data
+                chat_history_memory=[intent_prompt_system_prompt]+chat_history_memory
                 
-                print('data ...........',data)
+                print('chat_history_memory ...........',chat_history_memory)
                 intent_response = json.loads(gpt_call_json_func_two(
-                    data,
+                    chat_history_memory,
                     gpt_model="gpt-4o",
                     openai_key=open_ai_key,
                     json_required=True
                 ))
-                print('intent response .....',intent_response)
             except Exception as e:
                 print(f"Error during Intent/SQL Generation LLM call: {e}")
                 # Fall through, intent_response remains None
@@ -175,7 +174,7 @@ def chatbot_api(request):
                 # Skip SQL execution and proceed directly to logging/returning the direct answer
 
             elif needs_sql is True and initial_sql_query:
-                print(f"\n\nIntent LLM requires SQL. Generated query: \n\n{initial_sql_query}\n\n\n")
+                print(f"\n\n Generated query: \n\n{initial_sql_query}\n\n\n")
                 final_sql_query = initial_sql_query # Tentatively set the final query
 
                 # 4. Execute SQL (and verify/retry if needed)
@@ -231,7 +230,6 @@ def chatbot_api(request):
                         json_required=False,
                         temperature=0.7 # Allow slightly more creativity for natural language
                     )
-                    print("bot message")
                     if not bot_message or not isinstance(bot_message, str):
                          print(f"Error: Natural response generation returned invalid data: {bot_message}")
                          raise Exception("Failed to format the final natural response.")
