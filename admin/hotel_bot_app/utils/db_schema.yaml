@@ -1,30 +1,3 @@
-description: 'This database schema is part of a hotel furniture installation and renovation
-  tracking system. Helps manage inventory, room models, product mappings, installation
-  progress, and scheduling.
-
-  ### Query Generation Rules:
-  - Use human-readable columns (e.g., `product_data.description` for names).
-  - Match column types strictly (e.g., `text` to `text`, `integer` to `integer`).
-  - Use explicit JOINs following the described relationships. `client_id` links `inventory` and `product_data`. `floor` links `schedule` and `room_data`.
-  - Do NOT aggregate (SUM, COUNT) unless specifically asked.
-  - Use table aliases for readability (e.g., `inv` for `inventory`).
-  - Default `LIMIT` is 50.
-  '
-# High-level description of how tables connect for complex queries
-relationships:
-  - description: 'To find schedule information (like shipping_arrival) for a specific product (e.g., by product_data.description):
-      1. Find the product in `product_data` using `description`.
-      2. Get its `id` and JOIN with `product_room_model` ON `product_data.id = product_room_model.product_id`.
-      3. JOIN with `room_model` ON `product_room_model.room_model_id = room_model.id`.
-      4. JOIN with `room_data` ON `room_model.id = room_data.room_model_id`.
-      5. JOIN with `schedule` ON `room_data.floor = schedule.floor`.
-      6. Select desired columns from `schedule` (e.g., `shipping_arrival`).'
-  - description: 'To link inventory levels to product names:
-      1. JOIN `inventory` and `product_data` ON `inventory.client_id = product_data.client_id`.
-      2. Use `product_data.description` for the name and `inventory.quantity_available`, `inventory.qty_received` etc. for quantities.'
-  - description: 'To link installation progress to room details:
-      1. JOIN `install` and `room_data` ON `install.room = room_data.room`.' # Assuming room number is unique key for this join
-
 tables:
 - name: install
   description: 'Tracks installation progress for a specific room.'
@@ -206,6 +179,10 @@ tables:
   example:
   - {id: 2, room_model: A COL, total: 72}
   - {id: 3, room_model: A LO, total: 36}
+  Avaliable room models data we have in row:
+    -'A COL', 'A LO', 'A LO DR', 'B', 'C PN', 'C+', 'CURVA 24', 'CURVA', 'CURVA - DIS', 'D', 'DLX', 'STC', 'SUITE A', 'SUITE B', 'SUITE C', 'SUITE MINI', 'CURVA 35', 'PRESIDENTIAL SUITE', 'Test Room'
+
+
 
 - name: schedule
   description: 'Detailed project timeline schedule per floor. Provides dates for various stages like shipping and installation.'
@@ -271,4 +248,5 @@ tables:
   example: # Example uses floor: 17
   - {id: 2, phase: 1, floor: 17, production_starts: '2025-03-10T18:30:00+00:00', production_ends: '2025-06-18T18:30:00+00:00', shipping_depature: '2025-06-19T18:30:00+00:00', shipping_arrival: '2025-08-03T18:30:00+00:00', custom_clearing_starts: '2025-08-03T18:30:00+00:00', custom_clearing_ends: '2025-08-09T18:30:00+00:00', arrive_on_site: '2025-08-10T18:30:00+00:00', pre_work_starts: '2025-07-27T18:30:00+00:00', pre_work_ends: '2025-08-10T18:30:00+00:00', install_starts: '2025-08-10T18:30:00+00:00', install_ends: '2025-08-24T18:30:00+00:00', post_work_starts: '2025-08-24T18:30:00+00:00', post_work_ends: '2025-08-31T18:30:00+00:00', floor_completed: '2025-08-31T18:30:00+00:00', floor_closes: '2025-07-27T18:30:00+00:00', floor_opens: '2025-08-31T18:30:00+00:00'}
   - {id: 3, phase: 1, floor: 18, production_starts: '2025-03-10T18:30:00+00:00', production_ends: '2025-06-18T18:30:00+00:00', shipping_depature: '2025-06-19T18:30:00+00:00', shipping_arrival: '2025-08-03T18:30:00+00:00', custom_clearing_starts: '2025-08-03T18:30:00+00:00', custom_clearing_ends: '2025-08-09T18:30:00+00:00', arrive_on_site: '2025-08-10T18:30:00+00:00', pre_work_starts: '2025-08-10T18:30:00+00:00', pre_work_ends: '2025-08-24T18:30:00+00:00', install_starts: '2025-08-24T18:30:00+00:00', install_ends: '2025-09-07T18:30:00+00:00', post_work_starts: '2025-09-07T18:30:00+00:00', post_work_ends: '2025-09-14T18:30:00+00:00', floor_completed: '2025-09-14T18:30:00+00:00', floor_closes: '2025-08-10T18:30:00+00:00', floor_opens: '2025-09-14T18:30:00+00:00'}
+
 

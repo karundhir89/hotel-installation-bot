@@ -25,8 +25,10 @@ from hotel_bot_app.utils.helper import (fetch_data_from_sql,
                                          verify_sql_query,
                                          format_intent_sql_prompt,
                                          generate_natural_response_prompt,
-                                         output_praser_gpt)
+                                         output_praser_gpt,intent_prompt_identification)
 from openai import OpenAI
+from html import escape
+
 
 from .models import *
 from .models import ChatSession
@@ -79,7 +81,6 @@ def get_chat_history_from_db(session_id):
     {'role': msg['role'], 'content': msg['message']}
     for msg in history_messages
     ]
-
     return converted_messages
 
 
@@ -138,21 +139,43 @@ def chatbot_api(request):
             # 2. First LLM Call: Intent Recognition & Conditional SQL Generation
             intent_response = None
             try:
-                intent_prompt ={"role":"user","content":format_intent_sql_prompt(user_message, DB_SCHEMA)}
-                print(intent_prompt)
-                data=get_chat_history_from_db(session_id)
-                data.append(intent_prompt)
-                print('data ...........',data)
-                if len(data) > 10:
-                    data = data[-10:]
 
-                intent_response = json.loads(gpt_call_json_func_two(
-                    data,
+                intent_prompt=[{"role":"user","content":intent_prompt_identification+'\n\n'+user_message}]
+                intent_prompt_first_output = json.loads(gpt_call_json_func_two(
+                    intent_prompt,
                     gpt_model="gpt-4o",
                     openai_key=open_ai_key,
                     json_required=True
                 ))
-                print('intent response .....',intent_response)
+                print('intent_prompt_first_output',intent_prompt_first_output)
+                
+
+                intent_prompt_system_prompt,intent_prompt_user_prompt =format_intent_sql_prompt(user_message, DB_SCHEMA)
+                if 'response' not in intent_prompt_first_output:
+                    print("we did no got response")
+                    intent_prompt_system_prompt={"role":"system","content":intent_prompt_system_prompt + f'## use the below suggested_query_logic  to make sql query : ##{intent_prompt_first_output}'}
+                else:
+                    print("we got response")
+                    intent_prompt_system_prompt={"role":"system","content":intent_prompt_system_prompt}
+
+                intent_prompt_user_prompt={"role":"user","content":intent_prompt_user_prompt}
+                print(1)
+                chat_history_memory=get_chat_history_from_db(session_id)
+                print(2)
+                
+                if len(chat_history_memory) > 5:
+                    chat_history_memory = chat_history_memory[-5:]
+                
+                chat_history_memory=[intent_prompt_system_prompt]+chat_history_memory
+                
+                print('chat_history_memory ...........',chat_history_memory)
+                intent_response = json.loads(gpt_call_json_func_two(
+                    chat_history_memory,
+                    gpt_model="gpt-4o",
+                    openai_key=open_ai_key,
+                    json_required=True
+                ))
+                print('intent response ',intent_response)
             except Exception as e:
                 print(f"Error during Intent/SQL Generation LLM call: {e}")
                 # Fall through, intent_response remains None
@@ -172,14 +195,14 @@ def chatbot_api(request):
                 # Skip SQL execution and proceed directly to logging/returning the direct answer
 
             elif needs_sql is True and initial_sql_query:
-                print(f"Intent LLM requires SQL. Generated query: {initial_sql_query}")
+                print(f"\n\nGenerated query: \n\n{initial_sql_query}\n\n\n")
                 final_sql_query = initial_sql_query # Tentatively set the final query
 
                 # 4. Execute SQL (and verify/retry if needed)
                 try:
                     # Initial attempt
                     rows = fetch_data_from_sql(initial_sql_query)
-                    print(f"Initial query execution successful.")
+                    print(f"Initial query execution successful.",rows)
 
                 except Exception as db_error:
                     print(f"Initial DB execution error: {db_error}. Attempting verification.")
@@ -204,7 +227,7 @@ def chatbot_api(request):
                         try:
                             rows = fetch_data_from_sql(recommended_query)
                             final_sql_query = recommended_query # Update the final query executed
-                            print("Retry with recommended query successful.")
+                            print("Retry with recommended query successful.",rows)
                         except Exception as second_error:
                             print(f"Retry with recommended query failed: {second_error}")
                             # Clear rows and final_sql_query as the attempt failed
@@ -221,13 +244,13 @@ def chatbot_api(request):
                 # This block runs whether SQL succeeded, failed, or returned no rows
                 try:
                     response_prompt = generate_natural_response_prompt(user_message, final_sql_query, rows)
+                    print('response prompt is :::::::',response_prompt)
                     bot_message = output_praser_gpt( # Use output_praser_gpt as we expect text
                         response_prompt,
                         gpt_model="gpt-4o",
                         json_required=False,
                         temperature=0.7 # Allow slightly more creativity for natural language
                     )
-                    print("bot message")
                     if not bot_message or not isinstance(bot_message, str):
                          print(f"Error: Natural response generation returned invalid data: {bot_message}")
                          raise Exception("Failed to format the final natural response.")
@@ -256,18 +279,45 @@ def chatbot_api(request):
 
         # --- Log Assistant Message ---
         try:
-            ChatHistory.objects.create(session=session, message=bot_message, role="assistant")
+            html_output = convert_to_html_table(rows)
+            print("html output ::::",html_output)
+            messages=html_output+'<br><br>'+bot_message
+        except:
+            messages=bot_message
+            pass
+        try:
+            ChatHistory.objects.create(session=session, message=messages, role="assistant")
         except Exception as e:
              print(f"Error saving assistant message to chat history: {e}")
              # Non-critical
 
 
         # --- Return Response ---
-        return JsonResponse({"response": bot_message})
+        return JsonResponse({"response": bot_message,"table_info":rows})
 
     # --- Handle Non-POST Requests ---
     return JsonResponse({"error": "Invalid request method. Only POST is allowed."}, status=405)
 
+def convert_to_html_table(data):
+    html = ['<table>']
+
+    # Header
+    html.append('<tr>')
+    for col in data['columns']:
+        html.append(f'<th>{escape(col)}</th>')
+    html.append('</tr>')
+
+    # Rows
+    for row in data['rows']:
+        html.append('<tr>')
+        for cell in row:
+            if isinstance(cell, datetime):
+                cell = cell.isoformat()
+            html.append(f'<td>{escape(str(cell))}</td>')
+        html.append('</tr>')
+
+    html.append('</table>')
+    return '\n'.join(html)
 
 @csrf_exempt
 def get_chat_history(request):
@@ -280,7 +330,6 @@ def get_chat_history(request):
     history_messages = list(
         ChatHistory.objects.filter(session=session).values("role", "message")
     )
-
     return JsonResponse({"chat_history": history_messages})
 
 
