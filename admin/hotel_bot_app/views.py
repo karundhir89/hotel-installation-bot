@@ -328,38 +328,19 @@ def add_users_roles(request):
         email = request.POST.get("email")  # Get the new description
         roles = request.POST.get("role")  # Get the new description
         status = request.POST.get("status")  # Get the new description
+        password = request.POST.get("password")  # Get the password
         roles_list = roles.split(", ") if roles else []
-        print(name, email, type(roles_list), roles_list, status, password_generated)
+        print(name, email, type(roles_list), roles_list, status, password)
 
         user = InvitedUser.objects.create(
             name=name,
             role=roles_list,
             last_login=now(),
             email=email,
-            password=bcrypt.hashpw(password_generated.encode(), bcrypt.gensalt()),
+            password=bcrypt.hashpw(password.encode(), bcrypt.gensalt()),
         )
-        send_emails(email, password_generated)
 
     return render(request, "add_users_roles.html")
-
-def send_emails(recipient_email, password):
-    subject = "Your Access to Hotel Installation Admin"
-    from_email = env("EMAIL_HOST_USER")
-    recipient_list = [recipient_email]
-
-    html_message = render_to_string(
-        "email_sample.html", {"email": recipient_email, "password": password}
-    )
-    plain_message = strip_tags(html_message)
-
-    send_mail(
-        subject,
-        plain_message,
-        from_email,
-        recipient_list,
-        html_message=html_message,
-        fail_silently=False,
-    )
 
 @csrf_exempt
 def user_login(request):
