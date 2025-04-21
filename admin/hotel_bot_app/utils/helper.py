@@ -52,7 +52,8 @@ def format_gpt_prompt(user_message, prompt_data):
     7.  **Strict Schema Adherence:** ONLY use tables and columns defined in the provided schema. Do NOT hallucinate.
     8.  **JSON Output:** Return ONLY a valid JSON object containing the SQL query. Format: `{"query": "SELECT ... FROM ... WHERE ... ILIKE ... LIMIT 50;"}`.
     9.  **No Explanations:** Do not add any explanations, markdown, or code blocks outside the JSON structure.
-
+    10. - **Room Models rule:** Strictly use only below room models donot go outside these ones and donot put word 'model' in where condition
+            - 'A COL', 'A LO', 'A LO DR', 'B', 'C PN', 'C+', 'CURVA 24', 'CURVA', 'CURVA - DIS', 'D', 'DLX', 'STC', 'SUITE A', 'SUITE B', 'SUITE C', 'SUITE MINI', 'CURVA 35', 'PRESIDENTIAL SUITE', 'Test Room'
     **Schema Information (including examples):**
     The database schema, including example rows for context, is provided below. Use it as your single source of truth for table and column names.
     """
@@ -183,23 +184,6 @@ def generate_final_response(user_message, rows):
         - Data (list of tuples/lists): {str(data) if data else 'None'}
 
     **Output Rules:**
-    1.  **Data Found (num_records > 0):**
-        - Generate ONLY an HTML `<table>`.
-        - Use the exact `columns` provided for the table headers (`<thead><tr><th>...</th></tr></thead>`).
-        - Populate the table body (`<tbody>`) with the `data`. Each inner list/tuple in `data` is a row (`<tr>`), and each item within it is a cell (`<td>`).
-        - Escape HTML special characters within data cells (e.g., '<', '>') to prevent XSS issues.
-        - Example Structure:
-          ```html
-          <table>
-            <thead>
-              <tr><th>Column1</th><th>Column2</th></tr>
-            </thead>
-            <tbody>
-              <tr><td>Row1Val1</td><td>Row1Val2</td></tr>
-              <tr><td>Row2Val1</td><td>Row2Val2</td></tr>
-            </tbody>
-          </table>
-          ```
     2.  **No Data Found (num_records == 0):**
         - Return ONLY the text string: "No records found matching your query." (Do not include the original query here).
     3.  **Non-Data/General Queries (if applicable, though primary focus is data):**
@@ -208,7 +192,6 @@ def generate_final_response(user_message, rows):
         - **NO** introductory text (e.g., "Here are the results:").
         - **NO** concluding text or summaries.
         - **NO** apologies or explanations.
-        - **NO** markdown formatting (like ```html ... ```). Output raw HTML for tables or plain text for "no records".
         - **NO** modifications to column names or data values.
         - **NO** invention of data.
 
@@ -563,7 +546,7 @@ def generate_natural_response_prompt(user_message, sql_query, rows):
         num_records = len(data) if isinstance(data, (list, tuple)) else 0
 
         if num_records > 0:
-            max_rows_in_prompt = 10 # Slightly increase for context, still limited
+            max_rows_in_prompt = num_records # Slightly increase for context, still limited
             data_preview = data[:max_rows_in_prompt] # Assign within the check
             data_summary = f"Successfully retrieved {num_records} record(s)."
             data_summary += f"\\nColumns: {columns}"
@@ -580,30 +563,7 @@ def generate_natural_response_prompt(user_message, sql_query, rows):
 
     system_prompt = f"""
     You are PksBot, a friendly and helpful AI assistant for a hotel furniture installation system.
-    Your task is to provide a conversational and informative answer to the user's query based on the context provided.
-
-    **Response Guidelines:**
-    *   Aggregate data where applicable.
-    *   Address the user's query directly and naturally.
-    *   **If the user asks for a list of items (e.g., missing items, available products, room details) and data was retrieved (`num_records > 0`):**
-        
-        *   Present the results clearly using an HTML `<table>`.
-        *   Use the `Columns` from the summary as table headers (`<thead><tr><th>...</th></tr></thead>`).
-        *   Populate the table body (`<tbody>`) using the retrieved `Data Preview` (and mention if more rows exist).
-        *   Include a brief introductory sentence before the table, like "Here are the items matching your request:"
-    *   **For other types of queries OR if only one record was found:** Synthesize the key information from the 'Data Retrieval Summary' into a concise natural language sentence or paragraph. Explain what the data means.
-    *   If no data was found (but the query was valid), state that clearly and politely (e.g., "I couldn't find any records matching your criteria.").
-    *   If a query was attempted but failed, inform the user that you couldn't retrieve the information due to an issue (without technical details).
-    *   If no database query was needed or attempted, just answer the user's original query directly.
-    *   Keep the response concise and easy to understand.
-    *   Do NOT include the raw SQL query in your response.
-    *   Do NOT use markdown formatting (like ``` ```) around the HTML table if you generate one.
-    *   Maintain a helpful and professional tone.
-    
-
-    **Generate the final natural language response for the user now.**
-
-    
+    Your task is to provide a proper answer based on the data such as row and column . provide your answer in html ordered list tag points 
     """
 
     user_prompt = f"""  

@@ -27,6 +27,8 @@ from hotel_bot_app.utils.helper import (fetch_data_from_sql,
                                          generate_natural_response_prompt,
                                          output_praser_gpt,intent_prompt_identification)
 from openai import OpenAI
+from html import escape
+
 
 from .models import *
 from .models import ChatSession
@@ -157,8 +159,9 @@ def chatbot_api(request):
                     intent_prompt_system_prompt={"role":"system","content":intent_prompt_system_prompt}
 
                 intent_prompt_user_prompt={"role":"user","content":intent_prompt_user_prompt}
+                print(1)
                 chat_history_memory=get_chat_history_from_db(session_id)
-
+                print(2)
                 
                 if len(chat_history_memory) > 5:
                     chat_history_memory = chat_history_memory[-5:]
@@ -224,7 +227,7 @@ def chatbot_api(request):
                         try:
                             rows = fetch_data_from_sql(recommended_query)
                             final_sql_query = recommended_query # Update the final query executed
-                            print("Retry with recommended query successful.")
+                            print("Retry with recommended query successful.",rows)
                         except Exception as second_error:
                             print(f"Retry with recommended query failed: {second_error}")
                             # Clear rows and final_sql_query as the attempt failed
@@ -241,7 +244,7 @@ def chatbot_api(request):
                 # This block runs whether SQL succeeded, failed, or returned no rows
                 try:
                     response_prompt = generate_natural_response_prompt(user_message, final_sql_query, rows)
-                    # print('response prompt is :::::::',response_prompt)
+                    print('response prompt is :::::::',response_prompt)
                     bot_message = output_praser_gpt( # Use output_praser_gpt as we expect text
                         response_prompt,
                         gpt_model="gpt-4o",
@@ -276,18 +279,45 @@ def chatbot_api(request):
 
         # --- Log Assistant Message ---
         try:
-            ChatHistory.objects.create(session=session, message=bot_message, role="assistant")
+            html_output = convert_to_html_table(rows)
+            print("html output ::::",html_output)
+            messages=html_output+'<br><br>'+bot_message
+        except:
+            messages=bot_message
+            pass
+        try:
+            ChatHistory.objects.create(session=session, message=messages, role="assistant")
         except Exception as e:
              print(f"Error saving assistant message to chat history: {e}")
              # Non-critical
 
 
         # --- Return Response ---
-        return JsonResponse({"response": bot_message})
+        return JsonResponse({"response": bot_message,"table_info":rows})
 
     # --- Handle Non-POST Requests ---
     return JsonResponse({"error": "Invalid request method. Only POST is allowed."}, status=405)
 
+def convert_to_html_table(data):
+    html = ['<table>']
+
+    # Header
+    html.append('<tr>')
+    for col in data['columns']:
+        html.append(f'<th>{escape(col)}</th>')
+    html.append('</tr>')
+
+    # Rows
+    for row in data['rows']:
+        html.append('<tr>')
+        for cell in row:
+            if isinstance(cell, datetime):
+                cell = cell.isoformat()
+            html.append(f'<td>{escape(str(cell))}</td>')
+        html.append('</tr>')
+
+    html.append('</table>')
+    return '\n'.join(html)
 
 @csrf_exempt
 def get_chat_history(request):
@@ -300,7 +330,6 @@ def get_chat_history(request):
     history_messages = list(
         ChatHistory.objects.filter(session=session).values("role", "message")
     )
-
     return JsonResponse({"chat_history": history_messages})
 
 
