@@ -89,6 +89,9 @@ tables:
   - name: client_selected
     type: text # Consider boolean if appropriate
     description: Indicates if the client has selected this product (e.g., '1', '0', 'yes', 'no').
+  - name: supplier
+    type: text # Consider boolean if appropriate
+    description: Supplier of the product (e.g., 'PK SPACES BRASIL ', 'PK SPACES ASIA').
   example:
   - {id: 3, item: KS-JVM-715-SABC, client_id: P120, description: Sofa SUITE A, B, C, qty_ordered: 9, client_selected: '1'}
   - {id: 4, item: KS-JVM-715-CURVADIS, client_id: P121, description: Sofa CURVA DIS, qty_ordered: 2, client_selected: '1'}
