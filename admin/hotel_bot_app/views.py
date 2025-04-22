@@ -4,6 +4,7 @@ import random
 import string
 from datetime import date, datetime
 from functools import wraps
+from django.db.models.functions import Lower
 
 import bcrypt
 import environ
@@ -813,14 +814,14 @@ def get_room_type(request):
         room_type = room_data.room_model or ""
         room_model = RoomModel.objects.get(room_model=room_type)
         room_model_id = room_model.id
-
+        print('room data',room_data.id)
         product_room_models = ProductRoomModel.objects.filter(
             room_model_id=room_model_id
         )
-
+        print(product_room_models)
         # Get Installation model for the room
         installation_data = Installation.objects.filter(room=room_number).first()
-
+        print("installation data :::::",installation_data)
         saved_items = []
         check_items = []
 
@@ -828,9 +829,12 @@ def get_room_type(request):
         existing_installs = InstallDetail.objects.filter(
             room_id=room_data
         ).select_related("product_id", "room_id", "room_model_id", "installed_by")
+        print("existing_installs ::::::",existing_installs)
 
         if existing_installs.exists():
             for inst in existing_installs:
+                print("inst :::::",inst)
+                print(inst.product_id)
                 try:
                     prm = ProductRoomModel.objects.get(product_id=inst.product_id, room_model_id=inst.room_model_id)
                     prm_id = prm.id
@@ -849,18 +853,29 @@ def get_room_type(request):
                     "status": inst.status,
                     "product_client_id": inst.product_id.client_id if inst.product_id else None,
                 })
-
-                # Add to check_items with install_id as ID
-                check_items.append({
-                    "id": inst.install_id,
-                    "label": f"{inst.product_name} -({inst.product_id.client_id})",
-                    "type": "detail",
-                })
+                try:
+                    # Add to check_items with install_id as ID
+                    check_items.append({
+                        "id": inst.install_id,
+                        "label": f"({inst.product_id.client_id}) - {inst.product_name} ",
+                        "type": "detail",
+                    })
+                except:
+                    print(inst.product_id)
+                    check_items.append({
+                        "id": inst.install_id,
+                        "label": f"({inst.product_name} ",
+                        "type": "detail",
+                    })
+                    
+                print("11111")
 
         else:
+            print(2222)
             # Only create InstallDetails if none exist yet
             install_details_to_create = []
             for prm in product_room_models:
+                print(4444)
                 install = InstallDetail(
                     installation=installation_data,
                     product_id=prm.product_id,
@@ -897,14 +912,23 @@ def get_room_type(request):
                     "status": inst.status,
                     "product_client_id": inst.product_id.client_id if inst.product_id else None,
                 })
+                try:
+                    check_items.append({
+                        "id": inst.install_id,
+                        "label": f"({inst.product_id.client_id}) -{inst.product_name}",
+                        "type": "detail",
+                    })
 
-                check_items.append({
-                    "id": inst.install_id,
-                    "label": f"{inst.product_name} -({inst.product_id.client_id})",
-                    "type": "detail",
-                })
+                except:
+                    print(inst.product_id)
+                    check_items.append({
+                        "id": inst.install_id,
+                        "label": f"({inst.product_name} ",
+                        "type": "detail",
+                    })
 
         # Process static Installation step items (IDs 0, 1, 12, 13)
+        print(3333)
         if installation_data:
             check_items.extend([
                 {
@@ -1017,7 +1041,9 @@ def inventory_shipment(request):
 def get_product_item_num(request):
     clientId = request.GET.get("room_number")
     try:
-        client_data_fetched = ProductData.objects.get(client_id=clientId)
+        print('client if ',clientId)
+        client_data_fetched = ProductData.objects.get(client_id__iexact=clientId)
+
         print(client_data_fetched)
         get_item = client_data_fetched.item if client_data_fetched.item else ""
         supplier = client_data_fetched.supplier if client_data_fetched.supplier else "N.A."
@@ -1137,11 +1163,11 @@ def inventory_pull(request):
 def inventory_pull_item(request):
     clientId = request.GET.get("client_id")
     try:
-        client_data_fetched = Inventory.objects.get(client_id=clientId)
+        client_data_fetched = Inventory.objects.get(client_id__iexact=clientId)
         get_item = client_data_fetched.item if client_data_fetched.item else ""
         available_qty = client_data_fetched.quantity_available
 
-        product_ids = ProductData.objects.filter(client_id=clientId).values_list('id', flat=True)
+        product_ids = ProductData.objects.filter(client_id__iexact=clientId).values_list('id', flat=True)
         room_model_ids = ProductRoomModel.objects.filter(product_id__in=product_ids).values_list('room_model_id', flat=True)
         floors = list(RoomData.objects.filter(room_model_id__in=room_model_ids)
               .values_list('floor', flat=True).distinct())
@@ -1153,7 +1179,7 @@ def inventory_pull_item(request):
 def inventory_received_item_num(request):
     clientId = request.GET.get("client_item")
     try:
-        client_data_fetched = Inventory.objects.get(client_id=clientId)
+        client_data_fetched = Inventory.objects.get(client_id__iexact=clientId)
         get_item = client_data_fetched.item if client_data_fetched.item else ""
         return JsonResponse({"success": True, "product_item": get_item})
     except RoomData.DoesNotExist:
