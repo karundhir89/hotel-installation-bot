@@ -23,9 +23,10 @@ from hotel_bot_app.utils.helper import (fetch_data_from_sql,
                                          gpt_call_json_func,gpt_call_json_func_two,
                                          load_database_schema,
                                          verify_sql_query,
-                                         format_intent_sql_prompt,
+                                         generate_sql_prompt,
                                          generate_natural_response_prompt,
-                                         output_praser_gpt,intent_prompt_identification)
+                                         output_praser_gpt,
+                                         intent_detection_prompt)
 from openai import OpenAI
 from html import escape
 
@@ -139,8 +140,8 @@ def chatbot_api(request):
             # 2. First LLM Call: Intent Recognition & Conditional SQL Generation
             intent_response = None
             try:
+                intent_prompt = intent_detection_prompt(user_message)
 
-                intent_prompt=[{"role":"user","content":intent_prompt_identification+'\n\n'+user_message}]
                 intent_prompt_first_output = json.loads(gpt_call_json_func_two(
                     intent_prompt,
                     gpt_model="gpt-4o",
@@ -150,10 +151,10 @@ def chatbot_api(request):
                 print('intent_prompt_first_output',intent_prompt_first_output)
                 
 
-                intent_prompt_system_prompt,intent_prompt_user_prompt =format_intent_sql_prompt(user_message, DB_SCHEMA)
+                intent_prompt_system_prompt,intent_prompt_user_prompt = generate_sql_prompt(user_message, DB_SCHEMA)
                 if 'response' not in intent_prompt_first_output:
-                    print("we did no got response")
-                    intent_prompt_system_prompt={"role":"system","content":intent_prompt_system_prompt + f'## use the below suggested_query_logic  to make sql query : ##{intent_prompt_first_output}'}
+                    print("Its a db query, as identify by intent_detection_prompt.")
+                    intent_prompt_system_prompt={"role":"system","content":intent_prompt_system_prompt + f'## Relevant Context : ##{intent_prompt_first_output}'}
                 else:
                     print("we got response")
                     intent_prompt_system_prompt={"role":"system","content":intent_prompt_system_prompt}
@@ -169,17 +170,17 @@ def chatbot_api(request):
                     
                     chat_history_memory=[intent_prompt_system_prompt]+chat_history_memory
                     
-                    print('chat_history_memory ...........',chat_history_memory)
-                    intent_response = json.loads(gpt_call_json_func_two(
+                    # print('chat_history_memory ...........',chat_history_memory)
+                    sql_response = json.loads(gpt_call_json_func_two(
                         chat_history_memory,
                         gpt_model="gpt-4o",
                         openai_key=open_ai_key,
                         json_required=True
                     ))
-                    print('intent response ',intent_response)
+                    print('sql_response ',sql_response)
                 if session_id==None:
-                    print("session id is none",[{"role":"system","content":intent_prompt_system_prompt},{"role":"user","content":user_message}])
-                    intent_response = json.loads(gpt_call_json_func_two(
+                    # print("session id is none",[{"role":"system","content":intent_prompt_system_prompt},{"role":"user","content":user_message}])
+                    sql_response = json.loads(gpt_call_json_func_two(
                         [intent_prompt_system_prompt,{"role":"user","content":user_message}],
                         gpt_model="gpt-4o",
                         openai_key=open_ai_key,
@@ -187,15 +188,15 @@ def chatbot_api(request):
                     ))
             except Exception as e:
                 print(f"Error during Intent/SQL Generation LLM call: {e}")
-                # Fall through, intent_response remains None
+                # Fall through, sql_response remains None
 
-            if not intent_response or not isinstance(intent_response, dict):
+            if not sql_response or not isinstance(sql_response, dict):
                 print("Error: Failed to get valid JSON response from Intent/SQL LLM.")
                 raise Exception("Failed to understand request intent.")
 
-            needs_sql = intent_response.get("needs_sql")
-            initial_sql_query = intent_response.get("query")
-            direct_answer = intent_response.get("direct_answer")
+            needs_sql = sql_response.get("needs_sql")
+            initial_sql_query = sql_response.get("query")
+            direct_answer = sql_response.get("direct_answer")
 
             # 3. Handle based on Intent
             if needs_sql is False and direct_answer:
@@ -253,7 +254,7 @@ def chatbot_api(request):
                 # This block runs whether SQL succeeded, failed, or returned no rows
                 try:
                     response_prompt = generate_natural_response_prompt(user_message, final_sql_query, rows)
-                    print('response prompt is :::::::',response_prompt)
+                    # print('response prompt is :::::::',response_prompt)
                     bot_message = output_praser_gpt( # Use output_praser_gpt as we expect text
                         response_prompt,
                         gpt_model="gpt-4o",
@@ -286,14 +287,8 @@ def chatbot_api(request):
                  # If bot_message got corrupted somehow during error handling
                  bot_message = "Sorry, I encountered an unexpected issue and couldn't process your request. Please try again later."
 
-        # --- Log Assistant Message ---
-        try:
-            html_output = convert_to_html_table(rows)
-            print("html output ::::",html_output)
-            messages=html_output+'<br><br>'+bot_message
-        except:
-            messages=bot_message
-            pass
+        
+        messages=bot_message
         try:
             ChatHistory.objects.create(session=session, message=messages, role="assistant")
         except Exception as e:

@@ -67,7 +67,6 @@ def format_gpt_prompt(user_message, prompt_data):
         {"role": "user", "content": f"User Query:\\n{user_message.strip()}"},
     ]
 
-
 def gpt_call_json_func(message, gpt_model, json_required=False, temperature=0):
     try:
         # Ensure all 'role' fields in the message are lowercase (standardize to 'system', 'user', etc.)
@@ -121,8 +120,6 @@ def gpt_call_json_func(message, gpt_model, json_required=False, temperature=0):
         print(f"Unexpected error: {e}")
         return {"query": None}
 
-
-
 def gpt_call_json_func_two(message,gpt_model,openai_key,json_required=True,temperature=0):
 	try:
 		print("gpt function call")
@@ -143,8 +140,8 @@ def gpt_call_json_func_two(message,gpt_model,openai_key,json_required=True,tempe
 				'Content-Type': 'application/json'
 			}
 		)
-		print("gpt response got is ",gpt_response.json())
-		print("gpt function ended with ....",gpt_response.json()['choices'][0]['message']['content'])
+		# print("gpt response got is ",gpt_response.json())
+		# print("gpt function ended with ....",gpt_response.json()['choices'][0]['message']['content'])
 		# print("gpt response got is ",gpt_response.json()['choices'])
 		return gpt_response.json()['choices'][0]['message']['content']
 	except Exception as e:
@@ -221,7 +218,6 @@ def generate_final_response(user_message, rows):
     except Exception as e:
         print(f"Error calling output_praser_gpt within generate_final_response: {e}")
         return "Sorry, an error occurred while formatting the final response."
-
 
 def output_praser_gpt(message, gpt_model, json_required=True, temperature=0):
     try:
@@ -378,7 +374,7 @@ def verify_sql_query(
 
 # New function for the initial Intent + Conditional SQL Generation Prompt
 
-def format_intent_sql_prompt(user_message, prompt_data):
+def generate_sql_prompt(user_message, prompt_data):
     """Formats the prompt for the initial LLM call to determine intent and generate SQL if needed."""
     schema_representation = json.dumps(prompt_data, indent=2)
 
@@ -386,28 +382,19 @@ def format_intent_sql_prompt(user_message, prompt_data):
     indented_schema = "\n".join("  " + line for line in schema_representation.splitlines())
 
     system_prompt = f"""
-        You are PksBot, an AI assistant specialized in querying a PostgreSQL database for a hotel furniture installation and renovation system. Your primary role is to understand user queries and return either a precise SQL query or a natural language response .
+        You are an expert chatbot specializing in hotel furniture installation. Your task is to generate the most accurate and optimized SQL query based on the "User Query", "Database Schema", and "Relevant Context".
 
-        ---
+        ### Instructions:
+            1.Carefully analyze the user query and related context which can be used to make response more detailed and accurate.
 
-        ## Analysis Steps:
+            2. Select the most appropriate tables for the query using the provided schema and related tables.
 
-        1. **Understand Intent:** Carefully interpret the user’s query: "{user_message}"
-        2. **Check Database Need:**
-            - If the user asks for information that involves specific data (inventory, schedules, room status, etc.), a SQL query is needed.
-            - If it’s a general greeting, instruction, or system question, respond naturally without using the database.
-        3. **Respond Accordingly:**
-            - **If SQL is Needed:** Generate a valid, safe PostgreSQL query using the schema, rules, and relationships below.
-            - **If NOT Needed:** Respond in natural language, concisely and clearly.
+            3. Construct a well-structured SQL query that efficiently retrieves the required data which will be best fit according to User Query.
 
-        ---
+            4. Ensure accuracy and completeness, handling necessary joins, conditions, and filters.
 
-        ## Database Schema and Query Guidelines:
+            5. Always add client_id in select columns in case you need to answer about the product data.
 
-        **Context:**  
-        This database manages hotel room models, furniture inventory, installation progress, and scheduling.
-
-        ---
 
         ### Key Table Relationships and Join Logic:
 
@@ -431,14 +418,11 @@ def format_intent_sql_prompt(user_message, prompt_data):
 
         - **Schema Adherence:** Use only provided tables and columns. Match data types strictly.
         - **Readable Aliases:** Use clear aliases (e.g., `inv` for `inventory`, `pd` for `product_data`).
-        - **Human-Friendly Results:** Prefer names/descriptions over IDs.
         - **String Matching:** Use `ILIKE` for case-insensitive comparisons.
         - **Date Logic:** Compare dates (e.g., schedule completion) with `NOW()`.
         - **Limit Results:** Always append `LIMIT 50` unless told otherwise.
         - **Room Models rule:** Strictly use only below room models donot go outside these ones
-            - 'A COL', 'A LO', 'A LO DR', 'B', 'C PN', 'C+', 'CURVA 24', 'CURVA', 'CURVA - DIS', 'D', 'DLX', 'STC', 'SUITE A', 'SUITE B', 'SUITE C', 'SUITE MINI', 'CURVA 35', 'PRESIDENTIAL SUITE', 'Test Room'
-        
-
+            - 'A COL', 'A LO', 'A LO DR', 'B', 'C PN', 'C+', 'CURVA 24', 'CURVA', 'CURVA - DIS', 'D', 'DLX', 'STC', 'SUITE A', 'SUITE B', 'SUITE C', 'SUITE MINI', 'CURVA 35', 'PRESIDENTIAL SUITE'
         ---
 
         ### Aggregation Rules:
@@ -459,14 +443,6 @@ def format_intent_sql_prompt(user_message, prompt_data):
 
         ---
 
-        Generate a precise, efficient response. Clarity, accuracy, and safety are your top priorities.
-
-
-
-        **Full Database Schema:**
-        ```json
-        {indented_schema}
-        ```
 
         **Output Format:**
 
@@ -482,7 +458,7 @@ def format_intent_sql_prompt(user_message, prompt_data):
 
         **Examples:**
 
-        *   **Example 1 (Needs SQL - Specific Item):**
+        ***Example 1 (Needs SQL - Specific Item):**
             *   User Query: "Show me details for room 101"
             *   JSON Output:
                 ```json
@@ -492,7 +468,7 @@ def format_intent_sql_prompt(user_message, prompt_data):
                 "direct_answer": null
                 }}
                 ```
-        *   **Example 2 (Doesn't Need SQL):**
+        ***Example 2 (Doesn't Need SQL):**
             *   User Query: "Hello, who are you?"
             *   JSON Output:
                 ```json
@@ -502,36 +478,19 @@ def format_intent_sql_prompt(user_message, prompt_data):
                 "direct_answer": "I am PksBot, your AI assistant for hotel furniture installation information."
                 }}
                 ```
-        *   **Example 3 (Needs SQL - Grouped Query):**
-            *   User Query: "Which products are arriving this week?"
-            *   JSON Output:
-                ```json
-                {{
-                "needs_sql": true,
-                "query": "SELECT pd.description, COUNT(pd.id) AS total_units, s.shipping_arrival FROM product_data pd JOIN product_room_model prm ON pd.id = prm.product_id JOIN room_model rm ON prm.room_model_id = rm.id JOIN room_data rd ON rm.id = rd.room_model_id JOIN schedule s ON rd.floor = s.floor WHERE s.shipping_arrival BETWEEN NOW() AND NOW() + INTERVAL '7 days' GROUP BY pd.description, s.shipping_arrival ORDER BY s.shipping_arrival ASC LIMIT 50;",
-                "direct_answer": null
-                }}
-                ```
-        *   **Example 4 (Needs SQL - Explicit Aggregation):**
-            *   User Query: "How many chairs are in inventory?"
-            *   JSON Output:
-                ```json
-                {{
-                "needs_sql": true,
-                "query": "SELECT SUM(inv.quantity_available) AS total_chairs FROM inventory inv JOIN product_data pd ON inv.client_id = pd.client_id WHERE pd.description ILIKE '%chair%' LIMIT 50;",
-                "direct_answer": null
-                }}
-                ```
-
-        **Generate the JSON response now based on the user query.**
 """
 
 
-    user_prompt = f'**User Query:** "{user_message}"'
+    user_prompt = f"""
+        **User Query:** {user_message}
+        **Full Database Schema:** 
+        ```json
+        {indented_schema}
+        ```
+    """
 
     return system_prompt.strip(), user_prompt.strip()
 
-# New function for the Final Natural Language Response Prompt
 def generate_natural_response_prompt(user_message, sql_query, rows):
     """Formats the prompt for the final LLM call to synthesize a natural response based on context and data."""
 
@@ -546,7 +505,7 @@ def generate_natural_response_prompt(user_message, sql_query, rows):
         num_records = len(data) if isinstance(data, (list, tuple)) else 0
 
         if num_records > 0:
-            max_rows_in_prompt = num_records # Slightly increase for context, still limited
+            max_rows_in_prompt = 10 # Slightly increase for context, still limited
             data_preview = data[:max_rows_in_prompt] # Assign within the check
             data_summary = f"Successfully retrieved {num_records} record(s)."
             data_summary += f"\\nColumns: {columns}"
@@ -562,72 +521,79 @@ def generate_natural_response_prompt(user_message, sql_query, rows):
          data_summary = "I attempted to retrieve information, but encountered an issue and could not fetch the data."
 
     system_prompt = f"""
-    You are PksBot, a friendly and helpful AI assistant for a hotel furniture installation system.
-    Your task is to provide a proper answer based on the data such as row and column . provide your answer in html ordered list tag points 
-    """
+        You are PksBot, a friendly and helpful AI assistant for a hotel furniture installation system.
+        Your task is to provide a conversational and informative answer to the user's query based on the context provided, presenting data in a full HTML table when appropriate.
 
-    user_prompt = f"""  
-    **Context:**
-    1.  **User's Original Query:** "{user_message}"
-    2.  **Database Query Attempted:** `{sql_query if sql_query else 'None'}`
-    3.  **Data Retrieval Summary:** {data_summary}
-    """
+        **Context:**
+        1.  **User's Original Query:** "{user_message}"
+        2.  **Database Query Attempted:** `{sql_query if sql_query else 'None'}`
+        3.  **Data Retrieval Summary:** {data_summary}
+        4.  **Full Retrieved Data (for table generation if needed):**
+            - Columns: {columns if columns else 'N/A'}
+            - Number of Records: {num_records}
+            - Data: {str(rows.get('rows', [])) if rows and isinstance(rows, dict) else 'N/A'} # Pass full data here
+
+        **Response Guidelines:**
+        *   Address the user's query directly and naturally.
+        *   **If the user asks for a list of items (e.g., missing items, available products, room details) and data was retrieved (`num_records > 0`):**
+            *   Provide a brief introductory sentence (e.g., "Here are the items matching your request:").
+            *   Generate a **complete** HTML `<table>` containing **all** retrieved records.
+            *   Assign the table the ID `results-table` (e.g., `<table id="results-table">`).
+            *   Use the exact `Columns` provided in the context for the table headers (`<thead><tr><th>...</th></tr></thead>`).
+            *   Populate the table body (`<tbody>`) with **all** the `Data` provided in the context. Each inner list/tuple in `Data` is a row (`<tr>`), and each item within it is a cell (`<td>`).
+            *   Ensure data within `<td>` elements is properly HTML-escaped.
+        *   **For other types of queries OR if only one record was found:** Synthesize the key information from the 'Data Retrieval Summary' into a concise natural language sentence or paragraph. Explain what the data means.
+        *   If no data was found (but the query was valid), state that clearly and politely (e.g., "I couldn't find any records matching your criteria.").
+        *   If a query was attempted but failed, inform the user that you couldn't retrieve the information due to an issue (without technical details).
+        *   If no database query was needed or attempted, just answer the user's original query directly.
+        *   Keep the response concise and easy to understand.
+        *   Do NOT include the raw SQL query in your response.
+        *   Do NOT use markdown formatting (like ``` ```) around the HTML table. Output raw HTML.
+        *   Do NOT add notes about data being truncated or mention pagination (the front-end will handle that).
+        *   Maintain a helpful and professional tone.
+
+        **Example Response (Data Found - List Request -> Full Table):**
+        User Query: "Show me inventory for client P123"
+        Response:
+        "Okay, here is the inventory information for client P123:
+        <table id="results-table"><thead><tr><th>Item SKU</th><th>Quantity Available</th><th>Quantity Received</th></tr></thead><tbody><tr><td>KS-JWM-702A</td><td>0</td><td>0</td></tr><tr><td>CH-XYZ-101</td><td>10</td><td>5</td></tr></tbody></table>" 
+        # (Table contains all rows from data)
+
+        **Generate the final natural language response for the user now.**
+        """
+        # --- END OF MODIFIED SYSTEM PROMPT ---
+
     return [
-        {"role": "system", "content": system_prompt.strip()},
-        {"role": "user", "content": user_prompt.strip()},
-    ]
+            {"role": "system", "content": system_prompt.strip()}
+        ]
 
-intent_prompt_identification="""You are a chatbot specialized in hotel furniture installation. Your task is to analyze the User Query and determine its intent.
- 
-If the user is engaging in general conversation (e.g., greetings like "hello" or "how are you?"), then provide me its reply output in json with key 'response'
- 
-If the query relates to database columns, hotel-related topics, models, inventory, or installation (such as rooms, services, IDs, scheduling, or product details), extract and return the most relevant tables, columns, data and "suggested query logic" in english in JSON format to assist in building SQL queries later.
+def intent_detection_prompt(user_message):
+    db_schema = load_database_schema()
+    schema_representation = json.dumps(db_schema, indent=2)
 
-donot give me sql query instead provide me  or explain me the way to make it 
+    indented_schema = "\n".join("  " + line for line in schema_representation.splitlines())
+    user_prompt = f"""
+        **User Query:** {user_message} 
+
+        **Full Database Schema:**
+        ```json
+        {indented_schema}
+        ```
+    """
+
+    system_prompt = f"""
+        You are a chatbot specialized in hotel furniture installation. Your task is to analyze the User Query and determine its intent.
  
-Otherwise, continue the conversation naturally.
- 
-Do not ask questions.
- 
-Available Tables & Schema:
- 
-Table: "room_data"
-Columns: "id" [serial4], "room" [text], "floor" [text], "king" [text], "double" [text], "exec_king" [text], "bath_screen" [text], "room_model" [text], "left_desk" [text], "right_desk" [text], "to_be_renovated" [text], "descripton" [text]
-Sample database rows:
-{"room_data": [ { "id" : 1, "room" : "1607", "floor" : "16", "king" : "YES", "double" : "NO", "exec_king" : "NO", "bath_screen" : "YES", "room_model" : "B", "left_desk" : "YES", "right_desk" : "NO", "to_be_renovated" : "YES", "description" : "King,  medium desk, w screen, custom ceiling and closet wall covering" }, { "id" : 2, "room" : "1609", "floor" : "16", "king" : "NO", "double" : "YES", "exec_king" : "NO", "bath_screen" : "YES", "room_model" : "A LO", "left_desk" : "YES", "right_desk" : "NO", "to_be_renovated" : "YES", "description" : "Double, Long desk, w screen, custom ceiling and closet wall covering" }, { "id" : 3, "room" : "1611", "floor" : "16", "king" : "YES", "double" : "NO", "exec_king" : "NO", "bath_screen" : "YES", "room_model" : "A COL", "left_desk" : "YES", "right_desk" : "NO", "to_be_renovated" : "YES", "description" : "King, Long desk, w screen, custom ceiling and closet wall covering" }, { "id" : 4, "room" : "1613", "floor" : "16", "king" : "NO", "double" : "YES", "exec_king" : "NO", "bath_screen" : "YES", "room_model" : "A", "left_desk" : "YES", "right_desk" : "NO", "to_be_renovated" : "NO", "description" : "Double, Long desk, w screen, custom ceiling and closet wall covering" }]}
- 
-Table: "room_model"
-Columns: "id" [serial4], "room_model" [text], "total" [text]
-Sample database rows:
-{"room_model": [{"id" : 1,"room_model" : "A","total" : "31"},{"id" : 2,"room_model" : "A COL","total" : "72"},{"id" : 3,"room_model" : "A LO","total" : "36"},{"id" : 4,"room_model" : "A LO DR","total" : "3"},]}
- 
- 
-Table: "product_data"
-Columns: "id" [serial4], "item" [text], "client_id" [text], "description" [text], "qty_ordered" [text], "price" [text], "client_selected" [text]
-Sample database rows:
-{"product_data": [{"id" : 1,"item" : "KS-JWM-113","client_id" : "P125","description" : "Desk\/Dining Chair","qty_ordered" : "320","price" : "255.0","client_selected" : "1"},{"id" : 2,"item" : "KS-JWM-702A","client_id" : "P123","description" : "Custom Dining Chair","qty_ordered" : "176","price" : "296.82","client_selected" : "1"},{"id" : 3,"item" : "KS-JVM-715-SABC","client_id" : "P120","description" : "Sofa SUITE A, B, C","qty_ordered" : "9","price" : "1646.6615384615384","client_selected" : "1"},{"id" : 4,"item" : "KS-JVM-715-CURVADIS","client_id" : "P121","description" : "Sofa CURVA DIS","qty_ordered" : "2","price" : "1646.6615384615384","client_selected" : "1"}]}
- 
- 
-Table: "product_room_model"
-Columns: "id" [serial4], "product_id" [int4], "room_model_id" [int4], "quantity" [int4]  
-Sample database rows:
-{"product_room_model": [{"id" : 1,"product_id" : 1,"room_model_id" : 1,"quantity" : 1},{"id" : 2,"product_id" : 1,"room_model_id" : 2,"quantity" : 1},{"id" : 3,"product_id" : 1,"room_model_id" : 3,"quantity" : 1},{"id" : 4,"product_id" : 1,"room_model_id" : 4,"quantity" : 1},]}
- 
-Table: "inventory"
-Columns: "id" [serial4], "item" [text], "client_id" [text], "qty_ordered" [text], "qty_received" [text], "quantity_installed" [text], "quantity_available" [text]
-Sample database rows:
-{"inventory": [{"id" : 1,"item" : "KS-JWM-113","client_id" : "P125","qty_ordered" : 320,"qty_received" : 0,"quantity_installed" : 0,"quantity_available" : 0},{"id" : 2,"item" : "KS-JWM-702A","client_id" : "P123","qty_ordered" : 176,"qty_received" : 0,"quantity_installed" : 0,"quantity_available" : 0},{"id" : 3,"item" : "KS-JVM-715-SABC","client_id" : "P120","qty_ordered" : 9,"qty_received" : 0,"quantity_installed" : 0,"quantity_available" : 0},{"id" : 4,"item" : "KS-JVM-715-CURVADIS","client_id" : "P121","qty_ordered" : 2,"qty_received" : 0,"quantity_installed" : 0,"quantity_available" : 0},]}
- 
-Table: "install"
-Columns: "id" [serial4], "room" [text], "product_available" [text], "prework" [text], "install" [text], "post_work" [text], "day_install_began" [text], "day_instal_complete" [text]
-Sample database rows:
-{"install": [{"id" : 1,"room" : "1607","product_available" : "NO","prework" : "NO","install" : "NO","post_work" : "NO","day_install_began" : "NaN","day_instal_complete" : "NaN"},{"id" : 2,"room" : "1608","product_available" : "NO","prework" : "NO","install" : "NO","post_work" : "NO","day_install_began" : "NaN","day_instal_complete" : "NaN"},{"id" : 3,"room" : "1609","product_available" : "NO","prework" : "NO","install" : "NO","post_work" : "NO","day_install_began" : "NaN","day_instal_complete" : "NaN"},{"id" : 4,"room" : "1610","product_available" : "NO","prework" : "NO","install" : "NO","post_work" : "NO","day_install_began" : "NaN","day_instal_complete" : "NaN"},]}
- 
- 
-Table: "schedule"
-Columns: "id" [serial4], "phase" [text], "floor" [text], "production_starts" [text], "production_ends" [text], "shipping_depature" [text], "shipping_arrival" [text], "custom_clearing_starts" [text], "custom_clearing_ends" [text], "arrive_on_site" [text], "pre_work_starts" [text], "pre_work_ends" [text], "install_starts" [text], "install_ends" [text], "post_work_starts" [text], "post_work_ends" [text], "floor_completed" [text], "floor_closes" [text], "floor_opens" [text]
-Sample database rows:
-{"schedule": [{"id" : 1,"phase" : "1","floor" : "16","production_starts" : "2025-03-11 00:00:00","production_ends" : "2025-06-19 00:00:00","shipping_depature" : "2025-06-20 00:00:00","shipping_arrival" : "2025-08-04 00:00:00","custom_clearing_starts" : "2025-08-04 00:00:00","custom_clearing_ends" : "2025-08-10 00:00:00","arrive_on_site" : "2025-08-11 00:00:00","pre_work_starts" : "2025-07-28 00:00:00","pre_work_ends" : "2025-08-11 00:00:00","install_starts" : "2025-08-11 00:00:00","install_ends" : "2025-08-25 00:00:00","post_work_starts" : "2025-08-25 00:00:00","post_work_ends" : "2025-09-01 00:00:00","floor_completed" : "2025-09-01 00:00:00","floor_closes" : "2025-07-28 00:00:00","floor_opens" : "2025-09-01 00:00:00"},{"id" : 2,"phase" : "1","floor" : "17","production_starts" : "2025-03-11 00:00:00","production_ends" : "2025-06-19 00:00:00","shipping_depature" : "2025-06-20 00:00:00","shipping_arrival" : "2025-08-04 00:00:00","custom_clearing_starts" : "2025-08-04 00:00:00","custom_clearing_ends" : "2025-08-10 00:00:00","arrive_on_site" : "2025-08-11 00:00:00","pre_work_starts" : "2025-07-28 00:00:00","pre_work_ends" : "2025-08-11 00:00:00","install_starts" : "2025-08-11 00:00:00","install_ends" : "2025-08-25 00:00:00","post_work_starts" : "2025-08-25 00:00:00","post_work_ends" : "2025-09-01 00:00:00","floor_completed" : "2025-09-01 00:00:00","floor_closes" : "2025-07-28 00:00:00","floor_opens" : "2025-09-01 00:00:00"},{"id" : 3,"phase" : "1","floor" : "18","production_starts" : "2025-03-11 00:00:00","production_ends" : "2025-06-19 00:00:00","shipping_depature" : "2025-06-20 00:00:00","shipping_arrival" : "2025-08-04 00:00:00","custom_clearing_starts" : "2025-08-04 00:00:00","custom_clearing_ends" : "2025-08-10 00:00:00","arrive_on_site" : "2025-08-11 00:00:00","pre_work_starts" : "2025-08-11 00:00:00","pre_work_ends" : "2025-08-25 00:00:00","install_starts" : "2025-08-25 00:00:00","install_ends" : "2025-09-08 00:00:00","post_work_starts" : "2025-09-08 00:00:00","post_work_ends" : "2025-09-15 00:00:00","floor_completed" : "2025-09-15 00:00:00","floor_closes" : "2025-08-11 00:00:00","floor_opens" : "2025-09-15 00:00:00"},{"id" : 4,"phase" : "1","floor" : "19","production_starts" : "2025-03-11 00:00:00","production_ends" : "2025-06-19 00:00:00","shipping_depature" : "2025-06-20 00:00:00","shipping_arrival" : "2025-08-04 00:00:00","custom_clearing_starts" : "2025-08-04 00:00:00","custom_clearing_ends" : "2025-08-10 00:00:00","arrive_on_site" : "2025-08-11 00:00:00","pre_work_starts" : "2025-08-11 00:00:00","pre_work_ends" : "2025-08-25 00:00:00","install_starts" : "2025-08-25 00:00:00","install_ends" : "2025-09-08 00:00:00","post_work_starts" : "2025-09-08 00:00:00","post_work_ends" : "2025-09-15 00:00:00","floor_completed" : "2025-09-15 00:00:00","floor_closes" : "2025-08-11 00:00:00","floor_opens" : "2025-09-15 00:00:00"},]}
- 
- 
-User Query:"""
+        If the user is engaging in general conversation (e.g., greetings like "hello" or "how are you?"), then provide me its reply output in json with key 'response'
+        
+        If the query relates to database columns, hotel-related topics, models, inventory, or installation (such as rooms, services, IDs, scheduling, or product details), extract and return the most relevant tables, columns, data asked in user query and "suggested query logic" in english in JSON format to assist in building SQL queries later.
+
+        donot give me sql query instead provide me the suggested query logic to make it with the best way and more detailed answers always try add additional columns to get more details. 
+        
+        Add client_id in case you need to answer about the product data.
+        Otherwise, continue the conversation naturally.
+        
+    """
+
+    return [{"role":"system","content":system_prompt.strip()}, {"role":"user","content":user_prompt.strip()}]
+
