@@ -1,35 +1,4 @@
 tables:
-- name: install
-  description: 'Tracks installation progress for a specific room.'
-  columns:
-  - name: id
-    type: integer
-    constraints: [primary key, auto-increment]
-    description: Unique ID for the installation record.
-  - name: room
-    type: integer # Changed from text to integer if room numbers are numeric
-    description: 'Room number being worked on. Joins with `room_data.room`.'
-  - name: product_available
-    type: text
-    description: Status of product availability (e.g., YES, NO).
-  - name: prework
-    type: text
-    description: Notes/status for pre-installation tasks.
-  - name: install
-    type: text
-    description: Notes/status during the installation phase.
-  - name: post_work
-    type: text
-    description: Notes/status for post-installation tasks.
-  - name: day_install_began
-    type: timestamp with time zone
-    description: Start timestamp for installation.
-  - name: day_install_complete # Typo 'instal' kept as likely reflects DB
-    type: timestamp with time zone
-    description: Completion timestamp for installation.
-  example:
-  - {id: 1, room: 1607, product_available: 'NO', prework: 'NO', install: 'NO', post_work: 'NO', day_install_began: null, day_install_complete: null}
-  - {id: 2, room: 1608, product_available: 'NO', prework: 'NO', install: 'NO', post_work: 'NO', day_install_began: null, day_install_complete: null}
 
 - name: inventory
   description: 'Tracks ordered, received, available, and installed quantities for products, linked by client_id.'
@@ -182,8 +151,6 @@ tables:
   Avaliable room models data we have in row:
     -'A COL', 'A LO', 'A LO DR', 'B', 'C PN', 'C+', 'CURVA 24', 'CURVA', 'CURVA - DIS', 'D', 'DLX', 'STC', 'SUITE A', 'SUITE B', 'SUITE C', 'SUITE MINI', 'CURVA 35', 'PRESIDENTIAL SUITE', 'Test Room'
 
-
-
 - name: schedule
   description: 'Detailed project timeline schedule per floor. Provides dates for various stages like shipping and installation.'
   columns:
@@ -193,60 +160,90 @@ tables:
     description: Unique ID for the schedule entry.
   - name: phase
     type: integer
-    description: Project phase number.
+    description: Project phase number. Medium priority
   - name: floor
     type: integer
     description: 'Floor number. Joins with `room_data.floor` to link schedule to rooms.'
   - name: production_starts
-    type: timestamp with time zone
-    description: Production start date.
+    type: DateField
+    description: Production start date. low priority
   - name: production_ends
-    type: timestamp with time zone
-    description: Production end date.
+    type: DateField
+    description: Production end date. low priority
   - name: shipping_depature # Typo 'depature' kept as likely reflects DB
-    type: timestamp with time zone
-    description: Shipment departure date.
+    type: DateField
+    description: Shipment departure date. Medium priority
   - name: shipping_arrival
-    type: timestamp with time zone
-    description: Estimated or actual shipment arrival date.
+    type: DateField
+    description: Estimated or actual shipment arrival date. Medium priority
   - name: custom_clearing_starts
-    type: timestamp with time zone
-    description: Customs clearance start date.
+    type: DateField
+    description: Customs clearance start date. low priority
   - name: custom_clearing_ends
-    type: timestamp with time zone
-    description: Customs clearance end date.
+    type: DateField
+    description: Customs clearance end date. low priority
   - name: arrive_on_site
-    type: timestamp with time zone
-    description: Date furniture arrives on site.
+    type: DateField
+    description: Date furniture arrives on site. High priority
   - name: pre_work_starts
-    type: timestamp with time zone
-    description: Pre-installation work start date.
+    type: DateField
+    description: Pre-installation work start date. High priority
   - name: pre_work_ends
-    type: timestamp with time zone
-    description: Pre-installation work end date.
+    type: DateField
+    description: Pre-installation work end date. Medium priority
   - name: install_starts
-    type: timestamp with time zone
-    description: Installation start date.
+    type: DateField
+    description: Installation start date. High priority
   - name: install_ends
-    type: timestamp with time zone
-    description: Installation end date.
+    type: DateField
+    description: Installation end date. High priority
   - name: post_work_starts
-    type: timestamp with time zone
+    type: DateField
     description: Post-installation work start date.
   - name: post_work_ends
-    type: timestamp with time zone
-    description: Post-installation work end date.
+    type: DateField
+    description: Post-installation work end date. High priority
   - name: floor_completed
-    type: timestamp with time zone
-    description: 'Date floor work is completed.'
+    type: DateField
+    description: Date floor work is completed. High priority
   - name: floor_closes
-    type: timestamp with time zone
-    description: Date floor closes for work.
+    type: DateField
+    description: Date floor closes for work. Medium priority
   - name: floor_opens
-    type: timestamp with time zone
-    description: Date floor reopens after work.
+    type: DateField
+    description: Date floor reopens after work. Medium priority
   example: # Example uses floor: 17
   - {id: 2, phase: 1, floor: 17, production_starts: '2025-03-10T18:30:00+00:00', production_ends: '2025-06-18T18:30:00+00:00', shipping_depature: '2025-06-19T18:30:00+00:00', shipping_arrival: '2025-08-03T18:30:00+00:00', custom_clearing_starts: '2025-08-03T18:30:00+00:00', custom_clearing_ends: '2025-08-09T18:30:00+00:00', arrive_on_site: '2025-08-10T18:30:00+00:00', pre_work_starts: '2025-07-27T18:30:00+00:00', pre_work_ends: '2025-08-10T18:30:00+00:00', install_starts: '2025-08-10T18:30:00+00:00', install_ends: '2025-08-24T18:30:00+00:00', post_work_starts: '2025-08-24T18:30:00+00:00', post_work_ends: '2025-08-31T18:30:00+00:00', floor_completed: '2025-08-31T18:30:00+00:00', floor_closes: '2025-07-27T18:30:00+00:00', floor_opens: '2025-08-31T18:30:00+00:00'}
   - {id: 3, phase: 1, floor: 18, production_starts: '2025-03-10T18:30:00+00:00', production_ends: '2025-06-18T18:30:00+00:00', shipping_depature: '2025-06-19T18:30:00+00:00', shipping_arrival: '2025-08-03T18:30:00+00:00', custom_clearing_starts: '2025-08-03T18:30:00+00:00', custom_clearing_ends: '2025-08-09T18:30:00+00:00', arrive_on_site: '2025-08-10T18:30:00+00:00', pre_work_starts: '2025-08-10T18:30:00+00:00', pre_work_ends: '2025-08-24T18:30:00+00:00', install_starts: '2025-08-24T18:30:00+00:00', install_ends: '2025-09-07T18:30:00+00:00', post_work_starts: '2025-09-07T18:30:00+00:00', post_work_ends: '2025-09-14T18:30:00+00:00', floor_completed: '2025-09-14T18:30:00+00:00', floor_closes: '2025-08-10T18:30:00+00:00', floor_opens: '2025-09-14T18:30:00+00:00'}
 
-
+- name: install
+  description: 'Tracks installation progress for a specific room.'
+  columns:
+  - name: id
+    type: integer
+    constraints: [primary key, auto-increment]
+    description: Unique ID for the installation record.
+  - name: room
+    type: integer # Changed from text to integer if room numbers are numeric
+    description: 'Room number being worked on. Joins with `room_data.room`.'
+  - name: product_available
+    type: text
+    description: Status of product availability (e.g., YES, NO).
+  - name: prework
+    type: text
+    description: Notes/status for pre-installation tasks.
+  - name: install
+    type: text
+    description: Notes/status during the installation phase.
+  - name: post_work
+    type: text
+    description: Notes/status for post-installation tasks.
+  - name: day_install_began
+    type: timestamp with time zone
+    description: Start timestamp for installation.
+  - name: day_install_complete # Typo 'instal' kept as likely reflects DB
+    type: timestamp with time zone
+    description: Completion timestamp for installation.
+  example:
+  - {id: 1, room: 1607, product_available: 'NO', prework: 'NO', install: 'NO', post_work: 'NO', day_install_began: null, day_install_complete: null}
+  - {id: 2, room: 1608, product_available: 'NO', prework: 'NO', install: 'NO', post_work: 'NO', day_install_began: null, day_install_complete: null}

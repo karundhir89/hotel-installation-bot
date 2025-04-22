@@ -385,7 +385,7 @@ def generate_sql_prompt(user_message, prompt_data):
         You are an expert chatbot specializing in hotel furniture installation. Your task is to generate the most accurate and optimized SQL query based on the "User Query", "Database Schema", and "Relevant Context".
 
         ### Instructions:
-            1.Carefully analyze the user query and related context which can be used to make response more detailed and accurate.
+            1.Carefully analyze the user query and related context which can be used to make response more specific and accurate.
 
             2. Select the most appropriate tables for the query using the provided schema and related tables.
 
@@ -394,7 +394,6 @@ def generate_sql_prompt(user_message, prompt_data):
             4. Ensure accuracy and completeness, handling necessary joins, conditions, and filters.
 
             5. Always add client_id in select columns in case you need to answer about the product data.
-
 
         ### Key Table Relationships and Join Logic:
 
@@ -419,14 +418,13 @@ def generate_sql_prompt(user_message, prompt_data):
         - **Schema Adherence:** Use only provided tables and columns. Match data types strictly.
         - **Readable Aliases:** Use clear aliases (e.g., `inv` for `inventory`, `pd` for `product_data`).
         - **String Matching:** Use `ILIKE` for case-insensitive comparisons.
-        - **Date Logic:** Compare dates (e.g., schedule completion) with `NOW()`.
+        - **Date Logic:** Compare dates (e.g., schedule completion) with `NOW()` Use only date without time and time zone.
         - **Limit Results:** Always append `LIMIT 50` unless told otherwise.
         - **Room Models rule:** Strictly use only below room models donot go outside these ones
             - 'A COL', 'A LO', 'A LO DR', 'B', 'C PN', 'C+', 'CURVA 24', 'CURVA', 'CURVA - DIS', 'D', 'DLX', 'STC', 'SUITE A', 'SUITE B', 'SUITE C', 'SUITE MINI', 'CURVA 35', 'PRESIDENTIAL SUITE'
         ---
 
         ### Aggregation Rules:
-
 
         Only use aggregate functions (`SUM`, `COUNT`, `AVG`, etc.) if the user explicitly asks for:
         - Totals, averages, summaries
@@ -535,6 +533,7 @@ def generate_natural_response_prompt(user_message, sql_query, rows):
 
         **Response Guidelines:**
         *   Address the user's query directly and naturally.
+        *   For date fields, use only date without time and time zone.
         *   **If the user asks for a list of items (e.g., missing items, available products, room details) and data was retrieved (`num_records > 0`):**
             *   Provide a brief introductory sentence (e.g., "Here are the items matching your request:").
             *   Generate a **complete** HTML `<table>` containing **all** retrieved records.
@@ -580,20 +579,23 @@ def intent_detection_prompt(user_message):
         ```json
         {indented_schema}
         ```
+        
     """
 
     system_prompt = f"""
-        You are a chatbot specialized in hotel furniture installation. Your task is to analyze the User Query and determine its intent.
+        *You are a chatbot specialized in hotel furniture installation. Your task is to analyze the User Query and determine its intent.
  
-        If the user is engaging in general conversation (e.g., greetings like "hello" or "how are you?"), then provide me its reply output in json with key 'response'
+        *If the user is engaging in general conversation (e.g., greetings like "hello" or "how are you?"), then provide me its reply output in json with key 'response'
         
-        If the query relates to database columns, hotel-related topics, models, inventory, or installation (such as rooms, services, IDs, scheduling, or product details), extract and return the most relevant tables, columns, data asked in user query and "suggested query logic" in english in JSON format to assist in building SQL queries later.
+        *If the query relates to database columns, hotel-related topics, models, inventory, or installation (such as rooms, services, IDs, scheduling, or product details), extract and return the most relevant tables, columns, data asked in user query and "suggested query logic" in english in JSON format to assist in building SQL queries later.
 
-        donot give me sql query instead provide me the suggested query logic to make it with the best way and more detailed answers always try add additional columns to get more details. 
+        *Donot give me sql query instead provide me the suggested query logic to make it with the best way. Always try add additional columns where necessary for adding more value to the response. 
+
+        *Select query columns should not exceeded from 10. So carefully identify valueable columns.
         
-        Try to give more detailed answers with all possible importatnt information with response. for example:- 
-        1.  if user ask about the product data then try to give the all information about the product like client_id. 
-        
+        *Try to give more detailed answers with all possible importatnt information with response. for example:- 
+        if user ask about the product data then try to give the all information about the product like client_id. 
+
     """
 
     return [{"role":"system","content":system_prompt.strip()}, {"role":"user","content":user_prompt.strip()}]
