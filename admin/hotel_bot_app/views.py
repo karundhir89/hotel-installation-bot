@@ -160,22 +160,31 @@ def chatbot_api(request):
 
                 intent_prompt_user_prompt={"role":"user","content":intent_prompt_user_prompt}
                 print(1)
-                chat_history_memory=get_chat_history_from_db(session_id)
-                print(2)
-                
-                if len(chat_history_memory) > 5:
-                    chat_history_memory = chat_history_memory[-5:]
-                
-                chat_history_memory=[intent_prompt_system_prompt]+chat_history_memory
-                
-                print('chat_history_memory ...........',chat_history_memory)
-                intent_response = json.loads(gpt_call_json_func_two(
-                    chat_history_memory,
-                    gpt_model="gpt-4o",
-                    openai_key=open_ai_key,
-                    json_required=True
-                ))
-                print('intent response ',intent_response)
+                if session_id!=None:
+                    chat_history_memory=get_chat_history_from_db(session_id)
+                    print(2)
+                    
+                    if len(chat_history_memory) > 5:
+                        chat_history_memory = chat_history_memory[-5:]
+                    
+                    chat_history_memory=[intent_prompt_system_prompt]+chat_history_memory
+                    
+                    print('chat_history_memory ...........',chat_history_memory)
+                    intent_response = json.loads(gpt_call_json_func_two(
+                        chat_history_memory,
+                        gpt_model="gpt-4o",
+                        openai_key=open_ai_key,
+                        json_required=True
+                    ))
+                    print('intent response ',intent_response)
+                if session_id==None:
+                    print("session id is none",[{"role":"system","content":intent_prompt_system_prompt},{"role":"user","content":user_message}])
+                    intent_response = json.loads(gpt_call_json_func_two(
+                        [intent_prompt_system_prompt,{"role":"user","content":user_message}],
+                        gpt_model="gpt-4o",
+                        openai_key=open_ai_key,
+                        json_required=True
+                    ))
             except Exception as e:
                 print(f"Error during Intent/SQL Generation LLM call: {e}")
                 # Fall through, intent_response remains None
