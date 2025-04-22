@@ -1,86 +1,5 @@
 tables:
 
-- name: inventory
-  description: 'Tracks ordered, received, available, and installed quantities for products, linked by client_id.'
-  columns:
-  - name: id
-    type: integer
-    constraints: [primary key, auto-increment]
-    description: Unique ID for each inventory entry.
-  - name: item
-    type: text
-    description: SKU of the item (use `product_data.item` via JOIN for name).
-  - name: client_id
-    type: text
-    description: 'Client identifier (text). JOIN key with `product_data.client_id`.'
-  - name: qty_ordered
-    type: integer
-    description: Total quantity ordered.
-  - name: qty_received
-    type: integer
-    description: Quantity received so far.
-  - name: quantity_installed
-    type: integer
-    description: Quantity already installed.
-  - name: quantity_available
-    type: integer
-    description: Quantity currently available for installation.
-  example:
-  - {id: 1, item: KS-JWM-113, client_id: P125, qty_ordered: 320, qty_received: 0, quantity_installed: 0, quantity_available: 0}
-  - {id: 2, item: KS-JWM-702A, client_id: P123, qty_ordered: 176, qty_received: 0, quantity_installed: 0, quantity_available: 0}
-
-- name: product_data
-  description: 'Catalog data about products (name, etc.), linked by client_id.'
-  columns:
-  - name: id
-    type: integer
-    constraints: [primary key, auto-increment]
-    description: 'Unique product ID. Used as FK in `product_room_model.product_id`.'
-  - name: item
-    type: text
-    description: Product code/SKU (use `description` for name).
-  - name: client_id
-    type: text
-    description: 'Client identifier (text). JOIN key with `inventory.client_id`.'
-  - name: description
-    type: text
-    description: Product name (human-readable). Use this for display.
-  - name: client_selected
-    type: text # Consider boolean if appropriate
-    description: Indicates if the client has selected this product (e.g., '1', '0', 'yes', 'no').
-  example:
-  - {id: 3, item: KS-JVM-715-SABC, client_id: P120, description: Sofa SUITE A, B, C, qty_ordered: 9, client_selected: '1'}
-  - {id: 4, item: KS-JVM-715-CURVADIS, client_id: P121, description: Sofa CURVA DIS, qty_ordered: 2, client_selected: '1'}
-
-- name: product_room_model
-  description: 'Maps products to room models, defining quantity needed per model.'
-  columns:
-  - name: id
-    type: integer
-    constraints: [primary key, auto-increment]
-    description: Unique mapping ID.
-  - name: product_id
-    type: integer
-    constraints: [NOT NULL] # Removed FK constraint text to avoid confusion, describe below
-    description: 'Foreign key to `product_data.id`.'
-  - name: room_model_id
-    type: integer
-    constraints: [NOT NULL] # Removed FK constraint text
-    description: 'Foreign key to `room_model.id`.'
-  - name: quantity
-    type: integer
-    constraints: [NOT NULL]
-    description: Number of units required for this room model.
-  # Explicitly defining FK relationships for clarity to the LLM
-  foreign_keys:
-    - column: product_id
-      references: product_data(id)
-    - column: room_model_id
-      references: room_model(id)
-  example:
-  - {id: 2, product_id: 1, room_model_id: 2, quantity: 1}
-  - {id: 3, product_id: 1, room_model_id: 3, quantity: 1}
-
 - name: room_data
   description: 'Stores configuration for each room (floor, type, model).'
   columns:
@@ -150,6 +69,84 @@ tables:
   - {id: 3, room_model: A LO, total: 36}
   Avaliable room models data we have in row:
     -'A COL', 'A LO', 'A LO DR', 'B', 'C PN', 'C+', 'CURVA 24', 'CURVA', 'CURVA - DIS', 'D', 'DLX', 'STC', 'SUITE A', 'SUITE B', 'SUITE C', 'SUITE MINI', 'CURVA 35', 'PRESIDENTIAL SUITE', 'Test Room'
+
+- name: product_data
+  description: 'Catalog data about products (name, etc.), linked by client_id.'
+  columns:
+  - name: id
+    type: integer
+    constraints: [primary key, auto-increment]
+    description: 'Unique product ID. Used as FK in `product_room_model.product_id`.'
+  - name: item
+    type: text
+    description: Product code/SKU (use `description` for name).
+  - name: client_id
+    type: text
+    description: 'Client identifier (text). JOIN key with `inventory.client_id`.'
+  - name: description
+    type: text
+    description: Product name (human-readable). Use this for display.
+  - name: client_selected
+    type: text # Consider boolean if appropriate
+    description: Indicates if the client has selected this product (e.g., '1', '0', 'yes', 'no').
+  example:
+  - {id: 3, item: KS-JVM-715-SABC, client_id: P120, description: Sofa SUITE A, B, C, qty_ordered: 9, client_selected: '1'}
+  - {id: 4, item: KS-JVM-715-CURVADIS, client_id: P121, description: Sofa CURVA DIS, qty_ordered: 2, client_selected: '1'}
+
+- name: product_room_model
+  description: 'Maps products to room models, defining quantity needed per model.'
+  columns:
+  - name: id
+    type: integer
+    constraints: [primary key, auto-increment]
+    description: Unique mapping ID.
+  - name: product_id
+    type: integer
+    constraints: [NOT NULL] # Removed FK constraint text to avoid confusion, describe below
+    description: 'Foreign key to `product_data.id`.'
+  - name: room_model_id
+    type: integer
+    constraints: [NOT NULL] # Removed FK constraint text
+    description: 'Foreign key to `room_model.id`.'
+  - name: quantity
+    type: integer
+    constraints: [NOT NULL]
+    description: Number of units required for this room model.
+  # Explicitly defining FK relationships for clarity to the LLM
+  foreign_keys:
+    - column: product_id
+      references: product_data(id)
+    - column: room_model_id
+      references: room_model(id)
+  example:
+  - {id: 2, product_id: 1, room_model_id: 2, quantity: 1}
+  - {id: 3, product_id: 1, room_model_id: 3, quantity: 1}
+
+- name: inventory
+  description: 'Tracks ordered, received, available, and installed quantities for products, linked by client_id.'
+  columns:
+  - name: id
+    type: integer
+    constraints: [primary key, auto-increment]
+    description: Unique ID for each inventory entry.
+  - name: client_id
+    type: text
+    description: ''
+  - name: qty_ordered
+    type: integer
+    description: Total quantity ordered.
+  - name: qty_received
+    type: integer
+    description: Quantity received so far.
+  - name: quantity_installed
+    type: integer
+    description: Quantity already installed.
+  - name: quantity_available
+    type: integer
+    description: Quantity currently available for installation.
+  example:
+  - {id: 1, item: KS-JWM-113, client_id: P125, qty_ordered: 320, qty_received: 0, quantity_installed: 0, quantity_available: 0}
+  - {id: 2, item: KS-JWM-702A, client_id: P123, qty_ordered: 176, qty_received: 0, quantity_installed: 0, quantity_available: 0}
 
 - name: schedule
   description: 'Detailed project timeline schedule per floor. Provides dates for various stages like shipping and installation.'

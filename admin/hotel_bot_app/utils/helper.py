@@ -429,7 +429,7 @@ def generate_sql_prompt(user_message, prompt_data):
         Only use aggregate functions (`SUM`, `COUNT`, `AVG`, etc.) if the user explicitly asks for:
         - Totals, averages, summaries
         - Grouped insights (e.g., "Which rooms have completed installations?")
-
+        - Try not to show duplicate data in the response. Use group by to avoid duplicate data.
         Avoid aggregation if the user wants specific items or detailed records.
 
         ---
