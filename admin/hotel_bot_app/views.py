@@ -386,38 +386,19 @@ def add_users_roles(request):
         email = request.POST.get("email")  # Get the new description
         roles = request.POST.get("role")  # Get the new description
         status = request.POST.get("status")  # Get the new description
+        password = request.POST.get("password")  # Get the password
         roles_list = roles.split(", ") if roles else []
-        print(name, email, type(roles_list), roles_list, status, password_generated)
+        print(name, email, type(roles_list), roles_list, status, password)
 
         user = InvitedUser.objects.create(
             name=name,
             role=roles_list,
             last_login=now(),
             email=email,
-            password=bcrypt.hashpw(password_generated.encode(), bcrypt.gensalt()),
+            password=bcrypt.hashpw(password.encode(), bcrypt.gensalt()),
         )
-        send_emails(email, password_generated)
 
     return render(request, "add_users_roles.html")
-
-def send_emails(recipient_email, password):
-    subject = "Your Access to Hotel Installation Admin"
-    from_email = env("EMAIL_HOST_USER")
-    recipient_list = [recipient_email]
-
-    html_message = render_to_string(
-        "email_sample.html", {"email": recipient_email, "password": password}
-    )
-    plain_message = strip_tags(html_message)
-
-    send_mail(
-        subject,
-        plain_message,
-        from_email,
-        recipient_list,
-        html_message=html_message,
-        fail_silently=False,
-    )
 
 @csrf_exempt
 def user_login(request):
@@ -871,12 +852,13 @@ def get_room_type(request):
                     "installed_by": inst.installed_by.name if inst.installed_by else None,
                     "installed_on": inst.installed_on.isoformat() if inst.installed_on else None,
                     "status": inst.status,
+                    "product_client_id": inst.product_id.client_id if inst.product_id else None,
                 })
 
                 # Add to check_items with install_id as ID
                 check_items.append({
                     "id": inst.install_id,
-                    "label": f"{inst.product_name}",
+                    "label": f"{inst.product_name} -({inst.product_id.client_id})",
                     "type": "detail",
                 })
 
@@ -918,11 +900,12 @@ def get_room_type(request):
                     "installed_by": inst.installed_by.name if inst.installed_by else None,
                     "installed_on": inst.installed_on.isoformat() if inst.installed_on else None,
                     "status": inst.status,
+                    "product_client_id": inst.product_id.client_id if inst.product_id else None,
                 })
 
                 check_items.append({
                     "id": inst.install_id,
-                    "label": f"{inst.product_name}",
+                    "label": f"{inst.product_name} -({inst.product_id.client_id})",
                     "type": "detail",
                 })
 
@@ -1007,7 +990,7 @@ def inventory_shipment(request):
             qty_shipped = int(request.POST.get("qty_shipped") or 0)
             supplier = request.POST.get("supplier")
             tracking_info = request.POST.get("tracking_info")
-            shipment_date_text = request.POST.get('shipment_date_text')
+            expected_arrival_date = request.POST.get('expected_arrival_date')
 
             # Save the shipping entry
             Shipping.objects.create(
@@ -1018,7 +1001,7 @@ def inventory_shipment(request):
                 supplier=supplier,
                 bol=tracking_info,
                 checked_by=user,
-                checked_on = shipment_date_text
+                expected_arrival_date = expected_arrival_date
             )
 
             # Update Inventory
