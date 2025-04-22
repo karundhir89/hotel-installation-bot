@@ -814,14 +814,11 @@ def get_room_type(request):
         room_type = room_data.room_model or ""
         room_model = RoomModel.objects.get(room_model=room_type)
         room_model_id = room_model.id
-        print('room data',room_data.id)
         product_room_models = ProductRoomModel.objects.filter(
             room_model_id=room_model_id
         )
-        print(product_room_models)
         # Get Installation model for the room
         installation_data = Installation.objects.filter(room=room_number).first()
-        print("installation data :::::",installation_data)
         saved_items = []
         check_items = []
 
@@ -833,8 +830,6 @@ def get_room_type(request):
 
         if existing_installs.exists():
             for inst in existing_installs:
-                print("inst :::::",inst)
-                print(inst.product_id)
                 try:
                     prm = ProductRoomModel.objects.get(product_id=inst.product_id, room_model_id=inst.room_model_id)
                     prm_id = prm.id
@@ -868,14 +863,11 @@ def get_room_type(request):
                         "type": "detail",
                     })
                     
-                print("11111")
 
         else:
-            print(2222)
             # Only create InstallDetails if none exist yet
             install_details_to_create = []
             for prm in product_room_models:
-                print(4444)
                 install = InstallDetail(
                     installation=installation_data,
                     product_id=prm.product_id,
@@ -928,7 +920,6 @@ def get_room_type(request):
                     })
 
         # Process static Installation step items (IDs 0, 1, 12, 13)
-        print(3333)
         if installation_data:
             check_items.extend([
                 {
@@ -1041,13 +1032,9 @@ def inventory_shipment(request):
 def get_product_item_num(request):
     clientId = request.GET.get("room_number")
     try:
-        print('client if ',clientId)
         client_data_fetched = ProductData.objects.get(client_id__iexact=clientId)
-
-        print(client_data_fetched)
         get_item = client_data_fetched.item if client_data_fetched.item else ""
         supplier = client_data_fetched.supplier if client_data_fetched.supplier else "N.A."
-        print("item = ", get_item)
         return JsonResponse({"success": True, "room_type": get_item, "supplier": supplier})
     except RoomData.DoesNotExist:
         return JsonResponse({"success": False})
