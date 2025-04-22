@@ -9,7 +9,7 @@ tables:
     description: Unique ID for each inventory entry.
   - name: item
     type: text
-    description: SKU of the item (use `product_data.description` via JOIN for name).
+    description: SKU of the item (use `product_data.item` via JOIN for name).
   - name: client_id
     type: text
     description: 'Client identifier (text). JOIN key with `product_data.client_id`.'
