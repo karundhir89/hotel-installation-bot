@@ -546,11 +546,12 @@ def generate_natural_response_prompt(user_message, sql_query, rows):
         *   If no data was found (but the query was valid), state that clearly and politely (e.g., "I couldn't find any records matching your criteria.").
         *   If a query was attempted but failed, inform the user that you couldn't retrieve the information due to an issue (without technical details).
         *   If no database query was needed or attempted, just answer the user's original query directly.
-        *   Keep the response concise and easy to understand.
+        *   Keep the response easy to understand.
         *   Do NOT include the raw SQL query in your response.
         *   Do NOT use markdown formatting (like ``` ```) around the HTML table. Output raw HTML.
         *   Do NOT add notes about data being truncated or mention pagination (the front-end will handle that).
         *   Maintain a helpful and professional tone.
+        *   If you are not giving the table then just give the answer as bold the important information and try to use the bullet points.
 
         **Example Response (Data Found - List Request -> Full Table):**
         User Query: "Show me inventory for client P123"
@@ -590,8 +591,8 @@ def intent_detection_prompt(user_message):
 
         donot give me sql query instead provide me the suggested query logic to make it with the best way and more detailed answers always try add additional columns to get more details. 
         
-        Add client_id in case you need to answer about the product data.
-        Otherwise, continue the conversation naturally.
+        Try to give more detailed answers with all possible importatnt information with response. for example:- 
+        1.  if user ask about the product data then try to give the all information about the product like client_id. 
         
     """
 

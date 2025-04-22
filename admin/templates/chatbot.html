@@ -274,8 +274,14 @@
         .then(response => response.json())
         .then(data => {
             document.getElementById("temp-msg")?.remove();
+            
+            // Log the raw and parsed response to the console for debugging
+            console.log("Raw bot response:", data.response);
+            const formattedResponse = marked.parse(data.response);
+            console.log("Parsed bot response (HTML):", formattedResponse);
 
-            appendMessage(data.response, "bot-message");
+            // Convert markdown to HTML for bot responses
+            appendMessage(formattedResponse, "bot-message");
             sendBtn.disabled = false;
         })
         .catch(error => {
