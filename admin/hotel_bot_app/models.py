@@ -135,23 +135,23 @@ class Schedule(models.Model):
     id = models.AutoField(primary_key=True)
     phase = models.IntegerField(null=True, blank=True)
     floor = models.IntegerField(null=True, blank=True)
-    production_starts = models.DateTimeField(null=True, blank=True)
-    production_ends = models.DateTimeField(null=True, blank=True)
-    shipping_depature = models.DateTimeField(null=True, blank=True)
-    shipping_arrival = models.DateTimeField(null=True, blank=True)
-    custom_clearing_starts = models.DateTimeField(null=True, blank=True)
-    custom_clearing_ends = models.DateTimeField(null=True, blank=True)
-    arrive_on_site = models.DateTimeField(null=True, blank=True)
-    pre_work_starts = models.DateTimeField(null=True, blank=True)
-    pre_work_ends = models.DateTimeField(null=True, blank=True)
-    install_starts = models.DateTimeField(null=True, blank=True)
-    install_ends = models.DateTimeField(null=True, blank=True)  # Keep as DateTimeField
+    production_starts = models.DateField(null=True, blank=True)
+    production_ends = models.DateField(null=True, blank=True)
+    shipping_depature = models.DateField(null=True, blank=True)
+    shipping_arrival = models.DateField(null=True, blank=True)
+    custom_clearing_starts = models.DateField(null=True, blank=True)
+    custom_clearing_ends = models.DateField(null=True, blank=True)
+    arrive_on_site = models.DateField(null=True, blank=True)
+    pre_work_starts = models.DateField(null=True, blank=True)
+    pre_work_ends = models.DateField(null=True, blank=True)
+    install_starts = models.DateField(null=True, blank=True)
+    install_ends = models.DateField(null=True, blank=True)  # Keep as DateField
     
-    post_work_starts = models.DateTimeField(null=True, blank=True)  # Changed to DateTimeField
-    post_work_ends = models.DateTimeField(null=True, blank=True)  # Changed to DateTimeField
-    floor_completed = models.DateTimeField(null=True, blank=True)  # Changed to DateTimeField
-    floor_closes = models.DateTimeField(null=True, blank=True)  # Changed to DateTimeField
-    floor_opens = models.DateTimeField(null=True, blank=True)  # Changed to DateTimeField
+    post_work_starts = models.DateField(null=True, blank=True)  # Changed to DateField
+    post_work_ends = models.DateField(null=True, blank=True)  # Changed to DateField
+    floor_completed = models.DateField(null=True, blank=True)  # Changed to DateField
+    floor_closes = models.DateField(null=True, blank=True)  # Changed to DateField
+    floor_opens = models.DateField(null=True, blank=True)  # Changed to DateField
 
 
     class Meta:

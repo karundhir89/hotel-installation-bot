@@ -23,10 +23,13 @@ from hotel_bot_app.utils.helper import (fetch_data_from_sql,
                                          gpt_call_json_func,gpt_call_json_func_two,
                                          load_database_schema,
                                          verify_sql_query,
-                                         format_intent_sql_prompt,
+                                         generate_sql_prompt,
                                          generate_natural_response_prompt,
-                                         output_praser_gpt)
+                                         output_praser_gpt,
+                                         intent_detection_prompt)
 from openai import OpenAI
+from html import escape
+
 
 from .models import *
 from .models import ChatSession
@@ -137,35 +140,63 @@ def chatbot_api(request):
             # 2. First LLM Call: Intent Recognition & Conditional SQL Generation
             intent_response = None
             try:
-                intent_prompt_system_prompt,intent_prompt_user_prompt =format_intent_sql_prompt(user_message, DB_SCHEMA)
-                intent_prompt_system_prompt={"role":"system","content":intent_prompt_system_prompt}
-                intent_prompt_user_prompt={"role":"user","content":intent_prompt_user_prompt}
-                chat_history_memory=get_chat_history_from_db(session_id)
+                intent_prompt = intent_detection_prompt(user_message)
 
-                
-                if len(chat_history_memory) > 5:
-                    chat_history_memory = chat_history_memory[-5:]
-                
-                chat_history_memory=[intent_prompt_system_prompt]+chat_history_memory
-                
-                print('chat_history_memory ...........',chat_history_memory)
-                intent_response = json.loads(gpt_call_json_func_two(
-                    chat_history_memory,
+                intent_prompt_first_output = json.loads(gpt_call_json_func_two(
+                    intent_prompt,
                     gpt_model="gpt-4o",
                     openai_key=open_ai_key,
                     json_required=True
                 ))
+                print('intent_prompt_first_output',intent_prompt_first_output)
+                
+
+                intent_prompt_system_prompt,intent_prompt_user_prompt = generate_sql_prompt(user_message, DB_SCHEMA)
+                if 'response' not in intent_prompt_first_output:
+                    print("Its a db query, as identify by intent_detection_prompt.")
+                    intent_prompt_system_prompt={"role":"system","content":intent_prompt_system_prompt + f'## Relevant Context : ##{intent_prompt_first_output}'}
+                else:
+                    print("we got response")
+                    intent_prompt_system_prompt={"role":"system","content":intent_prompt_system_prompt}
+
+                intent_prompt_user_prompt={"role":"user","content":intent_prompt_user_prompt}
+                print(1)
+                if session_id!=None:
+                    chat_history_memory=get_chat_history_from_db(session_id)
+                    print(2)
+                    
+                    if len(chat_history_memory) > 5:
+                        chat_history_memory = chat_history_memory[-5:]
+                    
+                    chat_history_memory=[intent_prompt_system_prompt]+chat_history_memory
+                    
+                    # print('chat_history_memory ...........',chat_history_memory)
+                    sql_response = json.loads(gpt_call_json_func_two(
+                        chat_history_memory,
+                        gpt_model="gpt-4o",
+                        openai_key=open_ai_key,
+                        json_required=True
+                    ))
+                    print('sql_response ',sql_response)
+                if session_id==None:
+                    # print("session id is none",[{"role":"system","content":intent_prompt_system_prompt},{"role":"user","content":user_message}])
+                    sql_response = json.loads(gpt_call_json_func_two(
+                        [intent_prompt_system_prompt,{"role":"user","content":user_message}],
+                        gpt_model="gpt-4o",
+                        openai_key=open_ai_key,
+                        json_required=True
+                    ))
             except Exception as e:
                 print(f"Error during Intent/SQL Generation LLM call: {e}")
-                # Fall through, intent_response remains None
+                # Fall through, sql_response remains None
 
-            if not intent_response or not isinstance(intent_response, dict):
+            if not sql_response or not isinstance(sql_response, dict):
                 print("Error: Failed to get valid JSON response from Intent/SQL LLM.")
                 raise Exception("Failed to understand request intent.")
 
-            needs_sql = intent_response.get("needs_sql")
-            initial_sql_query = intent_response.get("query")
-            direct_answer = intent_response.get("direct_answer")
+            needs_sql = sql_response.get("needs_sql")
+            initial_sql_query = sql_response.get("query")
+            direct_answer = sql_response.get("direct_answer")
 
             # 3. Handle based on Intent
             if needs_sql is False and direct_answer:
@@ -206,7 +237,7 @@ def chatbot_api(request):
                         try:
                             rows = fetch_data_from_sql(recommended_query)
                             final_sql_query = recommended_query # Update the final query executed
-                            print("Retry with recommended query successful.")
+                            print("Retry with recommended query successful.",rows)
                         except Exception as second_error:
                             print(f"Retry with recommended query failed: {second_error}")
                             # Clear rows and final_sql_query as the attempt failed
@@ -256,20 +287,41 @@ def chatbot_api(request):
                  # If bot_message got corrupted somehow during error handling
                  bot_message = "Sorry, I encountered an unexpected issue and couldn't process your request. Please try again later."
 
-        # --- Log Assistant Message ---
+        
+        messages=bot_message
         try:
-            ChatHistory.objects.create(session=session, message=bot_message, role="assistant")
+            ChatHistory.objects.create(session=session, message=messages, role="assistant")
         except Exception as e:
              print(f"Error saving assistant message to chat history: {e}")
              # Non-critical
 
 
         # --- Return Response ---
-        return JsonResponse({"response": bot_message})
+        return JsonResponse({"response": bot_message,"table_info":rows})
 
     # --- Handle Non-POST Requests ---
     return JsonResponse({"error": "Invalid request method. Only POST is allowed."}, status=405)
 
+def convert_to_html_table(data):
+    html = ['<table>']
+
+    # Header
+    html.append('<tr>')
+    for col in data['columns']:
+        html.append(f'<th>{escape(col)}</th>')
+    html.append('</tr>')
+
+    # Rows
+    for row in data['rows']:
+        html.append('<tr>')
+        for cell in row:
+            if isinstance(cell, datetime):
+                cell = cell.isoformat()
+            html.append(f'<td>{escape(str(cell))}</td>')
+        html.append('</tr>')
+
+    html.append('</table>')
+    return '\n'.join(html)
 
 @csrf_exempt
 def get_chat_history(request):
@@ -282,7 +334,6 @@ def get_chat_history(request):
     history_messages = list(
         ChatHistory.objects.filter(session=session).values("role", "message")
     )
-
     return JsonResponse({"chat_history": history_messages})
 
 
@@ -330,38 +381,19 @@ def add_users_roles(request):
         email = request.POST.get("email")  # Get the new description
         roles = request.POST.get("role")  # Get the new description
         status = request.POST.get("status")  # Get the new description
+        password = request.POST.get("password")  # Get the password
         roles_list = roles.split(", ") if roles else []
-        print(name, email, type(roles_list), roles_list, status, password_generated)
+        print(name, email, type(roles_list), roles_list, status, password)
 
         user = InvitedUser.objects.create(
             name=name,
             role=roles_list,
             last_login=now(),
             email=email,
-            password=bcrypt.hashpw(password_generated.encode(), bcrypt.gensalt()),
+            password=bcrypt.hashpw(password.encode(), bcrypt.gensalt()),
         )
-        send_emails(email, password_generated)
 
     return render(request, "add_users_roles.html")
-
-def send_emails(recipient_email, password):
-    subject = "Your Access to Hotel Installation Admin"
-    from_email = env("EMAIL_HOST_USER")
-    recipient_list = [recipient_email]
-
-    html_message = render_to_string(
-        "email_sample.html", {"email": recipient_email, "password": password}
-    )
-    plain_message = strip_tags(html_message)
-
-    send_mail(
-        subject,
-        plain_message,
-        from_email,
-        recipient_list,
-        html_message=html_message,
-        fail_silently=False,
-    )
 
 @csrf_exempt
 def user_login(request):
