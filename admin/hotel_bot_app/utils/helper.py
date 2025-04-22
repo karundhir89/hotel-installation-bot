@@ -476,15 +476,17 @@ def generate_sql_prompt(user_message, prompt_data):
                 "direct_answer": "I am PksBot, your AI assistant for hotel furniture installation information."
                 }}
                 ```
+
+        **Full Database Schema:** 
+        ```json
+        {indented_schema}
+        ```
 """
 
 
     user_prompt = f"""
         **User Query:** {user_message}
-        **Full Database Schema:** 
-        ```json
-        {indented_schema}
-        ```
+        
     """
 
     return system_prompt.strip(), user_prompt.strip()
@@ -575,10 +577,7 @@ def intent_detection_prompt(user_message):
     user_prompt = f"""
         **User Query:** {user_message} 
 
-        **Full Database Schema:**
-        ```json
-        {indented_schema}
-        ```
+        
         
     """
 
@@ -596,6 +595,10 @@ def intent_detection_prompt(user_message):
         *Try to give more detailed answers with all possible importatnt information with response. for example:- 
         if user ask about the product data then try to give the all information about the product like client_id. 
 
+        **Full Database Schema:**
+        ```json
+        {indented_schema}
+        ```
     """
 
     return [{"role":"system","content":system_prompt.strip()}, {"role":"user","content":user_prompt.strip()}]
