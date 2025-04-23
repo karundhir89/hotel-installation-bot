@@ -174,7 +174,7 @@ def chatbot_api(request):
                     # print('chat_history_memory ...........',chat_history_memory)
                     sql_response = json.loads(gpt_call_json_func_two(
                         chat_history_memory,
-                        gpt_model="gpt-4-1106-preview",
+                        gpt_model="gpt-4o",
                         openai_key=open_ai_key,
                         json_required=True
                     ))
@@ -183,7 +183,7 @@ def chatbot_api(request):
                     # print("session id is none",[{"role":"system","content":intent_prompt_system_prompt},{"role":"user","content":user_message}])
                     sql_response = json.loads(gpt_call_json_func_two(
                         [intent_prompt_system_prompt,{"role":"user","content":user_message}],
-                        gpt_model="gpt-4-1106-preview",
+                        gpt_model="gpt-4o",
                         openai_key=open_ai_key,
                         json_required=True
                     ))
@@ -225,7 +225,7 @@ def chatbot_api(request):
                             sql_query=initial_sql_query, # Verify the original query
                             prompt_data=DB_SCHEMA,
                             error_message=str(db_error),
-                            gpt_model="gpt-4-1106-preview"
+                            gpt_model="gpt-4o"
                         )
                     except Exception as verify_e:
                         print(f"Error during SQL verification call: {verify_e}")
