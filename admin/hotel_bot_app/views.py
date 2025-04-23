@@ -859,7 +859,7 @@ def get_room_type(request):
                     print(inst.product_id)
                     check_items.append({
                         "id": inst.install_id,
-                        "label": f"({inst.product_name} ",
+                        "label": f"{inst.product_name} ",
                         "type": "detail",
                     })
                     
@@ -915,7 +915,7 @@ def get_room_type(request):
                     print(inst.product_id)
                     check_items.append({
                         "id": inst.install_id,
-                        "label": f"({inst.product_name} ",
+                        "label": f"{inst.product_name} ",
                         "type": "detail",
                     })
 
