@@ -71,7 +71,7 @@ tables:
     -'A COL', 'A LO', 'A LO DR', 'B', 'C PN', 'C+', 'CURVA 24', 'CURVA', 'CURVA - DIS', 'D', 'DLX', 'STC', 'SUITE A', 'SUITE B', 'SUITE C', 'SUITE MINI', 'CURVA 35', 'PRESIDENTIAL SUITE', 'Test Room'
 
 - name: product_data
-  description: 'Catalog data about products (name, etc.), linked by client_id.'
+  description: 'Catalog data about products (name, etc.), linked by client_id. Use this table to identify the appropriate installation kit for a specific room.'
   columns:
   - name: id
     type: integer
@@ -152,7 +152,7 @@ tables:
   - {id: 2, item: KS-JWM-702A, client_id: P123, qty_ordered: 176, qty_received: 0, quantity_installed: 0, quantity_available: 0}
 
 - name: schedule
-  description: 'Detailed project timeline schedule per floor. Provides dates for various stages like shipping and installation.'
+  description: 'Detailed project timeline schedule per floor. Provides dates for various stages like shipping and installation. '
   columns:
   - name: id
     type: integer
@@ -205,7 +205,8 @@ tables:
     description: Post-installation work end date. High priority
   - name: floor_completed
     type: DateField
-    description: Date floor work is completed. High priority
+    description: Date floor work is completed. High priority , always check with current date to find out floor completed  
+
   - name: floor_closes
     type: DateField
     description: Date floor closes for work. Medium priority
