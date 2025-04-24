@@ -145,7 +145,7 @@ def chatbot_api(request):
 
                 intent_prompt_first_output = json.loads(gpt_call_json_func_two(
                     intent_prompt,
-                    gpt_model="gpt-4o",
+                    gpt_model="gpt-4.1",
                     openai_key=open_ai_key,
                     json_required=True
                 ))
@@ -171,7 +171,7 @@ def chatbot_api(request):
                     
                     chat_history_memory=[intent_prompt_system_prompt]+chat_history_memory
                     
-                    # print('chat_history_memory ...........',chat_history_memory)
+                    print('chat_history_memory ...........',chat_history_memory)
                     sql_response = json.loads(gpt_call_json_func_two(
                         chat_history_memory,
                         gpt_model="gpt-4o",
@@ -219,6 +219,7 @@ def chatbot_api(request):
                     print(f"Initial DB execution error: {db_error}. Attempting verification.")
 
                     verification = None
+                    final_sql_query=None
                     try:
                         verification = verify_sql_query(
                             user_message=user_message,
@@ -296,9 +297,11 @@ def chatbot_api(request):
              print(f"Error saving assistant message to chat history: {e}")
              # Non-critical
 
-
+        if final_sql_query==None:
         # --- Return Response ---
-        return JsonResponse({"response": bot_message,"table_info":rows})
+            return JsonResponse({"response": bot_message,"table_info":rows,'sql_query':initial_sql_query})
+        else:
+            return JsonResponse({"response": bot_message,"table_info":rows,'sql_query':final_sql_query})
 
     # --- Handle Non-POST Requests ---
     return JsonResponse({"error": "Invalid request method. Only POST is allowed."}, status=405)

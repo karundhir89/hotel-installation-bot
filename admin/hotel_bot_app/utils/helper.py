@@ -423,7 +423,8 @@ def generate_sql_prompt(user_message, prompt_data):
         - **Room Models rule:** Strictly use only below room models donot go outside these ones
             - 'A COL', 'A LO', 'A LO DR', 'B', 'C PN', 'C+', 'CURVA 24', 'CURVA', 'CURVA - DIS', 'D', 'DLX', 'STC', 'SUITE A', 'SUITE B', 'SUITE C', 'SUITE MINI', 'CURVA 35', 'PRESIDENTIAL SUITE'
         ---
-
+        -  do not make nested subquery, write queries as simple as possible 
+        
         ### Aggregation Rules:
 
         Only use aggregate functions (`SUM`, `COUNT`, `AVG`, etc.) if the user explicitly asks for:
@@ -593,7 +594,9 @@ def intent_detection_prompt(user_message):
         *Select query columns should not exceeded from 10. So carefully identify valueable columns.
         
         *Try to give more detailed answers with all possible importatnt information with response. for example:- 
-        if user ask about the product data then try to give the all information about the product like client_id. 
+        if user ask about the product data then try to give the all information about the product like client_id.
+
+
 
         **Full Database Schema:**
         ```json
