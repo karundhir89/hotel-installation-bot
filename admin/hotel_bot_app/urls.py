@@ -42,15 +42,9 @@ urlpatterns = [
     path('inventory_pull_item/', inventory_pull_item, name='inventory_pull_item'),
     path('chat_history/', chat_history, name='chat_history'),
     path('chat_history/<int:session_id>/', view_chat_history, name='view_chat_history'),
-
     
-
-    
-    
-    
-    
-    
-    
-
-    
+    # New URLs for Product Room Model
+    path('product-room-models/', product_room_model_list, name='product_room_model_list'),
+    path('save_product_room_model/', save_product_room_model, name='save_product_room_model'),
+    path('delete_product_room_model/', delete_product_room_model, name='delete_product_room_model'),
 ]
