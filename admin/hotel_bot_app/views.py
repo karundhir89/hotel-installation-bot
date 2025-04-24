@@ -1483,3 +1483,105 @@ def view_chat_history(request, session_id):
         'session': session,
         'chat_messages': chat_messages
     })
+
+@login_required
+def product_room_model_list(request):
+    """
+    Display a list of all product room model mappings with related data.
+    """
+    # Get all mappings with related data for efficient template rendering
+    product_room_model_list = ProductRoomModel.objects.select_related('product_id', 'room_model_id').all()
+    
+    # Get products and room models for the dropdown in the add/edit form
+    products = ProductData.objects.all()
+    room_models = RoomModel.objects.all().order_by(Lower('room_model'))
+    
+    return render(request, "product_room_model_list.html", {
+        "product_room_model_list": product_room_model_list,
+        "products": products,
+        "room_models": room_models
+    })
+
+@login_required
+def save_product_room_model(request):
+    """
+    Add or update a product room model mapping.
+    """
+    if request.method == "POST":
+        mapping_id = request.POST.get("mapping_id")
+        product_id = request.POST.get("product_id")
+        room_model_id = request.POST.get("room_model_id")
+        quantity = request.POST.get("quantity", "1").strip()
+        
+        # Validate inputs
+        if not product_id or not room_model_id:
+            return JsonResponse({"error": "Product and Room Model are required"}, status=400)
+            
+        try:
+            quantity = int(quantity)
+            if quantity < 0:
+                return JsonResponse({"error": "Quantity must be a positive number"}, status=400)
+        except ValueError:
+            return JsonResponse({"error": "Quantity must be a valid number"}, status=400)
+
+        # Check for existing mappings with the same product and room model (avoid duplicates)
+        existing_mapping = ProductRoomModel.objects.filter(
+            product_id_id=product_id, 
+            room_model_id_id=room_model_id
+        )
+        
+        if mapping_id:
+            existing_mapping = existing_mapping.exclude(id=mapping_id)
+        
+        if existing_mapping.exists():
+            return JsonResponse(
+                {"error": "A mapping for this product and room model already exists"}, 
+                status=400
+            )
+        
+        try:
+            product = ProductData.objects.get(id=product_id)
+            room_model = RoomModel.objects.get(id=room_model_id)
+            
+            if mapping_id:
+                # Update existing mapping
+                mapping = ProductRoomModel.objects.get(id=mapping_id)
+                mapping.quantity = quantity
+                mapping.save()
+            else:
+                # Create new mapping
+                ProductRoomModel.objects.create(
+                    product_id=product,
+                    room_model_id=room_model,
+                    quantity=quantity
+                )
+                
+            return JsonResponse({"success": True})
+            
+        except (ProductData.DoesNotExist, RoomModel.DoesNotExist):
+            return JsonResponse({"error": "Product or Room Model not found"}, status=404)
+        except ProductRoomModel.DoesNotExist:
+            return JsonResponse({"error": "Mapping not found"}, status=404)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+    
+    return JsonResponse({"error": "Invalid request method"}, status=405)
+
+@login_required
+def delete_product_room_model(request):
+    """
+    Delete a product room model mapping.
+    """
+    if request.method == "POST":
+        model_id = request.POST.get("model_id")
+        
+        try:
+            mapping = ProductRoomModel.objects.get(id=model_id)
+            mapping.delete()
+            return JsonResponse({"success": True})
+        except ProductRoomModel.DoesNotExist:
+            return JsonResponse({"error": "Mapping not found"}, status=404)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+    
+    return JsonResponse({"error": "Invalid request method"}, status=405)
