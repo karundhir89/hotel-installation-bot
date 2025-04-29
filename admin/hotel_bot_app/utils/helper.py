@@ -48,9 +48,9 @@ def format_gpt_prompt(user_message, prompt_data):
     3.  **Use Human-Readable Data:** Prioritize returning meaningful names/descriptions over IDs. JOIN tables when necessary (e.g., join `ProductData` on `id` with `InstallDetail` on `product_id`).
     4.  **Case-Insensitive Search:** ALWAYS use `ILIKE` for string comparisons involving names, descriptions, or any potentially case-variable text. Example: `WHERE item ILIKE '%sofa%'`.
     5.  **Avoid Type Mismatches:** Ensure correct data types in comparisons (string vs. numeric).
-    6.  **Safety & Performance:** ALWAYS include a `LIMIT` clause (e.g., `LIMIT 50`) to prevent overly large results.
+    6.  **Safety & Performance:** ALWAYS include a `LIMIT` clause (e.g., `LIMIT 200`) to prevent overly large results.
     7.  **Strict Schema Adherence:** ONLY use tables and columns defined in the provided schema. Do NOT hallucinate.
-    8.  **JSON Output:** Return ONLY a valid JSON object containing the SQL query. Format: `{"query": "SELECT ... FROM ... WHERE ... ILIKE ... LIMIT 50;"}`.
+    8.  **JSON Output:** Return ONLY a valid JSON object containing the SQL query. Format: `{"query": "SELECT ... FROM ... WHERE ... ILIKE ... LIMIT 200;"}`.
     9.  **No Explanations:** Do not add any explanations, markdown, or code blocks outside the JSON structure.
     10. - **Room Models rule:** Strictly use only below room models donot go outside these ones and donot put word 'model' in where condition
             - 'A COL', 'A LO', 'A LO DR', 'B', 'C PN', 'C+', 'CURVA 24', 'CURVA', 'CURVA - DIS', 'D', 'DLX', 'STC', 'SUITE A', 'SUITE B', 'SUITE C', 'SUITE MINI', 'CURVA 35', 'PRESIDENTIAL SUITE', 'Test Room'
@@ -312,7 +312,7 @@ def verify_sql_query(
     ```
 
     **Example Valid Scenario:**
-    If the original query is `SELECT room FROM RoomData WHERE floor = 5 LIMIT 50;` and it's correct:
+    If the original query is `SELECT room FROM RoomData WHERE floor = 5 LIMIT 200;` and it's correct:
     ```json
     {{
       "is_valid": true,
@@ -330,7 +330,7 @@ def verify_sql_query(
         "Type mismatch: qty_received is numeric but compared against a string '10'.",
         "Potentially ambiguous column 'name'; consider specifying table if joins are possible."
       ],
-      "recommendation": "SELECT item FROM Inventory WHERE qty_received = 10 LIMIT 50;"
+      "recommendation": "SELECT item FROM Inventory WHERE qty_received = 10 LIMIT 200;"
     }}
     ```
 
@@ -419,7 +419,7 @@ def generate_sql_prompt(user_message, prompt_data):
         - **Readable Aliases:** Use clear aliases (e.g., `inv` for `inventory`, `pd` for `product_data`).
         - **String Matching:** Use `ILIKE` for case-insensitive comparisons.
         - **Date Logic:** Compare dates (e.g., schedule completion) with `NOW()` Use only date without time and time zone.
-        - **Limit Results:** Always append `LIMIT 50` unless told otherwise.
+        - **Limit Results:** Always append `LIMIT 200` unless told otherwise.
         - **Room Models rule:** Strictly use only below room models donot go outside these ones
             - 'A COL', 'A LO', 'A LO DR', 'B', 'C PN', 'C+', 'CURVA 24', 'CURVA', 'CURVA - DIS', 'D', 'DLX', 'STC', 'SUITE A', 'SUITE B', 'SUITE C', 'SUITE MINI', 'CURVA 35', 'PRESIDENTIAL SUITE'
         ---
@@ -462,7 +462,7 @@ def generate_sql_prompt(user_message, prompt_data):
                 ```json
                 {{
                 "needs_sql": true,
-                "query": "SELECT rd.room, rd.floor, rm.model_name, rd.description FROM room_data rd JOIN room_model rm ON rd.room_model_id = rm.id WHERE rd.room = '101' LIMIT 50;",
+                "query": "SELECT rd.room, rd.floor, rm.model_name, rd.description FROM room_data rd JOIN room_model rm ON rd.room_model_id = rm.id WHERE rd.room = '101' LIMIT 200;",
                 "direct_answer": null
                 }}
                 ```
