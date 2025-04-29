@@ -24,12 +24,12 @@ tables:
   - name: day_install_began
     type: timestamp with time zone
     description: Start timestamp for installation.
-  - name: day_instal_complete # Typo 'instal' kept as likely reflects DB
+  - name: day_install_complete # Typo 'instal' kept as likely reflects DB
     type: timestamp with time zone
     description: Completion timestamp for installation.
   example:
-  - {id: 1, room: 1607, product_available: 'NO', prework: 'NO', install: 'NO', post_work: 'NO', day_install_began: null, day_instal_complete: null}
-  - {id: 2, room: 1608, product_available: 'NO', prework: 'NO', install: 'NO', post_work: 'NO', day_install_began: null, day_instal_complete: null}
+  - {id: 1, room: 1607, product_available: 'NO', prework: 'NO', install: 'NO', post_work: 'NO', day_install_began: null, day_install_complete: null}
+  - {id: 2, room: 1608, product_available: 'NO', prework: 'NO', install: 'NO', post_work: 'NO', day_install_began: null, day_install_complete: null}
 
 - name: inventory
   description: 'Tracks ordered, received, available, and installed quantities for products, linked by client_id.'

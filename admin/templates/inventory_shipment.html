@@ -44,8 +44,8 @@
 
         <div class="row mb-4">
           <div class="col-md-4">
-            <label class="form-label">Date</label>
-            <input type="date" class="form-control rounded-3" name="shipment_date_text" required>
+            <label class="form-label">Expected Arrival Date</label>
+            <input type="date" class="form-control rounded-3" name="expected_arrival_date" required>
           </div>
           <div class="col-md-4">
             <label class="form-label">Checked By</label>
@@ -83,6 +83,7 @@
 
     // Get current date in human-readable format (e.g., "April 6, 2025")
     const currentDate = new Date();
+    currentDate.setDate(currentDate.getDate() + 30); // Add 30 days
     const isoDate = currentDate.toISOString().split('T')[0]; // "YYYY-MM-DD"
 
     // Auto-fill product item number
@@ -98,7 +99,7 @@
           if (data.success) {
             $('#room_type').val(data.room_type);
             $('#supplier').val(data.supplier);
-            $('input[name="shipment_date_text"]').val(isoDate);  // Set formatted date
+            $('input[name="expected_arrival_date"]').val(isoDate);  // Set formatted date
             $('input[name="shipment_checked_by"]').val(userName);  // Set checked by
           } else {
             toastr.error("Room number does not exist");
