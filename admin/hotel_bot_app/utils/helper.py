@@ -506,7 +506,7 @@ def generate_natural_response_prompt(user_message, sql_query, rows):
         num_records = len(data) if isinstance(data, (list, tuple)) else 0
 
         if num_records > 0:
-            max_rows_in_prompt = 10 # Slightly increase for context, still limited
+            max_rows_in_prompt = 200 # Slightly increase for context, still limited
             data_preview = data[:max_rows_in_prompt] # Assign within the check
             data_summary = f"Successfully retrieved {num_records} record(s)."
             data_summary += f"\\nColumns: {columns}"
