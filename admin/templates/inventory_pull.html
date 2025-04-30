@@ -14,7 +14,13 @@
       <div class="row mb-3">
         <div class="col-md-4">
           <label class="form-label">Client Item</label>
-          <input type="text" class="form-control rounded-3" name="client_id" id="client_id" required>
+          <div class="input-group">
+            <input type="text" class="form-control rounded-3" name="client_id" id="client_id" required>
+            <button type="button" class="btn btn-secondary" id="search_client">
+              <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true" id="search_spinner"></span>
+              <span id="search_text">Search</span>
+            </button>
+          </div>
         </div>
         <div class="col-md-4">
           <label class="form-label">Product Item Number</label>
@@ -94,15 +100,21 @@
       }
     });
 
-    $('#client_id').on('blur', function () {
-      const roomNumber = $(this).val();
-      if (!roomNumber) return;
+    $('#search_client').on('click', function () {
+      const roomNumber = $('#client_id').val();
+      if (!roomNumber) {
+        toastr.error("Please enter a client item number");
+        return;
+      }
+
+      setLoading('search_client', true);
 
       $.ajax({
         url: "{% url 'inventory_pull_item' %}",
         type: "GET",
         data: { client_id: roomNumber },
         success: function (data) {
+          setLoading('search_client', false);
           if (data.success) {
             $('#item_number').val(data.item_number);
             $('#available_qty').val(data.available_qty);
@@ -122,8 +134,10 @@
           }
         },
         error: function () {
+          setLoading('search_client', false);
           toastr.error("Error fetching room type");
           $('#item_number').val('');
+          $('#available_qty').val('');
         }
       });
     });

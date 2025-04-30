@@ -16,7 +16,13 @@
         <div class="row mb-4">
           <div class="col-md-6">
             <label for="room_number" class="form-label">Client Item #</label>
-            <input type="text" class="form-control" name="client_item" id="room_number" required>
+            <div class="input-group">
+              <input type="text" class="form-control" name="client_item" id="room_number" required>
+              <button type="button" class="btn btn-secondary" id="search_client">
+                <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true" id="search_spinner"></span>
+                <span id="search_text">Search</span>
+              </button>
+            </div>
           </div>
           <div class="col-md-6">
             <label for="room_type" class="form-label">Product Item Number</label>
@@ -87,9 +93,14 @@
     const isoDate = currentDate.toISOString().split('T')[0]; // "YYYY-MM-DD"
 
     // Auto-fill product item number
-    $('#room_number').on('blur', function () {
-      const roomNumber = $(this).val();
-      if (!roomNumber) return;
+    $('#search_client').on('click', function () {
+      const roomNumber = $('#room_number').val();
+      if (!roomNumber) {
+        toastr.error("Please enter a client item number");
+        return;
+      }
+
+      setLoading('search_client', true);
 
       $.ajax({
         url: "{% url 'get_product_item_num' %}",
@@ -104,11 +115,18 @@
           } else {
             toastr.error("Room number does not exist");
             $('#room_type').val('');
+            $('#supplier').val('');
           }
         },
         error: function () {
           toastr.error("Error Fetching Product Item");
           $('#room_type').val('');
+          $('#supplier').val('');
+        },
+        complete: function() {
+          setTimeout(function() {
+            setLoading('search_client', false);
+          }, 100);
         }
       });
     });

@@ -16,7 +16,13 @@
                 <div class="row mb-4">
                     <div class="col-md-6">
                         <label for="room_number" class="form-label">Room #</label>
-                        <input type="text" class="form-control" name="room_number" id="room_number" required>
+                        <div class="input-group">
+                            <input type="text" class="form-control" name="room_number" id="room_number" required>
+                            <button type="button" class="btn btn-secondary" id="search_room">
+                                <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true" id="search_spinner"></span>
+                                <span id="search_text">Search</span>
+                            </button>
+                        </div>
                     </div>
                     <div class="col-md-6">
                         <label for="room_type" class="form-label">Room Type</label>
@@ -44,9 +50,14 @@
 {% block extra_js %}
 <script>
   $(document).ready(function () {
-    $('#room_number').on('blur', function () {
-      const roomNumber = $(this).val();
-      if (!roomNumber) return;
+    $('#search_room').on('click', function () {
+      const roomNumber = $('#room_number').val();
+      if (!roomNumber) {
+        toastr.error("Please enter a room number");
+        return;
+      }
+
+      setLoading('search_room', true);
 
       $.ajax({
         url: "{% url 'get_room_type' %}",
@@ -54,6 +65,7 @@
         data: { room_number: roomNumber },
         success: function (data) {
           console.log("Received data:", data);
+          setLoading('search_room', false);
           if (data.success) {
             $('#room_type').val(data.room_type);
             renderCheckItems(data.check_items, data.saved_items);
@@ -62,9 +74,11 @@
             $('#room_type').val('');
             $('#check-items-wrapper').html('');
           }
+          
         },
         error: function () {
           toastr.error("Error fetching room type");
+          setLoading('search_room', false);
           $('#room_type').val('');
           $('#check-items-wrapper').html('');
         }
