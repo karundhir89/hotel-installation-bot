@@ -35,6 +35,7 @@ from html import escape
 from .models import *
 from .models import ChatSession
 from django.utils.timezone import localtime
+from django.db import connection
 
 env = environ.Env()
 environ.Env.read_env()
@@ -1087,80 +1088,59 @@ def inventory_received(request):
 
 @session_login_required
 def inventory_pull(request):
+    
     user_id = request.session.get("user_id")
     user_name = ""
 
     if user_id:
         try:
             user = InvitedUser.objects.get(id=user_id)
-            user_name = user.name  # Adjust field name if different
+            user_name = user.name
         except InvitedUser.DoesNotExist:
             pass
-
     if request.method == "POST":
         try:
-            user_id = request.session.get("user_id")
-            print(request.POST)
+            # Get all product IDs from the form
+            product_ids = [key.split('_')[1] for key in request.POST.keys() if key.startswith('product_') and request.POST[key] == 'on']
+            print("product_ids ::", product_ids)
 
-            client_id = request.POST.get("client_id")
-            item = request.POST.get("item_number")
-            available_qty = request.POST.get("qty_available_ready_to_pull")
-            pulled_date = request.POST.get("pull_date_text")
-            qty_pulled_for_install = request.POST.get("qty_pulled_for_install")
-            pulled_by = user
-            floor = request.POST.get("floor_where_going")
-            qty_available = request.POST.get("inventory_available_after_pull")
-
-            PullInventory.objects.create(
-                client_id=client_id,
-                item=item,
-                available_qty=available_qty,
-                pulled_date=pulled_date,
-                qty_pulled=qty_pulled_for_install,
-                pulled_by=pulled_by,
-                floor=floor,
-                qty_available_after_pull=qty_available
-            )
-
-            # Update Inventory
-            inventory = Inventory.objects.filter(client_id=client_id, item=item).first()
-            if inventory:
-                inventory.quantity_available = qty_available
-                inventory.quantity_installed = qty_pulled_for_install
+            for product_id in product_ids:
+                # Get the product room model
+                prm = ProductData.objects.get(id=product_id)
+                print("prm ::", prm)
+                qty_pulled_value = int(request.POST.get(f'qty_pulled_{product_id}'))
+                print("qty_pulled_value ::", qty_pulled_value)
+                # Get the inventory item
+                inventory = Inventory.objects.get(client_id=prm.client_id)
+                print("inventory ::", inventory)
+                print("inventory.quantity_available ::", inventory.quantity_available, type(inventory.quantity_available))
+                print("qty_pulled_value ::", qty_pulled_value, type(qty_pulled_value))
+                # Update inventory quantity
+                inventory.quantity_available -= qty_pulled_value
                 inventory.save()
-
-            messages.success(request, "Inventory pull submitted successfully!")
+                print("Before save ::",prm.client_id,prm.item,prm.id,qty_pulled_value,request.session.get('user_id'),request.POST.get(f'date_{product_id}'),request.POST.get('floor_number'),inventory.quantity_available,inventory.quantity_available - qty_pulled_value)
+                # Create inventory pull record
+                PullInventory.objects.create(
+                    client_id=prm.client_id,
+                    item = prm.item,
+                    qty_pulled=qty_pulled_value,
+                    pulled_by=user,
+                    pulled_date=request.POST.get(f'date_{product_id}'),
+                    floor=request.POST.get('floor_number'),
+                    available_qty=inventory.quantity_available,
+                    qty_available_after_pull=inventory.quantity_available - qty_pulled_value
+                )
+            
+            messages.success(request, "Inventory pull completed successfully!")
+            return redirect('inventory_pull')
+            
         except Exception as e:
-            print(f"Error submitting inventory pull: {str(e)}")
-            messages.error(request, f"Error submitting inventory pull: {str(e)}")
-
-        # 🔄 Prevent resubmission by redirecting after POST
-        return redirect("inventory_pull")
-
-    # For GET request
-    return render(
-        request,
-        "inventory_pull.html",
-        {
-            "user_name": user_name,  # Replace or update as needed
-        },
-    )
-
-@session_login_required
-def inventory_pull_item(request):
-    clientId = request.GET.get("client_id")
-    try:
-        client_data_fetched = Inventory.objects.get(client_id__iexact=clientId)
-        get_item = client_data_fetched.item if client_data_fetched.item else ""
-        available_qty = client_data_fetched.quantity_available
-
-        product_ids = ProductData.objects.filter(client_id__iexact=clientId).values_list('id', flat=True)
-        room_model_ids = ProductRoomModel.objects.filter(product_id__in=product_ids).values_list('room_model_id', flat=True)
-        floors = list(RoomData.objects.filter(room_model_id__in=room_model_ids)
-              .values_list('floor', flat=True).distinct())
-        return JsonResponse({"success": True, "item_number": get_item, "available_qty":available_qty, "floors": floors})
-    except RoomData.DoesNotExist:
-        return JsonResponse({"success": False})
+            messages.error(request, f"Error processing inventory pull: {str(e)}")
+            return redirect('inventory_pull')
+            
+    return render(request, "inventory_pull.html", {
+        "user_name": user_name
+    })
 
 @session_login_required
 def inventory_received_item_num(request):
@@ -1585,3 +1565,62 @@ def delete_product_room_model(request):
             return JsonResponse({"error": str(e)}, status=500)
     
     return JsonResponse({"error": "Invalid request method"}, status=405)
+
+@session_login_required
+def get_floor_products(request):
+    floor_number = request.GET.get("floor_number")
+    try:
+        # Use raw SQL query to get products with total quantity needed
+        products = ProductData.objects.raw("""
+            WITH room_counts AS (
+                SELECT rm.id AS room_model_id, COUNT(*) AS room_count
+                FROM room_data rd
+                JOIN room_model rm ON rd.room_model_id = rm.id
+                WHERE rd.floor = %s
+                GROUP BY rm.id
+            ),
+            pulled_quantities AS (
+                SELECT client_id, item, SUM(qty_pulled) as total_pulled
+                FROM pull_inventory
+                GROUP BY client_id, item
+            )
+            SELECT pd.id, pd.item, pd.client_id, pd.description, pd.supplier,
+                   SUM(prm.quantity * rc.room_count) AS total_quantity_needed,
+                   COALESCE(inv.quantity_installed, 0) AS quantity_installed,
+                   COALESCE(inv.quantity_available, 0) AS available_qty,
+                   COALESCE(pq.total_pulled, 0) AS pulled_quantity
+            FROM product_room_model prm
+            JOIN product_data pd ON prm.product_id = pd.id
+            JOIN room_counts rc ON prm.room_model_id = rc.room_model_id
+            LEFT JOIN inventory inv ON pd.client_id = inv.client_id
+            LEFT JOIN pulled_quantities pq ON pd.client_id = pq.client_id AND pd.item = pq.item
+            GROUP BY pd.id, pd.client_id, pd.description, pd.supplier, inv.quantity_installed, inv.quantity_available, pq.total_pulled
+            ORDER BY pd.client_id
+        """, [floor_number])
+        
+        result_products = []
+        for product in products:
+            # Calculate remaining quantity needed after subtracting already pulled quantity
+            remaining_quantity = max(0, product.total_quantity_needed - product.pulled_quantity)
+            
+            result_products.append({
+                "id": product.id,
+                "client_id": product.client_id,
+                "description": product.description,
+                "quantity": remaining_quantity,  # Use remaining quantity instead of total
+                "available_qty": product.available_qty,
+                "supplier": product.supplier,
+                "quantity_installed": product.quantity_installed,  # Add quantity already pulled
+                "total_quantity_needed": product.total_quantity_needed,  # Keep original total for reference
+                "pulled_quantity": product.pulled_quantity  # Add pulled quantity
+            })
+            
+        return JsonResponse({
+            "success": True,
+            "products": result_products
+        })
+    except Exception as e:
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        })
