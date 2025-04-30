@@ -16,6 +16,24 @@
     <!-- Add your custom JavaScript files here -->
     <script src="{% static 'js/custom.js' %}"></script>
     {% block extra_head %}{% endblock %}
+    <script type="text/javascript">
+        // Shared utility functions
+        function setLoading(buttonId, isLoading) {
+            const button = $(`#${buttonId}`);
+            const spinner = button.find('.spinner-border');
+            const searchText = button.find('#search_text');
+            
+            if (isLoading) {
+                spinner.removeClass('d-none');
+                searchText.text('Searching...');
+                button.prop('disabled', true);
+            } else {
+                spinner.addClass('d-none');
+                searchText.text('Search');
+                button.prop('disabled', false);
+            }
+        } 
+    </script>
 </head>
 <body style="background-color: #f7f7f7; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
     <div class="container-lg mt-4">
