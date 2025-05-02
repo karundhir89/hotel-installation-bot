@@ -1,0 +1,85 @@
+{% extends 'frontend_base.html' %}
+{% load static %}
+{% block content %}
+
+<style>
+#productTable tbody tr {
+    height: 60px;
+}
+#productTable th, #productTable td {
+    white-space: nowrap;
+    padding: 15px;
+}
+</style>
+
+<div class="content">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-12">
+                {% include 'common/messages.html' %}
+                <div class="card">
+                    <div class="card-header card-header-primary">
+                        <h4 class="card-title text-dark mt-2">Floor Wise Products Needed</h4>
+                    </div>
+                    <div class="card-body">
+                        <form method="GET" action="" class="form-inline mb-4">
+                            <div class="form-group mr-2">
+                                <label for="floor_number" class="mr-2">Enter Floor Number:</label>
+                                <input type="number" class="form-control" id="floor_number" name="floor_number" value="{{ floor_number|default:'' }}" placeholder="e.g., 5" required>
+                            </div>
+                            <button type="submit" class="btn btn-secondary btn-md">Search</button>
+                            {% if product_list and floor_number %}
+                                <!-- Add Download Button -->
+                                <a href="?floor_number={{ floor_number }}&download=xls" class="btn btn-success ml-2">Download XLS</a>
+                            {% endif %}
+                        </form>
+
+                        {% if error_message %}
+                            <div class="alert alert-danger">{{ error_message }}</div>
+                        {% endif %}
+
+                        {% if product_list %}
+                            <div class="table-responsive">
+                                <table id="productTable" class="table table-striped" style="width:100%;">
+                                    <thead class="text-secondary">
+                                        
+                                        <tr>
+                                            <th>Client ID</th>
+                                            <th>Description</th>
+                                            <!-- <th>Supplier</th> -->
+                                            <th>Total Needed for Floor</th>
+                                            <th>Qty Pulled Already</th>
+                                            <th>Remaining Needed</th>
+                                            <th>Qty Available (Overall)</th>
+                                            <!-- <th>Qty Installed (Overall)</th> -->
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for product in product_list %}
+                                        <tr>
+                                            <td>{{ product.client_id|default:"N/A" }}</td>
+                                            <td title="{{ product.description|default:"N/A" }}">{{ product.description|default:"N/A"|truncatechars:20 }}</td>
+                                            <!-- <td title="{{ product.supplier|default:"N/A" }}">{{ product.supplier|default:"N/A"|truncatechars:20 }}</td> -->
+                                            <td>{{ product.total_quantity_needed|default:"0" }}</td>
+                                            <td>{{ product.pulled_quantity|default:"0" }}</td>
+                                            <td>{{ product.remaining_quantity_needed|default:"0" }}</td>
+                                            <td>{{ product.available_qty|default:"0" }}</td>
+                                            <!-- <td>{{ product.quantity_installed|default:"0" }}</td> -->
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% elif floor_number and not error_message %}
+                             <div class="alert alert-info">No products found for floor {{ floor_number }}.</div>
+                        {% else %}
+                            <p class="text-muted">Please enter a floor number and click Search.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %} 

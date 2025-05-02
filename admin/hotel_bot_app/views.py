@@ -12,7 +12,7 @@ import requests
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.mail import send_mail
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
@@ -30,6 +30,7 @@ from hotel_bot_app.utils.helper import (fetch_data_from_sql,
                                          intent_detection_prompt)
 from openai import OpenAI
 from html import escape
+import xlwt
 
 
 from .models import *
@@ -1350,15 +1351,39 @@ def dashboard(request):
     try:
         user = InvitedUser.objects.get(id=user_id)
 
-        # If user.role is already a list (e.g., from a JSONField or ArrayField)
-        user_roles = [
-            role.strip().lower() for role in user.role if isinstance(role, str)
-        ]
+        # Ensure roles are processed and stored in session for use in base template
+        user_roles = []
+        if user.role:
+             # Handle potential string representation of list
+            roles_raw = user.role
+            if isinstance(roles_raw, str):
+                try:
+                    # Attempt to parse string as list (e.g., "['admin', 'inventory']")
+                    parsed_roles = ast.literal_eval(roles_raw)
+                    if isinstance(parsed_roles, list):
+                        roles_raw = parsed_roles
+                    else:
+                        # Handle simple comma-separated string (e.g., "admin, inventory")
+                        roles_raw = [r.strip() for r in roles_raw.split(',')]
+                except (ValueError, SyntaxError):
+                     # Fallback for simple comma-separated string if literal_eval fails
+                     roles_raw = [r.strip() for r in roles_raw.split(',')]
+            
+            # Ensure it's a list and process
+            if isinstance(roles_raw, list):
+                 user_roles = [
+                    role.strip().lower() for role in roles_raw if isinstance(role, str)
+                ]
+            
+        # Store processed roles in session
+        request.session['user_roles'] = user_roles 
 
         return render(
             request, "dashboard.html", {"name": user.name, "roles": user_roles}
         )
     except InvitedUser.DoesNotExist:
+        # Clear potentially invalid session data if user doesn't exist
+        request.session.flush()
         return redirect("user_login")
 
 @session_login_required
@@ -1624,3 +1649,226 @@ def get_floor_products(request):
             "success": False,
             "error": str(e)
         })
+
+# Helper function to generate XLS response
+def _generate_xls_response(data, filename, sheet_name="Sheet1"):
+    response = HttpResponse(content_type='application/ms-excel')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+    wb = xlwt.Workbook(encoding='utf-8')
+    ws = wb.add_sheet(sheet_name)
+
+    # Sheet header, first row
+    row_num = 0
+    font_style = xlwt.XFStyle()
+    font_style.font.bold = True
+
+    # Infer columns from the first dictionary in the list
+    if data:
+        columns = list(data[0].keys())
+        for col_num, column_title in enumerate(columns):
+            ws.write(row_num, col_num, column_title, font_style)
+
+        # Sheet body, remaining rows
+        font_style = xlwt.XFStyle()
+
+        for row_data in data:
+            row_num += 1
+            for col_num, col_key in enumerate(columns):
+                value = row_data.get(col_key, '')
+                # Handle potential date/datetime objects if necessary
+                if isinstance(value, (date, datetime)):
+                    value = value.strftime('%Y-%m-%d %H:%M:%S') # Or just %Y-%m-%d
+                ws.write(row_num, col_num, value, font_style)
+    else:
+         # Write a message if no data
+         ws.write(0, 0, "No data found for the selected criteria.", font_style)
+
+
+    wb.save(response)
+    return response
+
+# Helper function to get floor products data (extracted SQL)
+def _get_floor_products_data(floor_number):
+    try:
+        with connection.cursor() as cursor:
+
+            sql_query = """
+             WITH room_counts AS (
+                SELECT rm.id AS room_model_id, COUNT(*) AS room_count
+                FROM room_data rd
+                JOIN room_model rm ON rd.room_model_id = rm.id
+                WHERE rd.floor = %s
+                GROUP BY rm.id
+            ),
+            pulled_quantities AS (
+                SELECT client_id, item, SUM(qty_pulled) as total_pulled
+                FROM pull_inventory
+                GROUP BY client_id, item
+            )
+            SELECT pd.id, pd.item, pd.client_id, pd.description, pd.supplier,
+                   SUM(prm.quantity * rc.room_count) AS total_quantity_needed,
+                   COALESCE(inv.quantity_installed, 0) AS quantity_installed,
+                   COALESCE(inv.quantity_available, 0) AS available_qty,
+                   COALESCE(pq.total_pulled, 0) AS pulled_quantity
+            FROM product_room_model prm
+            JOIN product_data pd ON prm.product_id = pd.id
+            JOIN room_counts rc ON prm.room_model_id = rc.room_model_id
+            LEFT JOIN inventory inv ON pd.client_id = inv.client_id
+            LEFT JOIN pulled_quantities pq ON pd.client_id = pq.client_id AND pd.item = pq.item
+            GROUP BY pd.id, pd.client_id, pd.description, pd.supplier, inv.quantity_installed, inv.quantity_available, pq.total_pulled
+            ORDER BY pd.client_id"""
+            
+            print("sql_query",sql_query)
+            cursor.execute(sql_query, [floor_number]) # Pass floor_number twice
+
+            columns = [col[0] for col in cursor.description]
+            products = [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+        result_products = []
+        for product in products:
+            total_needed = product.get('total_quantity_needed', 0) or 0
+            pulled = product.get('pulled_quantity', 0) or 0
+            remaining_quantity = max(0, total_needed - pulled)
+
+            result_products.append({
+                "id": product.get('id'),
+                "item": product.get('item'),
+                "client_id": product.get('client_id'),
+                "description": product.get('description'),
+                "supplier": product.get('supplier'),
+                "total_quantity_needed": total_needed,
+                "pulled_quantity": pulled,
+                "remaining_quantity_needed": remaining_quantity, # Renamed from 'quantity' for clarity
+                "available_qty": product.get('available_qty', 0) or 0,
+                "quantity_installed": product.get('quantity_installed', 0) or 0,
+            })
+        return result_products
+    except Exception as e:
+        print(f"Error fetching floor products data: {e}")
+        return []
+
+# Helper function to get room products data
+def _get_room_products_data(room_model_id):
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT
+                    pd.id, pd.item, pd.client_id, pd.description, pd.supplier,
+                    prm.quantity AS quantity_needed_per_room,
+                    COALESCE(inv.quantity_installed, 0) AS quantity_installed,
+                    COALESCE(inv.quantity_available, 0) AS available_qty
+                FROM product_room_model prm
+                JOIN product_data pd ON prm.product_id = pd.id
+                JOIN room_model rm ON prm.room_model_id = rm.id
+                LEFT JOIN inventory inv ON pd.client_id = inv.client_id
+                WHERE prm.room_model_id = %s
+                ORDER BY pd.client_id;
+            """, [room_model_id])
+
+            columns = [col[0] for col in cursor.description]
+            products = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        return products
+    except Exception as e:
+        print(f"Error fetching room products data: {e}")
+        return []
+
+@session_login_required
+def floor_products_list(request):
+    floor_number = request.GET.get('floor_number', '').strip()
+    product_list = []
+    error_message = None
+
+    if floor_number:
+        try:
+            # Validate floor_number is an integer if necessary
+            floor_number = int(floor_number) # Raises ValueError if not an integer
+            print("floor_number",floor_number, type(floor_number))
+
+            product_list = _get_floor_products_data(floor_number)
+            if not product_list and request.GET: # Check if it was a search attempt
+                 error_message = f"No products found for floor {floor_number}."
+
+            # Handle XLS download request
+            if request.GET.get('download') == 'xls':
+                if product_list:
+                    filename = f"products_list_for_{floor_number}_floor.xls"
+                    return _generate_xls_response(product_list, filename, sheet_name=f"Floor {floor_number}")
+                else:
+                     # Optionally handle download request when no data
+                     messages.warning(request, f"No data to download for floor {floor_number}.")
+                     # Redirect or render template again
+                     return redirect(request.path_info + f'?floor_number={floor_number}')
+
+
+        except ValueError:
+            error_message = "Invalid floor number entered. Please enter a number."
+            floor_number = '' # Clear invalid input for template rendering
+        except Exception as e:
+            error_message = f"An error occurred: {str(e)}"
+            print(f"Error in floor_products_list view: {e}")
+
+
+    context = {
+        'product_list': product_list,
+        'floor_number': floor_number,
+        'error_message': error_message,
+    }
+    return render(request, 'floor_products_list.html', context)
+
+
+@session_login_required
+def room_number_products_list(request):
+    room_number = request.GET.get('room_number', '').strip()
+    product_list = []
+    error_message = None
+    found_room = None
+    room_model_name = None
+
+    if room_number:
+        try:
+            # Find the room
+            found_room = RoomData.objects.select_related('room_model_id').get(room=room_number)
+            room_model_id = found_room.room_model_id.id if found_room.room_model_id else None
+            room_model_name = found_room.room_model_id.room_model if found_room.room_model_id else "Unknown Model"
+
+            if room_model_id:
+                product_list = _get_room_products_data(room_model_id)
+                if not product_list and request.GET:
+                    error_message = f"No specific products configured for room model '{room_model_name}' (used by room {room_number})."
+            else:
+                error_message = f"Room {room_number} does not have an associated room model."
+                product_list = [] # Ensure product list is empty
+
+            # Handle XLS download request
+            if request.GET.get('download') == 'xls' and room_model_id:
+                if product_list:
+                    filename = f"products_list_for_room_{room_number}_{room_model_name.replace(' ', '_')}.xls"
+                    return _generate_xls_response(product_list, filename, sheet_name=f"Room {room_number} ({room_model_name})")
+                else:
+                    messages.warning(request, f"No product data to download for room {room_number} (Model: {room_model_name}).")
+                    # Redirect back to the search page for the same room number
+                    return redirect(request.path_info + f'?room_number={room_number}')
+            elif request.GET.get('download') == 'xls' and not room_model_id:
+                 messages.warning(request, f"Cannot download product list for room {room_number} as it has no associated model.")
+                 return redirect(request.path_info + f'?room_number={room_number}')
+
+
+        except RoomData.DoesNotExist:
+             error_message = f"Room number '{room_number}' not found."
+             room_number = '' # Clear invalid input
+             product_list = [] # Ensure product list is empty
+        except Exception as e:
+             error_message = f"An error occurred: {str(e)}"
+             print(f"Error in room_number_products_list view: {e}")
+             product_list = [] # Ensure product list is empty
+
+
+    context = {
+        'product_list': product_list,
+        'room_number': room_number, # Pass back the searched room number
+        'found_room': found_room,
+        'room_model_name': room_model_name,
+        'error_message': error_message,
+    }
+    return render(request, 'room_products_list.html', context)

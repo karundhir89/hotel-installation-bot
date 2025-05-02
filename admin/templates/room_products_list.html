@@ -1,0 +1,81 @@
+{% extends 'frontend_base.html' %}
+{% load static %}
+{% block content %}
+
+<style>
+#productTable tbody tr {
+    height: 60px;
+}
+#productTable th, #productTable td {
+    white-space: nowrap;
+    padding: 15px;
+}
+</style>
+
+<div class="content">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-12">
+                {% include 'common/messages.html' %}
+                <div class="card">
+                    <div class="card-header card-header-primary">
+                        <h4 class="card-title text-dark mt-2">Room Number Products Lookup</h4>
+                    </div>
+                    <div class="card-body">
+                        <form method="GET" action="" class="form-inline mb-4">
+                            <div class="form-group mr-2">
+                                <label for="room_number" class="mr-2">Enter Room Number:</label>
+                                <input type="text" class="form-control" id="room_number" name="room_number" value="{{ room_number|default:'' }}" placeholder="e.g., 101" required>
+                            </div>
+                            <button type="submit" class="btn btn-secondary btn-md">Search</button>
+                             {% if product_list and room_number and found_room.room_model_id %}
+                                <!-- Add Download Button (only if room model exists) -->
+                                <a href="?room_number={{ room_number }}&download=xls" class="btn btn-success ml-2">Download XLS</a>
+                            {% endif %}
+                        </form>
+
+                        {% if error_message %}
+                            <div class="alert alert-danger">{{ error_message }}</div>
+                        {% endif %}
+
+                        {% if product_list %}
+                             <h5>Products for Room: {{ room_number }} (Model: {{ room_model_name }})</h5>
+                            <div class="table-responsive mt-3">
+                                <table id="productTable" class="table table-striped" style="width:100%;">
+                                    <thead class="text-secondary">
+                                        <tr>
+                                            <th>Client ID</th>
+                                            <th>Description</th>
+                                            <!-- <th>Supplier</th> -->
+                                            <th>Needed per Room</th>
+                                            <!-- <th>Qty Available (Overall)</th> -->
+                                            <!-- <th>Qty Installed (Overall)</th> -->
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for product in product_list %}
+                                        <tr>
+                                            <td>{{ product.client_id|default:"N/A" }}</td>
+                                            <td title="{{ product.description|default:"N/A" }}">{{ product.description|default:"N/A"|truncatechars:20 }}</td>
+                                            <!-- <td title="{{ product.supplier|default:"N/A" }}">{{ product.supplier|default:"N/A"|truncatechars:20 }}</td> -->
+                                            <td>{{ product.quantity_needed_per_room|default:"0" }}</td>
+                                            <!-- <td>{{ product.available_qty|default:"0" }}</td> -->
+                                            <!-- <td>{{ product.quantity_installed|default:"0" }}</td> -->
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% elif room_number and not error_message %}
+                             <div class="alert alert-info">No products found or configured for room number '{{ room_number }}'.</div>
+                        {% elif not room_number %}
+                            <p class="text-muted">Please enter a room number and click Search.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %} 

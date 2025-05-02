@@ -34,6 +34,17 @@
             }
         } 
     </script>
+    <style>
+        html {
+            font-size: clamp(24px, 1em + 1vw, 26px);
+        }
+        @media (min-width: 768px) {
+            html {
+                font-size: clamp(16px, 1em + 1vw, 16px);
+            }
+        }
+    </style>
+    
 </head>
 <body style="background-color: #f7f7f7; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
     <div class="container-lg mt-4">
@@ -45,7 +56,17 @@
                     <img class="img-fluid" width="200" height="50" src="{% static 'img/LOGO.png' %}" alt="Logo" />
                 </a>
             </div>
-            <a href="{% url 'user_logout' %}" class="btn btn-outline-secondary">Logout</a>
+            <div class="d-flex flex-column align-items-end mt-1" style="font-size: 0.9rem;">
+                <a href="{% url 'user_logout' %}" class="btn btn-outline-secondary mb-1 mt-4">Logout</a>
+                {# Check if user is logged in and has the 'inventory' role in session #}
+                {% if request.session.user_id and 'inventory' in request.session.user_roles %} 
+                    <div class="d-flex flex-row align-items-center mt-4" style="font-size: 1.4rem;">
+                         <a href="{% url 'dashboard' %}" class="text-secondary mr-5">Home</a>
+                         <a href="{% url 'floor_products_list' %}" class="text-secondary mr-5">Floor Products</a>
+                         <a href="{% url 'room_number_products_list' %}" class="text-secondary">Room Products</a>
+                    </div>
+                {% endif %}
+            </div>
         </div>
 
         {% block content %}{% endblock %}
