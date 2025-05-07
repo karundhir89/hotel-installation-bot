@@ -19,5 +19,6 @@ from django.urls import path,include
 urlpatterns = [
     path("admin/", include("django.contrib.auth.urls")),
     path('', include('admin_dashboard.urls')),
-    path('', include('hotel_bot_app.urls'))
+    path('', include('hotel_bot_app.urls')),
+    # path('__debug__/', include('debug_toolbar.urls')),
 ]
