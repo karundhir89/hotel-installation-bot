@@ -281,8 +281,8 @@ class IssueStatus(models.TextChoices):
 
 class IssueType(models.TextChoices):
     ROOM = 'ROOM', _('Room')
-    FLOOR = 'FLOOR', _('Floor')
-    INVENTORY = 'INVENTORY', _('Inventory') # Added INVENTORY based on description
+    # FLOOR = 'FLOOR', _('Floor') # This line is now commented out
+    INVENTORY = 'INVENTORY', _('Inventory')
 
 class Issue(models.Model):
     title = models.CharField(max_length=255)
@@ -315,6 +315,20 @@ class Issue(models.Model):
         'InvitedUser',
         related_name='observed_issues',
         blank=True
+    )
+
+    # New fields for linking to Rooms or Inventory based on IssueType
+    related_rooms = models.ManyToManyField(
+        'RoomData',
+        related_name='issues',
+        blank=True,
+        verbose_name='Related Rooms'
+    )
+    related_inventory_items = models.ManyToManyField(
+        'Inventory',
+        related_name='issues',
+        blank=True,
+        verbose_name='Related Inventory Items'
     )
 
     def __str__(self):

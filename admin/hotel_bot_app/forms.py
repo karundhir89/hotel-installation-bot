@@ -174,7 +174,7 @@
 
 from django import forms
 from django.core.exceptions import ValidationError
-from .models import Issue, Comment, InvitedUser
+from .models import Issue, Comment, InvitedUser, RoomData, Inventory
 
 class MultipleFileInput(forms.ClearableFileInput):
     allow_multiple_selected = True
@@ -202,14 +202,57 @@ class IssueForm(forms.ModelForm):
         widget=forms.FileInput(attrs={'class': 'form-control', 'accept': 'video/*'}),
         required=False
     )
+    related_rooms = forms.ModelMultipleChoiceField(
+        queryset=RoomData.objects.all(),
+        widget=forms.SelectMultiple(attrs={'class': 'form-control select2-multiple'}),
+        required=False,
+        label="Related Rooms (if type is Room)"
+    )
+    related_inventory_items = forms.ModelMultipleChoiceField(
+        queryset=Inventory.objects.all(),
+        widget=forms.SelectMultiple(attrs={'class': 'form-control select2-multiple'}),
+        required=False,
+        label="Related Inventory Items (if type is Inventory)"
+    )
 
     class Meta:
         model = Issue
-        fields = ['title', 'type', 'description']
+        fields = ['title', 'type', 'description', 'initial_comment', 'images', 'video', 'related_rooms', 'related_inventory_items']
+        widgets = {
+            'type': forms.RadioSelect
+        }
+        # Note: initial_comment, images, video are not model fields but handled in the view. Here they are form fields.
+        # related_rooms and related_inventory_items are actual model fields.
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Ensure all fields that might be dynamically shown/hidden are present
+        if 'related_rooms' not in self.fields or not isinstance(self.fields['related_rooms'].widget, forms.SelectMultiple):
+            self.fields['related_rooms'] = forms.ModelMultipleChoiceField(
+                queryset=RoomData.objects.all(),
+                widget=forms.SelectMultiple(attrs={'class': 'form-control select2-multiple'}),
+                required=False,
+                label="Related Rooms (if type is Room)"
+            )
+        if 'related_inventory_items' not in self.fields or not isinstance(self.fields['related_inventory_items'].widget, forms.SelectMultiple):
+            self.fields['related_inventory_items'] = forms.ModelMultipleChoiceField(
+                queryset=Inventory.objects.all(),
+                widget=forms.SelectMultiple(attrs={'class': 'form-control select2-multiple'}),
+                required=False,
+                label="Related Inventory Items (if type is Inventory)"
+            )
+
+        self.fields['type'].choices = [
+            ('ROOM', 'Room Issue'),
+            ('INVENTORY', 'Inventory Issue'),
+        ]
+        
+        # Set default to ROOM if not already set
+        if not self.initial.get('type'):
+            self.initial['type'] = 'ROOM'
     def clean_images(self):
-        images = self.cleaned_data.get('images', [])  # Default to empty list
-        if images:  # Only validate if files are provided
+        images = self.cleaned_data.get('images', []) 
+        if images:
             if len(images) > 4:
                 raise ValidationError("You can upload up to 4 images.")
             for img in images:
@@ -225,15 +268,34 @@ class IssueForm(forms.ModelForm):
             if video.size > 100 * 1024 * 1024:
                 raise ValidationError("Video file must be under 100MB.")
         return video
+    
+    def clean(self):
+        cleaned_data = super().clean()
+        issue_type = cleaned_data.get("type")
+        related_rooms = cleaned_data.get("related_rooms")
+        related_inventory_items = cleaned_data.get("related_inventory_items")
+
+        if issue_type == "ROOM" and not related_rooms:
+            self.add_error('related_rooms', "Please select at least one room for issues of type 'Room'.")
+        elif issue_type == "INVENTORY" and not related_inventory_items:
+            self.add_error('related_inventory_items', "Please select at least one inventory item for issues of type 'Inventory'.")
+        
+        # Prevent submission of room/inventory if type doesn't match, to avoid saving unrelated data
+        if issue_type != "ROOM" and related_rooms:
+            cleaned_data['related_rooms'] = RoomData.objects.none() # Clear if not relevant
+        if issue_type != "INVENTORY" and related_inventory_items:
+            cleaned_data['related_inventory_items'] = Inventory.objects.none() # Clear if not relevant
+            
+        return cleaned_data
 
 class CommentForm(forms.ModelForm):
     images = forms.FileField(
-        widget=MultipleFileInput(attrs={'class': 'form-control', 'accept': 'image/*'}),
+        widget=MultipleFileInput(attrs={'class': 'form-control d-none', 'accept': 'image/*'}),
         required=False,
         label="Attach Images (Max 4)"
     )
     video = forms.FileField(
-        widget=forms.FileInput(attrs={'class': 'form-control', 'accept': 'video/*'}),
+        widget=forms.FileInput(attrs={'class': 'form-control d-none', 'accept': 'video/*'}),
         required=False,
         label="Attach Video (Max 100MB)"
     )

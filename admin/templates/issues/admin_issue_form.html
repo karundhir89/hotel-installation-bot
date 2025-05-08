@@ -15,6 +15,15 @@
     .left{
         text-align: left;
     }
+    .selected {
+        background-color: #5a6268;
+    }
+
+    /* Custom style for selected options */
+    select option:checked {
+        background-color: #5a6268 !important;
+        color: white;
+    }
 </style>
 <div class="content">
     <div class="container-fluid">
@@ -43,10 +52,10 @@
                             <div class="form-group">
                                 <label for="id_observers">Observers</label>
                                 <div class="row">
-                                    <div class="col-md-8">
+                                    <div class="col-md-12">
                                         {# Empty left side #}
                                     </div>
-                                    <div class="col-md-4">
+                                    <div class="col-md-12">
                                         <div class="d-flex flex-column">
                                             <select name="observers" id="id_observers" class="form-select mb-2" multiple size="5" readonly>
                                                 {% for observer in form.observers.initial %}
