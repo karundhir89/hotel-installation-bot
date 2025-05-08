@@ -12,6 +12,9 @@
             background-color: #5a6268;
         }
     }
+    .left{
+        text-align: left;
+    }
 </style>
 <div class="content">
     <div class="container-fluid">
@@ -19,9 +22,11 @@
             <div class="col-md-12">
                 <div class="card">
                     <div class="card-header card-header-primary d-flex justify-content-between">
-                        <h4 class="card-title pt-2 text-dark">Admin - Edit Issue #{{ issue.id|default:"Unknown" }}: {{ issue.title|default:"Untitled" }}</h4>
+                        <h4 class="card-title pt-2 text-dark">Issue: {{ issue.title|default:"Untitled" }}</h4>
                     </div>
                     <div class="card-body">
+                        <p class="text-dark left">Created by: {{ issue.created_by }} </p>
+                        <p class="text-dark left">Created on: {{ issue.created_at|date:"F d, Y" }}</p>
                         {% include 'common/messages.html' %}
                         
                         <form method="post" id="issueForm">
