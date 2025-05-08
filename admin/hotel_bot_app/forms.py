@@ -298,3 +298,17 @@ class IssueUpdateForm(forms.ModelForm):
             'type': forms.Select(attrs={'class': 'form-select'}),
             'is_for_hotel_admin': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.created_by:
+            # Ensure the creator is always included in the initial observers
+            self.initial['observers'] = self.instance.observers.all() | InvitedUser.objects.filter(pk=self.instance.created_by.pk)
+
+    def clean_observers(self):
+        observers = self.cleaned_data.get('observers')
+        if observers:
+            # Ensure uniqueness in the cleaned data
+            unique_observers = list(dict.fromkeys(observers))
+            return unique_observers
+        return observers

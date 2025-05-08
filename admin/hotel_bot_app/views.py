@@ -2094,13 +2094,22 @@ def admin_issue_list(request):
 def admin_issue_edit(request, issue_id):
     issue = get_object_or_404(Issue, pk=issue_id)
     user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
+    
+    # Get all users except those already observers (excluding the creator who must remain)
+    current_observers = issue.observers.exclude(id=issue.created_by.id)
+    available_users = InvitedUser.objects.exclude(id__in=current_observers).exclude(id=issue.created_by.id)
+    
     if request.method == 'POST':
         form = IssueUpdateForm(request.POST, instance=issue)
         if form.is_valid():
             updated_observers = form.cleaned_data.get('observers')
+            # Ensure creator is always an observer
             if issue.created_by not in updated_observers:
                 updated_observers |= InvitedUser.objects.filter(pk=issue.created_by.pk)
                 form.instance.observers.set(updated_observers)
+            # Remove duplicates
+            unique_observers = set(updated_observers)
+            form.instance.observers.set(unique_observers)
             form.save()
             messages.success(request, f"Issue #{issue.id} updated successfully.")
             return redirect('admin_issue_list')
@@ -2108,9 +2117,11 @@ def admin_issue_edit(request, issue_id):
             messages.error(request, "Please correct the errors below.")
     else:
         form = IssueUpdateForm(instance=issue)
+    
     context = {
         'form': form,
-        'issue': issue
+        'issue': issue,
+        'available_users': available_users
     }
     return render(request, 'issues/admin_issue_form.html', context)
 

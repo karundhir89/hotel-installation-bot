@@ -1,31 +1,148 @@
 {% extends 'dashboard_layout.html' %}
- {# Adjust to your actual base template #}
 {% load static %}
-{% load crispy_forms_tags %} {# Assuming you use crispy_forms #}
+{% load crispy_forms_tags %}
 
-{% block title %}Admin - Edit Issue #{{ issue.id }}{% endblock %}
+{% block title %}Admin - Edit Issue #{{ issue.id|default:"Unknown" }}{% endblock %}
 
 {% block content %}
-<div class="container mt-4">
-    <h2>Admin - Edit Issue #{{ issue.id }}: {{ issue.title }}</h2>
+<style>
+    .primary{
+        background-color: #5a6268;
+        &:hover{
+            background-color: #5a6268;
+        }
+    }
+</style>
+<div class="content">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header card-header-primary d-flex justify-content-between">
+                        <h4 class="card-title pt-2 text-dark">Admin - Edit Issue #{{ issue.id|default:"Unknown" }}: {{ issue.title|default:"Untitled" }}</h4>
+                    </div>
+                    <div class="card-body">
+                        {% include 'common/messages.html' %}
+                        
+                        <form method="post" id="issueForm">
+                            {% csrf_token %}
+                            
+                            {# Render all fields except observers #}
+                            {% for field in form %}
+                                {% if field.name != 'observers' %}
+                                    {{ field|as_crispy_field }}
+                                {% endif %}
+                            {% endfor %}
 
-    {% if messages %}
-        {% for message in messages %}
-            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            {# Custom layout for observers #}
+                            <div class="form-group">
+                                <label for="id_observers">Observers</label>
+                                <div class="row">
+                                    <div class="col-md-8">
+                                        {# Empty left side #}
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="d-flex flex-column">
+                                            <select name="observers" id="id_observers" class="form-select mb-2" multiple size="5" readonly>
+                                                {% for observer in form.observers.initial %}
+                                                    <option value="{{ observer.id }}" selected>{{ observer }}</option>
+                                                {% endfor %}
+                                            </select>
+                                            <button type="button" id="editObservers" class="btn primary mb-2">Edit Observers</button>
+                                            <div id="editControls" style="display: none;">
+                                                <select id="availableUsers" class="form-select mb-2" size="5">
+                                                    {% for user in available_users %}
+                                                        <option value="{{ user.id }}">{{ user }}</option>
+                                                    {% endfor %}
+                                                </select>
+                                                <button type="button" id="addObserver" class="btn primary mb-2">Add Observer</button>
+                                                <button type="button" id="removeObserver" class="btn btn-danger">Remove Selected</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button type="submit" class="btn primary mt-3">Save Changes</button>
+                            <a href="{% url 'admin_issue_list' %}" class="btn btn-secondary mt-3">Cancel</a>
+                            {% if issue.id %}
+                                <a href="{% url 'issue_detail' issue.id %}" class="btn btn-info mt-3">View Issue Details</a>
+                            {% else %}
+                                <a href="#" class="btn btn-info mt-3 disabled" aria-disabled="true">View Issue Details</a>
+                            {% endif %}
+                        </form>
+                    </div>
+                </div>
             </div>
-        {% endfor %}
-    {% endif %}
-
-    <form method="post">
-        {% csrf_token %}
-        
-        {{ form|crispy }}
-
-        <button type="submit" class="btn btn-success mt-3">Save Changes</button>
-        <a href="{% url 'admin_issue_list' %}" class="btn btn-secondary mt-3">Cancel</a>
-        <a href="{% url 'issue_detail' issue.id %}" class="btn btn-info mt-3">View Issue Details</a>
-    </form>
+        </div>
+    </div>
 </div>
-{% endblock %} 
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const observersSelect = document.getElementById('id_observers');
+    const availableUsersSelect = document.getElementById('availableUsers');
+    const editButton = document.getElementById('editObservers');
+    const addButton = document.getElementById('addObserver');
+    const removeButton = document.getElementById('removeObserver');
+    const editControls = document.getElementById('editControls');
+
+    // Toggle edit controls
+    editButton.addEventListener('click', function() {
+        if (editControls.style.display === 'none') {
+            editControls.style.display = 'block';
+            observersSelect.removeAttribute('readonly');
+            editButton.textContent = 'Done Editing';
+        } else {
+            editControls.style.display = 'none';
+            observersSelect.setAttribute('readonly', 'readonly');
+            editButton.textContent = 'Edit Observers';
+        }
+    });
+
+    // Add observer
+    addButton.addEventListener('click', function() {
+        const selectedOptions = Array.from(availableUsersSelect.selectedOptions);
+        const currentObserverIds = Array.from(observersSelect.options).map(opt => opt.value);
+        
+        selectedOptions.forEach(option => {
+            // Ensure uniqueness
+            if (!currentObserverIds.includes(option.value)) {
+                const newOption = new Option(option.text, option.value, true, true);
+                observersSelect.appendChild(newOption);
+                option.remove();
+            }
+        });
+    });
+
+    // Remove observer
+    removeButton.addEventListener('click', function() {
+        const selectedOptions = Array.from(observersSelect.selectedOptions);
+        selectedOptions.forEach(option => {
+            if (option.value != '{{ issue.created_by.id|default:"" }}') { // Prevent removing creator
+                // Only add back to available users if not already present
+                const existingAvailableIds = Array.from(availableUsersSelect.options).map(opt => opt.value);
+                if (!existingAvailableIds.includes(option.value)) {
+                    const newOption = new Option(option.text, option.value);
+                    availableUsersSelect.appendChild(newOption);
+                }
+                option.remove();
+            }
+        });
+    });
+
+    // Ensure all options are selected before form submission and maintain uniqueness
+    document.getElementById('issueForm').addEventListener('submit', function() {
+        const uniqueOptions = new Set();
+        Array.from(observersSelect.options).forEach(option => {
+            if (!uniqueOptions.has(option.value)) {
+                uniqueOptions.add(option.value);
+                option.selected = true;
+            } else {
+                option.remove(); // Remove duplicates
+            }
+        });
+    });
+});
+</script>
+{% endblock %}
