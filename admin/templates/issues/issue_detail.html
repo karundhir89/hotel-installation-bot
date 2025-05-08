@@ -1,4 +1,4 @@
-{% extends 'dashboard_layout.html' %}
+{% extends 'frontend_base.html' %}
  {# Adjust to your actual base template #}
 {% load static %}
 {% load crispy_forms_tags %} {# Assuming crispy_forms, otherwise use {{ comment_form.as_p }} #}
@@ -19,14 +19,13 @@
 
     <div class="card mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
-            <h4 class="mb-0">Issue #{{ issue.id }}: {{ issue.title }}</h4>
+            <h4 class="mb-0">Issue : {{ issue.title }}</h4>
             <span class="badge bg-{% if issue.status == 'OPEN' %}primary{% elif issue.status == 'WORKING' %}warning{% elif issue.status == 'PENDING' %}info{% elif issue.status == 'CLOSE' %}success{% else %}secondary{% endif %}">{{ issue.get_status_display }}</span>
         </div>
         <div class="card-body">
             <p><strong>Type:</strong> {{ issue.get_type_display }}</p>
             {% if issue.description %}
-                <p><strong>Description:</strong></p>
-                <p>{{ issue.description|linebreaksbr }}</p>
+                <p><strong>Description: {{ issue.description|truncatechars:100 }}</strong></p>
             {% endif %}
             <hr>
             <p><small class="text-muted">Reported by: {{ issue.created_by.name }} on {{ issue.created_at|date:"Y-m-d H:i" }}</small></p>
@@ -76,19 +75,68 @@
     </div>
 
     {% if can_comment %}
-        <h5>Add Comment</h5>
-        <form method="post" enctype="multipart/form-data"> {# Add enctype if handling file uploads #}
-            {% csrf_token %}
-            {{ comment_form|crispy }}
-            <button type="submit" class="btn btn-success mt-2">Post Comment</button>
-        </form>
-    {% else %}
-        <p class="text-muted">You do not have permission to comment on this issue.</p>
-    {% endif %}
-
-     <div class="mt-4">
-        <a href="{% url 'issue_list' %}" class="btn btn-secondary">Back to Issue List</a>
+    <h5>Add Comment</h5>
+    <form method="post" enctype="multipart/form-data" class="comment-form position-relative">
+        {% csrf_token %}
+        
+        <div class="mb-3 position-relative">
+            <label for="{{ comment_form.text_content.id_for_label }}" class="visually-hidden">Your Comment</label>
+            {{ comment_form.text_content }}
+            
+            <div class="message-actions position-absolute end-0 bottom-0 me-3 mb-2 d-flex align-items-center gap-2">
+                <div class="file-attachment">
+                    <label for="{{ comment_form.images.id_for_label }}" class="attachment-btn btn p-0 text-muted" title="Attach Files">
+                        <i class="bi bi-upload fs-5"></i>
+                        <span class="visually-hidden"></span>
+                    </label>
+                    <input type="file" name="images" id="{{ comment_form.images.id_for_label }}"
+                           class="d-none" multiple accept="image/*,video/*,audio/*">
+                </div>
+            
+                <button type="submit" class="send-btn btn" title="Send Comment">
+                    <i class="bi bi-arrow-right-circle-fill fs-5"></i>
+                    <span class="visually-hidden"></span>
+                </button>
+            </div>
+            
+        </div>
+    </form>
+    <div class="form-text small text-muted mt-1">
+        Attach images, videos, or audio files
     </div>
+{% else %}
+    <p class="text-muted">You do not have permission to comment on this issue.</p>
+{% endif %}
 
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.min.css">
+
+<div class="mt-4">
+    <a href="{% url 'issue_list' %}" class="btn btn-secondary">Back to Issue List</a>
 </div>
+
+<style>
+    /* Adjust textarea to accommodate buttons */
+    #{{ comment_form.text_content.id_for_label }} {
+        width: 100%;
+        padding: 12px 90px 12px 15px; /* Increased right padding to fit both buttons */
+        border-radius: 20px;
+        resize: none;
+        min-height: 60px; /* Reduced height for a more compact look */
+    }
+    .message-actions {
+        transform: translate(10px, -36px);
+    }
+    .attachment-btn i {
+  font-size: 1.5em; /* Increase to 1.5 times the default size */
+}
+
+.send-btn i {
+  font-size: 2em; /* Increase to 2 times the default size */
+}
+.message-actions {
+    transform: translate(0, -75%);
+    right: 0;
+}
+
+</style>
 {% endblock %} 

@@ -2060,24 +2060,33 @@ def issue_create(request):
 # --- Admin-specific Issue Views --- 
 
 def is_admin(user):
-    return 'admin' in user.role
 
-@user_passes_test(is_admin, login_url='/user_login/')
+    try:
+        return 'admin' in user.role
+    except Exception as e:
+        return 'admin'
+        
+    #     user_data = User.objects.get(email=user.email)
+            
+# @user_passes_test(is_admin, login_url='/user_login/')
 @session_login_required
 def admin_issue_list(request):
-    issue_list_all = Issue.objects.all().order_by('-created_at').select_related('created_by', 'assignee')
-    paginator = Paginator(issue_list_all, 25)
-    page_number = request.GET.get('page')
-    try:
-        issues_page = paginator.page(page_number)
-    except PageNotAnInteger:
-        issues_page = paginator.page(1)
-    except EmptyPage:
-        issues_page = paginator.page(paginator.num_pages)
-    context = {
-        'issues_page': issues_page,
-    }
-    return render(request, 'issues/admin_issue_list.html', context)
+    if request.user.is_authenticated:
+        if request.user.is_superuser:
+            logger.info("\n\n\n\nAdmin Issue List")
+            issue_list_all = Issue.objects.all().order_by('-created_at').select_related('created_by', 'assignee')
+            paginator = Paginator(issue_list_all, 25)
+            page_number = request.GET.get('page')
+            try:
+                issues_page = paginator.page(page_number)
+            except PageNotAnInteger:
+                issues_page = paginator.page(1)
+            except EmptyPage:
+                issues_page = paginator.page(paginator.num_pages)
+            context = {
+                'issues_page': issues_page,
+            }
+            return render(request, 'issues/admin_issue_list.html', context)
 
 
 @user_passes_test(is_admin, login_url='/user_login/')
