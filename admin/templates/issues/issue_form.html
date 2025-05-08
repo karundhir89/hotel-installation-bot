@@ -67,17 +67,21 @@
                 </div>
 
                 <div id="related-rooms-container" class="mb-3" style="display: none;">
-                    <div class="form-check form-switch mb-2">
-                        <input class="form-check-input" type="checkbox" role="switch" id="allowMultipleRooms" checked>
-                        <label class="form-check-label" for="allowMultipleRooms">Allow selecting multiple rooms</label>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" value="" id="allowMultipleRooms" checked>
+                        <label class="form-check-label" for="allowMultipleRooms">
+                            Allow selecting multiple rooms
+                        </label>
                     </div>
                     {{ form.related_rooms|as_crispy_field }}
                 </div>
-
+                
                 <div id="related-inventory-container" class="mb-3" style="display: none;">
-                    <div class="form-check form-switch mb-2">
-                        <input class="form-check-input" type="checkbox" role="switch" id="allowMultipleInventory" checked>
-                        <label class="form-check-label" for="allowMultipleInventory">Allow selecting multiple inventory items</label>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" value="" id="allowMultipleInventory" checked>
+                        <label class="form-check-label" for="allowMultipleInventory">
+                            Allow selecting multiple inventory items
+                        </label>
                     </div>
                     {{ form.related_inventory_items|as_crispy_field }}
                 </div>

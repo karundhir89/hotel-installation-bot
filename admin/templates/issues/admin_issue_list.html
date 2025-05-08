@@ -63,6 +63,8 @@
                                                 <td>{{ issue.created_at|date:"Y-m-d H:i" }}</td>
                                                 <td>
                                                     <a href="{% url 'admin_issue_edit' issue.id %}" class="btn btn-sm edit-button ">Edit</a>
+                                                    <a href="{% url 'admin_issue_detail' issue.id %}" class="btn btn-sm edit-button ">View</a>
+                                       
                                                     {# Add delete button/logic if needed #}
                                                 </td>
                                             </tr>

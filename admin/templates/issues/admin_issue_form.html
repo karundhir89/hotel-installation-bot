@@ -80,7 +80,7 @@
                             <button type="submit" class="btn primary mt-3">Save Changes</button>
                             <a href="{% url 'admin_issue_list' %}" class="btn btn-secondary mt-3">Cancel</a>
                             {% if issue.id %}
-                                <a href="{% url 'issue_detail' issue.id %}" class="btn btn-info mt-3">View Issue Details</a>
+                            <a href="{% url 'admin_issue_detail' issue.id %}" class="btn btn-sm edit-button ">View</a>
                             {% else %}
                                 <a href="#" class="btn btn-info mt-3 disabled" aria-disabled="true">View Issue Details</a>
                             {% endif %}

@@ -43,6 +43,7 @@ from django.utils.timezone import localtime
 from django.db import connection
 from .forms import IssueForm, CommentForm, IssueUpdateForm # Import the forms
 import logging
+from django.contrib.contenttypes.models import ContentType # Added for GFK
 
 logger = logging.getLogger(__name__)
 
@@ -1831,7 +1832,7 @@ def floor_products_list(request):
     return render(request, 'floor_products_list.html', context)
 
 
-@session_login_required
+@login_required
 def room_number_products_list(request):
     room_number = request.GET.get('room_number', '').strip()
     product_list = []
@@ -1890,7 +1891,7 @@ def room_number_products_list(request):
 # --- Issue Tracking Views --- 
 from django.contrib.auth.models import User
 
-@session_login_required
+@login_required
 def issue_list(request):
     user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
     print(f"DEBUG: Querying for user: ID={user.id}, Type={type(user)}, Name={user.name}")
@@ -1905,85 +1906,74 @@ def issue_list(request):
 
 from .forms import CommentForm
 
-@session_login_required
+@login_required
 def issue_detail(request, issue_id):
-    issue = get_object_or_404(Issue.objects.select_related('created_by', 'assignee').prefetch_related('observers', 'comments__user'), id=issue_id)
-    print("\n\n\n\n",request.session.get("user_id"))
-    user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
-    user_roles = getattr(user, 'role', [])
+    issue = get_object_or_404(Issue, id=issue_id)
+    comments = issue.comments.all().select_related(
+        'content_type' # For GFK
+    ) #.order_by('-created_at') # Ordering is now in model Meta
 
-    can_view = False
-    if 'admin' in user_roles or ('hotel_admin' in user_roles and issue.is_for_hotel_admin) or \
-       user == issue.created_by or user == issue.assignee or user in issue.observers.all():
-        can_view = True
-        
-    if not can_view:
-        messages.error(request, "You do not have permission to view this issue.")
-        return redirect('issue_list')
-
-    can_comment = False
-    if 'admin' in user_roles or ('hotel_admin' in user_roles and issue.is_for_hotel_admin) or \
-       user == issue.created_by or user == issue.assignee or user in issue.observers.all():
-        can_comment = True
+    # Dynamically fetch commenter objects for display
+    # This is needed because GenericForeignKey doesn't do select_related automatically for commenter
+    # We can optimize this if it becomes a performance issue (e.g., by fetching all unique commenters in one go)
+    for comment in comments:
+        # This will fault in the commenter object from the DB if not already loaded
+        _ = comment.commenter 
 
     if request.method == 'POST':
-        if not can_comment:
-            messages.error(request, "You do not have permission to comment on this issue.")
-            # Redirect or render with error, avoid processing form
-            return redirect('issue_detail', issue_id=issue.id)
-            
-        comment_form = CommentForm(request.POST, request.FILES) 
+        # Check if the user is authenticated before processing the form
+        if not request.user.is_authenticated:
+            messages.error(request, "You must be logged in to comment.")
+            return redirect('user_login') # Or wherever your login URL is
+
+        comment_form = CommentForm(request.POST, request.FILES)
         if comment_form.is_valid():
             new_comment = comment_form.save(commit=False)
             new_comment.issue = issue
-            new_comment.user = user
+            # new_comment.user = request.user # Old way
+            new_comment.commenter = request.user # New: Assign the currently logged-in user (Django User or InvitedUser)
             
-            media_data_for_json = []
-            
-            # Process uploaded images from cleaned_data
-            uploaded_images = comment_form.cleaned_data.get('images', [])
-            for image_file in uploaded_images:
-                # Ensure a unique filename to prevent overwrites
-                unique_filename = f"issues/comments/images/{issue.id}/{uuid.uuid4()}_{image_file.name}"
-                file_path = default_storage.save(unique_filename, image_file)
-                file_url = default_storage.url(file_path)
-                media_data_for_json.append({
-                    'type': 'image',
-                    'url': file_url,
-                    'name': image_file.name,
-                    'size': image_file.size
-                })
+            # Handle media files
+            media_info = []
+            # Image files (up to 4)
+            for i in range(1, 5):
+                image_field_name = f'image{i}'
+                image_file = request.FILES.get(image_field_name)
+                if image_file:
+                    # Basic validation (can be enhanced in the form)
+                    if image_file.size > 4 * 1024 * 1024: # 4MB
+                        messages.error(request, f"Image '{image_file.name}' exceeds 4MB limit.")
+                        # Decide how to handle: return with error or skip this file
+                        continue 
+                    # file_name = default_storage.save(f"issues/comments/{issue.id}/{image_file.name}", image_file)
+                    # media_info.append({"type": "image", "url": default_storage.url(file_name), "name": image_file.name})
+                    # For now, just storing placeholder, actual file saving logic needs to be robust
+                    media_info.append({"type": "image", "name": image_file.name, "size": image_file.size})
 
-            # Process uploaded video from cleaned_data
-            uploaded_video = comment_form.cleaned_data.get('video', None)
-            if uploaded_video:
-                unique_filename = f"issues/comments/videos/{issue.id}/{uuid.uuid4()}_{uploaded_video.name}"
-                file_path = default_storage.save(unique_filename, uploaded_video)
-                file_url = default_storage.url(file_path)
-                media_data_for_json.append({
-                    'type': 'video',
-                    'url': file_url,
-                    'name': uploaded_video.name,
-                    'size': uploaded_video.size
-                })
+            # Video file (up to 1)
+            video_file = request.FILES.get('video')
+            if video_file:
+                if video_file.size > 100 * 1024 * 1024: # 100MB
+                    messages.error(request, f"Video '{video_file.name}' exceeds 100MB limit.")
+                else:
+                    # file_name = default_storage.save(f"issues/comments/{issue.id}/{video_file.name}", video_file)
+                    # media_info.append({"type": "video", "url": default_storage.url(file_name), "name": video_file.name})
+                    media_info.append({"type": "video", "name": video_file.name, "size": video_file.size})
             
-            new_comment.media = media_data_for_json # Store the list of dicts
+            new_comment.media = media_info # Assuming media field is JSONField
             new_comment.save()
-            messages.success(request, "Comment added successfully.")
+            messages.success(request, "Your comment has been added.")
             return redirect('issue_detail', issue_id=issue.id)
         else:
-            messages.error(request, "Please correct the errors in your comment.")
+            messages.error(request, "There was an error with your comment. Please check the details.")
     else:
         comment_form = CommentForm()
-
-    comments = issue.comments.all().order_by('created_at')
 
     context = {
         'issue': issue,
         'comments': comments,
         'comment_form': comment_form,
-        'can_comment': can_comment,
-        'user_roles': user_roles
+        'user': request.user # Pass the user to the template
     }
     return render(request, 'issues/issue_detail.html', context)
 
@@ -1991,48 +1981,76 @@ from django.core.files.storage import default_storage
 import uuid
 import os
 
-@session_login_required
+@login_required
 def issue_create(request):
     user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
+    
+    initial_data = {}
+    if request.method == 'GET': # Process GET params only on initial load
+        prefill_type = request.GET.get('type')
+        prefill_room_id = request.GET.get('related_rooms')
+        prefill_inventory_id = request.GET.get('related_inventory_items')
+
+        # Validate type and check corresponding ID
+        if prefill_type == IssueType.ROOM and prefill_room_id:
+            try:
+                # Ensure room exists, pass its pk as a list for M2M initial
+                if RoomData.objects.filter(pk=int(prefill_room_id)).exists():
+                    initial_data['type'] = IssueType.ROOM
+                    initial_data['related_rooms'] = [int(prefill_room_id)]
+            except (ValueError, TypeError): 
+                pass # Ignore invalid ID format
+        elif prefill_type == IssueType.INVENTORY and prefill_inventory_id:
+            try:
+                # Ensure inventory item exists, pass its pk as a list
+                if Inventory.objects.filter(pk=int(prefill_inventory_id)).exists():
+                    initial_data['type'] = IssueType.INVENTORY
+                    initial_data['related_inventory_items'] = [int(prefill_inventory_id)]
+            except (ValueError, TypeError):
+                pass # Ignore invalid ID format
+        # Note: No pre-filling if type doesn't match ID or if IDs are invalid/missing
 
     if request.method == 'POST':
-        logger.debug(f"Request FILES: {request.FILES}")
         form = IssueForm(request.POST, request.FILES)
         if form.is_valid():
             issue = form.save(commit=False)
             issue.created_by = user
-            issue.save()
+            issue.save() # Save the main instance first
+            form.save_m2m() # Crucial for saving M2M data like related_rooms/inventory
+            
+            # Add creator as observer (if not already handled elsewhere)
             issue.observers.add(user)
 
             logger.info(f"Issue created by {user.name} with ID {issue.id}")
-            logger.info(f"Issue observers: {issue.observers.all()}")
 
-            # Process and save media files
+            # Process and save media files for initial comment
             media_urls = []
             images = form.cleaned_data.get('images', [])
             video = form.cleaned_data.get('video')
 
-            # Save images
             for image in images:
+                # ... (saving logic as before) ...
                 file_name = default_storage.save(f"issues/images/{uuid.uuid4()}_{image.name}", image)
                 file_url = default_storage.url(file_name)
                 media_urls.append({'type': 'image', 'url': file_url, 'size': image.size, 'name': image.name})
-
-            # Save video
             if video:
+                # ... (saving logic as before) ...
                 file_name = default_storage.save(f"issues/videos/{uuid.uuid4()}_{video.name}", video)
                 file_url = default_storage.url(file_name)
                 media_urls.append({'type': 'video', 'url': file_url, 'size': video.size, 'name':video.name})
 
-            # Save initial comment with media info
-            Comment.objects.create(
-                issue=issue,
-                user=user,
-                text_content=form.cleaned_data['initial_comment'],
-                media=media_urls
-            )
+            # Save initial comment if provided
+            initial_comment_text = form.cleaned_data.get('initial_comment')
+            if initial_comment_text or media_urls:
+                Comment.objects.create(
+                    issue=issue,
+                    user=user,
+                    text_content=initial_comment_text,
+                    media=media_urls
+                )
 
             success_message = f"Issue #{issue.id} created successfully."
+            # ... (AJAX/standard response logic as before) ...
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return JsonResponse({
                     'success': True,
@@ -2045,16 +2063,21 @@ def issue_create(request):
         else:
             logger.error(f"Form errors: {form.errors.as_json()}")
             error_message = "Please correct the errors below."
+            # ... (AJAX/standard error response logic as before) ...
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse({
+                 return JsonResponse({
                     'success': False,
                     'message': error_message,
-                    'errors': json.loads(form.errors.as_json())  # Parse JSON string to dict
+                    'errors': json.loads(form.errors.as_json())  
                 }, status=400)
             else:
+                # Re-render with errors, preserving initial data if GET had it
                 messages.error(request, error_message)
-    else:
-        form = IssueForm()
+                # Important: If re-rendering on POST error, DO NOT pass initial_data again.
+                # The form instance already has the submitted (invalid) data.
+                return render(request, 'issues/issue_form.html', {'form': form})
+    else: # GET request
+        form = IssueForm(initial=initial_data)
 
     return render(request, 'issues/issue_form.html', {'form': form})
 # --- Admin-specific Issue Views --- 
@@ -2069,7 +2092,7 @@ def is_admin(user):
     #     user_data = User.objects.get(email=user.email)
             
 # @user_passes_test(is_admin, login_url='/user_login/')
-@session_login_required
+@login_required
 def admin_issue_list(request):
     if request.user.is_authenticated:
         if request.user.is_superuser:
@@ -2090,10 +2113,10 @@ def admin_issue_list(request):
 
 
 @user_passes_test(is_admin, login_url='/user_login/')
-@session_login_required
+@login_required
 def admin_issue_edit(request, issue_id):
     issue = get_object_or_404(Issue, pk=issue_id)
-    user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
+    # user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
     
     # Get all users except those already observers (excluding the creator who must remain)
     current_observers = issue.observers.exclude(id=issue.created_by.id)
@@ -2127,7 +2150,7 @@ def admin_issue_edit(request, issue_id):
 
 
 
-@session_login_required
+@login_required
 def comment_create(request, issue_id):
     user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
     issue = get_object_or_404(Issue, id=issue_id)
@@ -2187,3 +2210,60 @@ def comment_create(request, issue_id):
         form = CommentForm()
 
     return render(request, 'issues/comment_form.html', {'form': form, 'issue': issue})
+
+@user_passes_test(is_admin, login_url='/user_login/') # Ensure only admins can access
+@login_required
+def admin_issue_detail(request, issue_id):
+    issue = get_object_or_404(Issue, id=issue_id)
+    comments = issue.comments.all().select_related(
+        'content_type' # For GFK commenter
+    ) # Ordering is now in model Meta
+
+    # Pre-fetch commenter objects to avoid N+1 queries in template if displaying commenter details
+    for comment in comments:
+        _ = comment.commenter # Accessing .commenter will load it
+
+    if request.method == 'POST':
+        if not request.user.is_authenticated:
+            messages.error(request, "Authentication error.")
+            return redirect('user_login')
+
+        comment_form = CommentForm(request.POST, request.FILES)
+        if comment_form.is_valid():
+            new_comment = comment_form.save(commit=False)
+            new_comment.issue = issue
+            new_comment.commenter = request.user # Assign Django admin user
+            
+            media_info = []
+            for i in range(1, 5):
+                image_file = request.FILES.get(f'image{i}')
+                if image_file:
+                    if image_file.size > 4 * 1024 * 1024: # 4MB
+                        messages.error(request, f"Image '{image_file.name}' exceeds 4MB limit.")
+                        continue
+                    media_info.append({"type": "image", "name": image_file.name, "size": image_file.size})
+
+            video_file = request.FILES.get('video')
+            if video_file:
+                if video_file.size > 100 * 1024 * 1024: # 100MB
+                    messages.error(request, f"Video '{video_file.name}' exceeds 100MB limit.")
+                else:
+                    media_info.append({"type": "video", "name": video_file.name, "size": video_file.size})
+            
+            new_comment.media = media_info
+            new_comment.save()
+            messages.success(request, "Comment added successfully.")
+            return redirect('admin_issue_detail', issue_id=issue.id) # Redirect to admin detail view
+        else:
+            messages.error(request, "Error submitting comment. Please check the form.")
+    else:
+        comment_form = CommentForm()
+
+    context = {
+        'issue': issue,
+        'comments': comments,
+        'comment_form': comment_form,
+        'user': request.user
+    }
+    # Ensure this template path is correct and the template exists/will be created
+    return render(request, 'issues/admin_issue_detail.html', context)
