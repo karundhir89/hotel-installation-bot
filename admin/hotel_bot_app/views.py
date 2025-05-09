@@ -1891,7 +1891,7 @@ def room_number_products_list(request):
 # --- Issue Tracking Views --- 
 from django.contrib.auth.models import User
 
-@login_required
+@login_required # Changed back from @login_required
 def issue_list(request):
     user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
     print(f"DEBUG: Querying for user: ID={user.id}, Type={type(user)}, Name={user.name}")
@@ -2044,7 +2044,7 @@ def issue_create(request):
             if initial_comment_text or media_urls:
                 Comment.objects.create(
                     issue=issue,
-                    user=user,
+                    commenter=user, # Changed back from user=user
                     text_content=initial_comment_text,
                     media=media_urls
                 )
@@ -2160,9 +2160,9 @@ def comment_create(request, issue_id):
         form = CommentForm(request.POST, request.FILES)
         if form.is_valid():
             comment = form.save(commit=False)
-            comment.user = user
+            comment.commenter = user # Changed back from comment.user = user
             comment.issue = issue
-            comment.save()
+            # comment.save() # Save should happen after media is processed
 
             # Process and save media files
             media_urls = []
@@ -2183,7 +2183,7 @@ def comment_create(request, issue_id):
 
             # Update comment with media URLs
             comment.media = media_urls
-            comment.save()
+            comment.save() # Save once here, after media is assigned
 
             success_message = "Comment added successfully."
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':

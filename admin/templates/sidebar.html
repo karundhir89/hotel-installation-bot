@@ -74,13 +74,14 @@
                     <p class="user_management-link">User Management</p>
                 </a>
             </li>
-			<li class="nav-item user_management li-elements-js" id="management">
-                <a class="nav-link" id="management-link" href="{% url 'admin_issue_list' %}">
-                    <i class="material-icons">issue</i>
-                    <p class="issue-link">Issue</p>
+
+			<li class="nav-item admin_issues_nav li-elements-js" id="admin_issues_li">
+                <a class="nav-link" id="admin_issues_link" href="{% url 'admin_issue_list' %}">
+                    <i class="material-icons">bug_report</i>
+                    <p>Admin - All Issues</p>
                 </a>
             </li>
-			<li class="nav-item chat_history li-elements-js" id="management">
+			<li class="nav-item chat_history li-elements-js" id="chat_history">
                 <a class="nav-link" id="management-link" href="{% url 'chat_history' %}">
                     <i class="material-icons">chat</i>
                     <p class="chat_history-link">Chat History</p>
@@ -157,21 +158,35 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    function setActiveLink(linkId) {
-        document.querySelectorAll('.nav-link').forEach(link => {
-            link.classList.remove('active'); // Remove active from all links
-        });
-        const activeLink = document.getElementById(linkId);
-        if (activeLink) {
-            activeLink.classList.add('active'); // Add active class to the selected link
+    const currentUrl = window.location.pathname;
+    const navLinks = document.querySelectorAll('.sidebar-wrapper .nav-link');
+
+    navLinks.forEach(link => {
+        const liParent = link.closest('li.nav-item');
+
+        link.classList.remove('active');
+        if (liParent) {
+            liParent.classList.remove('active');
+        }
+
+        if (link.getAttribute('href') === currentUrl) {
+            link.classList.add('active');
+            if (liParent) {
+                liParent.classList.add('active');
+            }
+        }
+    });
+
+    const activeLinkInCollapse = document.querySelector('.collapse .nav-link.active');
+    if (activeLinkInCollapse) {
+        const collapseElement = activeLinkInCollapse.closest('.collapse');
+        if (collapseElement && !collapseElement.classList.contains('show')) {
+            var bsCollapse = new bootstrap.Collapse(collapseElement, {
+                toggle: false
+            });
+            bsCollapse.show();
         }
     }
-
-    // Get current page URL
-    const currentUrl = window.location.pathname;
-
-    // Set active link based on current page
-        setActiveLink(currentUrl);
 });
 </script>
 
