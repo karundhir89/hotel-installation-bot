@@ -37,10 +37,10 @@
                                 <tbody>
                                     {% for prompt in prompts %}
                                     <tr>
-                                        <td>{{ prompt.name }}</td>
-                                        <td>{{ prompt.role }}</td>
+                                        <td>{{ prompt.name|title }}</td>
+                                        <td>{{ prompt.role|join:", "|title }}</td>                                          
                                         <td>{{ prompt.email }}</td>
-                                        <td>{{ prompt.status }}</td>
+                                        <td>{{ prompt.status|title }}</td>
                                     </tr>
                                     {% endfor %}
                                 </tbody>

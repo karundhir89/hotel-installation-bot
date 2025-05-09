@@ -5,7 +5,7 @@ urlpatterns = [
     path('chat/', chatbot, name='chatbot'),
     path('home/', home, name='home'),
     path('api/chatbot/', chatbot_api, name='chatbot_api'),  # API for chatbot
-    path('display_prompts/', display_prompts, name='display_prompts'),  # API for chatbot
+    path('display_prompts/', display_prompts, name='edit_prompts'),  # Changed name to edit_prompts
     path('update_prompt/', update_prompt, name='update_prompt'),  # API for chatbot,
     path("api/get_chat_history/", get_chat_history, name="get_chat_history"),   
     path("user_management/", user_management, name="user_management"),  
@@ -51,4 +51,11 @@ urlpatterns = [
     # New URLs for user-facing product lists with download
     path('floor-products/', floor_products_list, name='floor_products_list'),
     path('room-products/', room_number_products_list, name='room_number_products_list'),
+
+
+    path('issue_list/', issue_list, name='issue_list'),
+    path('issue_detail/<int:issue_id>/', issue_detail, name='issue_detail'),
+    path('issue_create/', issue_create, name='issue_create'),
+    path('admin_issue_list/', admin_issue_list, name='admin_issue_list'),
+    path('admin_issue_edit/<int:issue_id>/', admin_issue_edit, name='admin_issue_edit'),
 ]
