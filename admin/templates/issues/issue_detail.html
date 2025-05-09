@@ -77,12 +77,13 @@
     <h5>Add Comment</h5>
     <form method="post" enctype="multipart/form-data" class="comment-form position-relative" action="{% url 'invited_user_comment_create' issue.id %}">
         {% csrf_token %}
-        
-        <div class="mb-3 position-relative">
-            <label for="{{ comment_form.text_content.id_for_label }}" class="visually-hidden">Your Comment</label>
-            {{ comment_form.text_content }}
-            
-            <div class="message-actions position-absolute end-0 bottom-0 me-3 mb-2 d-flex align-items-center gap-2">
+
+        <div class="mb-3 d-flex align-items-center">
+            <div class="flex-grow-1 position-relative">
+                <label for="{{ comment_form.text_content.id_for_label }}" class="visually-hidden">Your Comment</label>
+                {{ comment_form.text_content }}
+            </div>
+            <div class="message-actions d-flex align-items-center gap-2 ms-2">
                 <div class="file-attachment">
                     <label for="{{ comment_form.images.id_for_label }}" class="attachment-btn btn p-0 text-muted" title="Attach Files">
                         <i class="bi bi-upload fs-5"></i>
@@ -91,13 +92,12 @@
                     <input type="file" name="images" id="{{ comment_form.images.id_for_label }}"
                            class="d-none" multiple accept="image/*,video/*,audio/*">
                 </div>
-            
-                <button type="submit" class="send-btn btn" title="Send Comment">
-                    <i class="bi bi-arrow-right-circle-fill fs-5"></i>
+
+                <button type="submit" class="send-btn btn p-0 text-primary" title="Send Comment">
+                    <i class="bi bi-send-fill fs-5"></i>
                     <span class="visually-hidden"></span>
                 </button>
             </div>
-            
         </div>
     </form>
     <div class="form-text small text-muted mt-1">
@@ -139,6 +139,23 @@
 
     .send-btn i {
         font-size: 2em;
+    }
+    .comment-form textarea {
+    border-radius: 20px; /* Optional: Rounded corners for the input */
+    padding-right: 50px; /* Make space for the icons */
+}
+
+    .message-actions .btn i {
+        /* Adjust icon size if needed */
+        /* font-size: 1.2em; */
+    }
+
+    .file-attachment .attachment-btn {
+        /* Style the attachment button if needed */
+    }
+
+    .send-btn {
+        /* Style the send button if needed */
     }
 </style>
 {% endblock %} 

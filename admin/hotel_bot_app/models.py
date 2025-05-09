@@ -342,23 +342,12 @@ class Comment(models.Model):
         on_delete=models.CASCADE, # Delete comments if the issue is deleted
         related_name='comments'
     )
-    # user = models.ForeignKey( # Removed old user field
-    #     'InvitedUser',
-    #     on_delete=models.PROTECT,
-    #     related_name='issue_comments'
-    # )
 
     # Fields for GenericForeignKey to allow different commenter types
     content_type = models.ForeignKey(
         ContentType,
         on_delete=models.CASCADE,
-        # These can be made non-nullable after data migration
-        # For now, allow null during transition if you have existing data
-        # Or handle with a default in makemigrations if removing 'user' field immediately
-        # For a cleaner transition, typically you'd add these as nullable,
-        # then data migrate, then make non-nullable, then remove old field.
-        # However, to simplify the steps for now, we'll assume you'll handle
-        # the makemigrations prompt or do a multi-step migration.
+
     )
     object_id = models.PositiveIntegerField(
         # Same as above, potentially nullable during transition
@@ -376,13 +365,7 @@ class Comment(models.Model):
     def commenter_display_name(self):
         if not self.commenter:
             return "Unknown User"
-        # Ensure settings.AUTH_USER_MODEL is correctly imported or referenced if needed
-        # For simplicity, assuming direct import of User model if not using settings.AUTH_USER_MODEL extensively
-        # from django.contrib.auth.models import User # Would be needed here if not using settings.AUTH_USER_MODEL
-        
-        # It's safer to check against settings.AUTH_USER_MODEL
-        # However, since InvitedUser is clearly defined, we can check for it directly.
-        # And assume the other type is the Django default User.
+
 
         if isinstance(self.commenter, InvitedUser):
             return self.commenter.name

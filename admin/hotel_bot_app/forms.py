@@ -176,27 +176,41 @@ from django import forms
 from django.core.exceptions import ValidationError
 from .models import Issue, Comment, InvitedUser, RoomData, Inventory
 
-class MultipleFileInput(forms.ClearableFileInput):
-    allow_multiple_selected = True
+from django.forms.widgets import FileInput
+class MultipleFileField(forms.FileField):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("widget", MultipleFileInput())
+        super().__init__(*args, **kwargs)
 
+    def clean(self, data, initial=None):
+        # Handle multiple files from files.getlist
+        if not data and initial:
+            return initial
+        if not data:
+            if self.required:
+                raise ValidationError(self.error_messages['required'], code='required')
+            return []
+        if not isinstance(data, list):
+            data = [data]
+        return data  # Return
+class MultipleFileInput(forms.FileInput):
     def __init__(self, attrs=None):
-        if attrs is not None:
-            attrs = attrs.copy()
-        else:
-            attrs = {}
-        attrs.update({'multiple': 'multiple'})
         super().__init__(attrs)
+        if attrs is None:
+            attrs = {}
+        attrs['multiple'] = True
 
     def value_from_datadict(self, data, files, name):
-        if name in files:
-            return files.getlist(name)
-        return []
+        return files.getlist(name)  # Always return a list
 
+    def value_omitted_from_data(self, data, files, name):
+        return not files.getlist(name)  # True if no files
 class IssueForm(forms.ModelForm):
     initial_comment = forms.CharField(widget=forms.Textarea, required=True)
     images = forms.FileField(
-        widget=MultipleFileInput(attrs={'class': 'form-control', 'accept': 'image/*'}),
-        required=False
+        widget=MultipleFileInput(attrs={'class': 'form-control d-none', 'accept': 'image/*'}),
+        required=False,
+        label="Attach Images (Max 4)"
     )
     video = forms.FileField(
         widget=forms.FileInput(attrs={'class': 'form-control', 'accept': 'video/*'}),
@@ -246,18 +260,30 @@ class IssueForm(forms.ModelForm):
             ('ROOM', 'Room Issue'),
             ('INVENTORY', 'Inventory Issue'),
         ]
+
+        # self.fields['type'] = forms.ChoiceField(
+        #     choices=[
+        #         ('ROOM', 'Room Issue'),
+        #         ('INVENTORY', 'Inventory Issue'),
+        #     ],
+        #     widget=forms.CheckboxSelectMultiple(attrs={'class': 'field-type-radio'}),
+        #     # label="Issue Type"
+        # )
+        # self.fields['type'].widget.attrs.update({'class': 'form-check-input type-field'})
+
         
         # Set default to ROOM if not already set
         if not self.initial.get('type'):
             self.initial['type'] = 'ROOM'
     def clean_images(self):
-        images = self.cleaned_data.get('images', []) 
+        images = self.files.getlist('images')
+        print(f"Images in clean_images: {images}")  # Debug output
         if images:
             if len(images) > 4:
-                raise ValidationError("You can upload up to 4 images.")
-            for img in images:
-                if not img.content_type.startswith('image/'):
-                    raise ValidationError("Only image files are allowed.")
+                raise ValidationError("You can upload a maximum of 4 images.")
+            for image in images:
+                if not image.content_type.startswith('image/'):
+                    raise ValidationError(f"File '{image.name}' is not a valid image.")
         return images
 
     def clean_video(self):
@@ -289,13 +315,18 @@ class IssueForm(forms.ModelForm):
         return cleaned_data
 
 class CommentForm(forms.ModelForm):
-    images = forms.FileField(
-        widget=MultipleFileInput(attrs={'class': 'form-control d-none', 'accept': 'image/*'}),
+    text_content = forms.CharField(
+        widget=forms.Textarea(attrs={'rows': 3, 'placeholder': 'Add your comment...', 'class': 'form-control'}),
+        label='Your Comment',
+        required=False
+    )
+    images = MultipleFileField(
+        widget=MultipleFileInput(attrs={'class': 'form-control', 'accept': 'image/*'}),
         required=False,
         label="Attach Images (Max 4)"
     )
     video = forms.FileField(
-        widget=forms.FileInput(attrs={'class': 'form-control d-none', 'accept': 'video/*'}),
+        widget=forms.FileInput(attrs={'class': 'form-control', 'accept': 'video/*'}),
         required=False,
         label="Attach Video (Max 100MB)"
     )
@@ -303,21 +334,18 @@ class CommentForm(forms.ModelForm):
     class Meta:
         model = Comment
         fields = ['text_content', 'images', 'video']
-        widgets = {
-            'text_content': forms.Textarea(attrs={'rows': 3, 'placeholder': 'Add your comment...', 'class': 'form-control'})
-        }
-        labels = {
-            'text_content': 'Your Comment'
-        }
 
     def clean_images(self):
-        images = self.cleaned_data.get('images', [])  # Default to empty list
-        if images:  # Only validate if files are provided
+        images = self.cleaned_data.get('images', [])
+        print(f"Images in clean_images: {images}")  # Debug
+        if images:
             if len(images) > 4:
                 raise ValidationError("You can upload a maximum of 4 images.")
             for image in images:
                 if not image.content_type.startswith('image/'):
                     raise ValidationError(f"File '{image.name}' is not a valid image.")
+                if image.size > 4 * 1024 * 1024:
+                    raise ValidationError(f"Image '{image.name}' exceeds 4MB limit.")
         return images
 
     def clean_video(self):
@@ -325,20 +353,18 @@ class CommentForm(forms.ModelForm):
         if video:
             if not video.content_type.startswith('video/'):
                 raise ValidationError("The uploaded file is not a valid video.")
-            if video.size > 100 * 1024 * 1024:  # 100MB
+            if video.size > 100 * 1024 * 1024:
                 raise ValidationError("Video file size cannot exceed 100MB.")
         return video
 
     def clean(self):
         cleaned_data = super().clean()
-        text_content = cleaned_data.get("text_content")
-        images = cleaned_data.get("images", [])
-        video = cleaned_data.get("video")
-
+        text_content = cleaned_data.get('text_content')
+        images = cleaned_data.get('images', [])  # Use cleaned_data
+        video = cleaned_data.get('video')
         if not text_content and not images and not video:
             raise ValidationError("A comment must contain text or at least one media file.")
         return cleaned_data
-
 class IssueUpdateForm(forms.ModelForm):
     assignee = forms.ModelChoiceField(
         queryset=InvitedUser.objects.all(),

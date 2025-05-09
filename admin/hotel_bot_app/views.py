@@ -4,6 +4,8 @@ import random
 import string
 from datetime import date, datetime
 from functools import wraps
+from .forms import CommentForm
+import uuid
 from django.db.models.functions import Lower
 from django.urls import reverse
 import bcrypt
@@ -1910,10 +1912,8 @@ def issue_list(request):
     }
     return render(request, 'issues/issue_list.html', context)
 
-from .forms import CommentForm
 
-@login_required # This is the original decorator for issue_detail, should it be @session_login_required?
-                # If this is for InvitedUser, it should be @session_login_required
+@session_login_required # Changed from @login_required
 def issue_detail(request, issue_id):
     issue = get_object_or_404(Issue, id=issue_id)
     comments = issue.comments.all().select_related(
@@ -1967,7 +1967,7 @@ def issue_detail(request, issue_id):
 
 # ... (keep issue_create, invited_user_comment_create, and other non-admin views) ...
 
-@login_required
+@session_login_required # Changed from @login_required
 def issue_create(request):
     user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
     
@@ -2072,6 +2072,17 @@ def invited_user_comment_create(request, issue_id):
     invited_user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
     issue = get_object_or_404(Issue, id=issue_id)
 
+    # Permission check: User must be creator, observer, or assignee to comment
+    can_comment = (
+        issue.created_by == invited_user or
+        invited_user in issue.observers.all() or
+        issue.assignee == invited_user
+    )
+
+    if not can_comment:
+        messages.error(request, "You do not have permission to comment on this issue.")
+        return redirect('issue_detail', issue_id=issue.id)
+
     if request.method == 'POST':
         form = CommentForm(request.POST, request.FILES)
         if form.is_valid():
@@ -2103,11 +2114,7 @@ def invited_user_comment_create(request, issue_id):
             return redirect('issue_detail', issue_id=issue.id) # Redirect to standard issue detail
         else:
             messages.error(request, "There was an error with your comment. Please check the details.")
-            # Re-render the issue_detail page with the form and errors
-            # This requires comments and issue context to be available.
-            # A common pattern is to include the comment form directly in the issue_detail view's logic.
-            # For now, simple redirect, but consider full context re-render.
-            # Fetching context again for re-render:
+
             comments = issue.comments.all().select_related('content_type')
             for c in comments: # Pre-fetch commenter
                 _ = c.commenter
@@ -2115,7 +2122,8 @@ def invited_user_comment_create(request, issue_id):
                 'issue': issue,
                 'comments': comments,
                 'comment_form': form, # Pass the invalid form back
-                'user': request.user # Or invited_user if more appropriate for template
+                'user': request.user, # Or invited_user if more appropriate for template
+                'can_comment': can_comment # Pass the permission status, which must be True to reach here
             })
     else:
         # GET request usually means the form is displayed on the issue_detail page
