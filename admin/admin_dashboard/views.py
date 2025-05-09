@@ -1,9 +1,15 @@
-from django.shortcuts import render,HttpResponseRedirect
-from django.contrib.auth import authenticate,login,logout
+from django.shortcuts import render, HttpResponseRedirect, redirect
+from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import PasswordChangeForm
 from django.contrib import messages
+from functools import wraps
 from .models import *
+from hotel_bot_app.models import *
+from django.db.models import Count, Q # Q object can be useful for complex queries if needed
+from django.db import connection # Added for raw SQL
+
+
 
 # Create your views here.
 @login_required
@@ -55,13 +61,6 @@ def show_login(request):
 		print('error in  show_login',str(e))
 	return HttpResponseRedirect('dashboard')
 
-@login_required
-def dashboard(request):
-	try:
-		return render(request,'dashboard.html')
-	except Exception as e:
-		print("error in dashboard :::::::::::",e)
-
 @login_required	
 def logout_view(request):
 	try:
@@ -69,3 +68,332 @@ def logout_view(request):
 		return HttpResponseRedirect("/admin/login")
 	except Exception as e:
 		print("error in logout :::::::::::",e)
+
+def _dictfetchall(cursor):
+    """Return all rows from a cursor as a list of dictionaries."""
+    columns = [col[0] for col in cursor.description]
+    return [
+        dict(zip(columns, row))
+        for row in cursor.fetchall()
+    ]
+
+def _prepare_floor_progress_data():
+    """
+    Prepares the data for the floor renovation progress table using raw SQL.
+    Also prepares a summary of floor renovation statuses.
+    Returns a tuple: (floor_progress_list, total_project_rooms, total_project_fully_completed_rooms, floor_status_summary)
+    """
+    floor_progress_list = []
+    total_project_rooms_accumulator = 0
+    total_project_fully_completed_rooms_accumulator = 0
+
+    renovated_floor_numbers = []
+    closed_floor_numbers = [] # Floors in progress
+    pending_floor_numbers = []
+
+    sql_query = """
+        SELECT
+            rd.floor AS floor_number,
+            COUNT(rd.id) AS total_rooms_on_floor,
+            COALESCE(SUM(CASE WHEN i.prework_check_on IS NOT NULL THEN 1 ELSE 0 END), 0) AS prework_completed_count,
+            COALESCE(SUM(CASE WHEN i.day_install_complete IS NOT NULL THEN 1 ELSE 0 END), 0) AS install_completed_count,
+            COALESCE(SUM(CASE WHEN i.post_work_check_on IS NOT NULL THEN 1 ELSE 0 END), 0) AS postwork_completed_count,
+            COALESCE(SUM(CASE 
+                WHEN i.prework_check_on IS NOT NULL AND 
+                     i.day_install_complete IS NOT NULL AND 
+                     i.post_work_check_on IS NOT NULL 
+                THEN 1 ELSE 0 
+            END), 0) AS fully_completed_rooms_on_floor
+        FROM
+            room_data rd
+        LEFT JOIN
+            install i ON rd.room = i.room
+        WHERE
+            rd.floor IS NOT NULL
+        GROUP BY
+            rd.floor
+        ORDER BY
+            rd.floor;
+    """
+
+    with connection.cursor() as cursor:
+        cursor.execute(sql_query)
+        results = _dictfetchall(cursor)
+
+    for row in results:
+        current_floor = row['floor_number']
+        total_rooms_on_floor = int(row['total_rooms_on_floor'])
+        prework_completed = int(row['prework_completed_count'])
+        install_completed = int(row['install_completed_count'])
+        postwork_completed = int(row['postwork_completed_count'])
+        fully_completed_on_floor = int(row['fully_completed_rooms_on_floor'])
+
+        total_project_rooms_accumulator += total_rooms_on_floor
+        total_project_fully_completed_rooms_accumulator += fully_completed_on_floor
+
+        percentage_completed_str = "0%"
+        prework_status = "Pending"
+        install_status_str = "Pending"
+        postwork_status = "Pending"
+
+        if total_rooms_on_floor > 0:
+            percentage_completed_val = (fully_completed_on_floor / total_rooms_on_floor * 100)
+            percentage_completed_str = f"{percentage_completed_val:.0f}%"
+
+            prework_status = "Completed" if prework_completed == total_rooms_on_floor else "Pending"
+            
+            if install_completed == total_rooms_on_floor:
+                install_status_str = "Completed"
+            elif install_completed > 0:
+                install_percentage_val = (install_completed / total_rooms_on_floor * 100)
+                install_status_str = f"{install_percentage_val:.0f}%"
+            # else install_status_str remains "Pending"
+
+            postwork_status = "Completed" if postwork_completed == total_rooms_on_floor else "Pending"
+        
+        floor_progress_list.append({
+            'floor_number': current_floor,
+            'percentage_completed': percentage_completed_str,
+            'prework_status': prework_status,
+            'install_status': install_status_str,
+            'postwork_status': postwork_status,
+        })
+
+        # --- Categorize floors for summary --- 
+        if total_rooms_on_floor > 0: # Ensure floor has rooms to be considered
+            if fully_completed_on_floor == total_rooms_on_floor:
+                renovated_floor_numbers.append(current_floor)
+            elif install_completed > 0: # Some installation started, but not all rooms fully completed
+                closed_floor_numbers.append(current_floor)
+            else: # No installation started
+                pending_floor_numbers.append(current_floor)
+        else: # Floors with no rooms in room_data but potentially in schedule (not covered by this SQL)
+            pending_floor_numbers.append(current_floor) # Or handle as per broader project definition if available
+    
+    floor_status_summary = {
+        'renovated': {
+            'count': len(renovated_floor_numbers),
+            'numbers': sorted(list(set(renovated_floor_numbers))) # Ensure unique and sorted
+        },
+        'closed': {
+            'count': len(closed_floor_numbers),
+            'numbers': sorted(list(set(closed_floor_numbers)))
+        },
+        'pending': {
+            'count': len(pending_floor_numbers),
+            'numbers': sorted(list(set(pending_floor_numbers)))
+        }
+    }
+    
+    return floor_progress_list, total_project_rooms_accumulator, total_project_fully_completed_rooms_accumulator, floor_status_summary
+
+def _prepare_pie_chart_data(total_project_rooms, total_project_fully_completed_rooms):
+	"""
+	Prepares the data for the overall project completion pie chart.
+	"""
+	overall_completion_percentage = (total_project_fully_completed_rooms / total_project_rooms * 100) if total_project_rooms > 0 else 0
+	pending_completion_percentage = 100 - overall_completion_percentage
+
+	return {
+		'completed': round(overall_completion_percentage, 1),
+		'pending': round(pending_completion_percentage, 1),
+	}
+
+EXPECTED_ROOM_TIMES = {
+    'pre_work': 7,
+    'install': 7,
+    'post_work': 4,
+    'total': 18
+}
+
+EXPECTED_FLOOR_TIMES = {
+    'pre_work': 14,
+    'install': 14,
+    'post_work': 7,
+    'total': 35
+}
+
+def _prepare_efficiency_data():
+    """
+    Calculates average phase completion times for rooms and floors using raw SQL.
+    Returns a dictionary with average times and expected times for both.
+    """
+    # Initialize results
+    avg_room_times = {'pre_work': 0, 'install': 0, 'post_work': 0, 'total': 0}
+    avg_floor_times = {'pre_work': 0, 'install': 0, 'post_work': 0, 'total': 0}
+
+    # 1. Calculate Room-Level Average Durations
+    room_sql_query = """
+        SELECT
+            AVG(CASE
+                WHEN i.prework_check_on IS NOT NULL AND i.day_install_began IS NOT NULL AND i.prework_check_on >= i.day_install_began
+                THEN EXTRACT(EPOCH FROM (i.prework_check_on - i.day_install_began)) / 86400.0
+                ELSE NULL
+            END) AS avg_room_pre_work_duration,
+            AVG(CASE
+                WHEN i.day_install_complete IS NOT NULL AND i.prework_check_on IS NOT NULL AND i.day_install_complete >= i.prework_check_on
+                THEN EXTRACT(EPOCH FROM (i.day_install_complete - i.prework_check_on)) / 86400.0
+                ELSE NULL
+            END) AS avg_room_install_duration,
+            AVG(CASE
+                WHEN i.post_work_check_on IS NOT NULL AND i.day_install_complete IS NOT NULL AND i.post_work_check_on >= i.day_install_complete
+                THEN EXTRACT(EPOCH FROM (i.post_work_check_on - i.day_install_complete)) / 86400.0
+                ELSE NULL
+            END) AS avg_room_post_work_duration
+        FROM
+            install i;
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(room_sql_query)
+        result = cursor.fetchone()
+        if result:
+            avg_room_times['pre_work'] = round(result[0], 0) if result[0] is not None else 0
+            avg_room_times['install'] = round(result[1], 0) if result[1] is not None else 0
+            avg_room_times['post_work'] = round(result[2], 0) if result[2] is not None else 0
+            avg_room_times['total'] = sum(filter(None, [avg_room_times['pre_work'], avg_room_times['install'], avg_room_times['post_work']]))
+            avg_room_times['total'] = round(avg_room_times['total'],0)
+
+    # 2. Calculate Floor-Level Average Durations
+    floor_sql_query = """
+        WITH FloorPhaseActuals AS (
+            SELECT
+                rd.floor,
+                MIN(i.day_install_began) as actual_floor_pre_work_start,
+                MAX(i.prework_check_on) as actual_floor_pre_work_end,
+                MAX(i.day_install_complete) as actual_floor_install_end,
+                MAX(i.post_work_check_on) as actual_floor_post_work_end
+            FROM
+                install i
+            JOIN
+                room_data rd ON i.room = rd.room
+            WHERE 
+                rd.floor IS NOT NULL
+            GROUP BY
+                rd.floor
+        ),
+        FloorPhaseDurations AS (
+            SELECT
+                floor,
+                CASE 
+                    WHEN actual_floor_pre_work_end IS NOT NULL AND actual_floor_pre_work_start IS NOT NULL AND actual_floor_pre_work_end >= actual_floor_pre_work_start
+                    THEN EXTRACT(EPOCH FROM (actual_floor_pre_work_end - actual_floor_pre_work_start)) / 86400.0
+                    ELSE NULL 
+                END AS floor_pre_work_duration,
+                CASE
+                    WHEN actual_floor_install_end IS NOT NULL AND actual_floor_pre_work_end IS NOT NULL AND actual_floor_install_end >= actual_floor_pre_work_end
+                    THEN EXTRACT(EPOCH FROM (actual_floor_install_end - actual_floor_pre_work_end)) / 86400.0
+                    ELSE NULL
+                END AS floor_install_duration,
+                CASE
+                    WHEN actual_floor_post_work_end IS NOT NULL AND actual_floor_install_end IS NOT NULL AND actual_floor_post_work_end >= actual_floor_install_end
+                    THEN EXTRACT(EPOCH FROM (actual_floor_post_work_end - actual_floor_install_end)) / 86400.0
+                    ELSE NULL
+                END AS floor_post_work_duration
+            FROM
+                FloorPhaseActuals
+        )
+        SELECT
+            AVG(floor_pre_work_duration) AS avg_floor_pre_work_days,
+            AVG(floor_install_duration) AS avg_floor_install_days,
+            AVG(floor_post_work_duration) AS avg_floor_post_work_days
+        FROM
+            FloorPhaseDurations;
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(floor_sql_query)
+        result = cursor.fetchone()
+        if result:
+            avg_floor_times['pre_work'] = round(result[0], 0) if result[0] is not None else 0
+            avg_floor_times['install'] = round(result[1], 0) if result[1] is not None else 0
+            avg_floor_times['post_work'] = round(result[2], 0) if result[2] is not None else 0
+            avg_floor_times['total'] = sum(filter(None, [avg_floor_times['pre_work'], avg_floor_times['install'], avg_floor_times['post_work']]))
+            avg_floor_times['total'] = round(avg_floor_times['total'],0)
+
+    return {
+        'room_efficiency': {
+            'average_time': avg_room_times,
+            'expected_time': EXPECTED_ROOM_TIMES
+        },
+        'floor_efficiency': {
+            'average_time': avg_floor_times,
+            'expected_time': EXPECTED_FLOOR_TIMES
+        }
+    }
+
+def _prepare_overall_project_time_data():
+    """
+    Calculates overall average room completion times for the project.
+    Returns a dictionary formatted for the 'Overall Project Time' display.
+    """
+    data = {}
+    avg_times = {'pre_work': 0, 'install': 0, 'post_work': 0, 'total': 0}
+
+    # Reusing the same SQL logic for average room times
+    room_sql_query = """
+        SELECT
+            AVG(CASE
+                WHEN i.prework_check_on IS NOT NULL AND i.day_install_began IS NOT NULL AND i.prework_check_on >= i.day_install_began
+                THEN EXTRACT(EPOCH FROM (i.prework_check_on - i.day_install_began)) / 86400.0
+                ELSE NULL
+            END) AS avg_room_pre_work_duration,
+            AVG(CASE
+                WHEN i.day_install_complete IS NOT NULL AND i.prework_check_on IS NOT NULL AND i.day_install_complete >= i.prework_check_on
+                THEN EXTRACT(EPOCH FROM (i.day_install_complete - i.prework_check_on)) / 86400.0
+                ELSE NULL
+            END) AS avg_room_install_duration,
+            AVG(CASE
+                WHEN i.post_work_check_on IS NOT NULL AND i.day_install_complete IS NOT NULL AND i.post_work_check_on >= i.day_install_complete
+                THEN EXTRACT(EPOCH FROM (i.post_work_check_on - i.day_install_complete)) / 86400.0
+                ELSE NULL
+            END) AS avg_room_post_work_duration
+        FROM
+            install i;
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(room_sql_query)
+        result = cursor.fetchone()
+        if result:
+            avg_times['pre_work'] = round(result[0], 0) if result[0] is not None else 0
+            avg_times['install'] = round(result[1], 0) if result[1] is not None else 0
+            avg_times['post_work'] = round(result[2], 0) if result[2] is not None else 0
+            avg_times['total'] = sum(filter(None, [avg_times['pre_work'], avg_times['install'], avg_times['post_work']]))
+            avg_times['total'] = round(avg_times['total'],0)
+
+    phases = ['pre_work', 'install', 'post_work', 'total']
+    for phase in phases:
+        avg = avg_times[phase]
+        expected = EXPECTED_ROOM_TIMES[phase]
+        data[phase] = {
+            'avg': avg,
+            'expected': expected,
+            'is_delayed': avg > expected
+        }
+    return data
+
+@login_required
+def dashboard(request):
+	try:
+		floor_progress_list, total_rooms, completed_rooms, floor_summary = _prepare_floor_progress_data()
+		pie_chart_data = _prepare_pie_chart_data(total_rooms, completed_rooms)
+		efficiency_data = _prepare_efficiency_data()
+		overall_project_time_data = _prepare_overall_project_time_data()
+		
+		# print("pie_chart_data :::: ",pie_chart_data)
+		# print("Floor Summary::::", floor_summary)
+		# print("Efficiency Data::::", efficiency_data)
+		# print("Overall Project Time Data::::", overall_project_time_data)
+		context = {
+			'floor_progress_data': floor_progress_list,
+			'pie_chart_data': pie_chart_data,
+			'floor_status_summary': floor_summary,
+			'efficiency_data': efficiency_data,
+			'overall_project_time': overall_project_time_data,
+			'page_name': 'Dashboard'
+		}
+
+		return render(
+			request, "dashboard.html", context
+		)
+	except Exception as e:
+		print(f"Error in dashboard view: {e}") 
+		return redirect("admin/login")
