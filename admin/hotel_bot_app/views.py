@@ -5,12 +5,12 @@ import string
 from datetime import date, datetime
 from functools import wraps
 from django.db.models.functions import Lower
-
+from django.urls import reverse
 import bcrypt
 import environ
 import requests
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, user_passes_test
 from django.core.mail import send_mail
 from django.http import JsonResponse, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -32,11 +32,19 @@ from openai import OpenAI
 from html import escape
 import xlwt
 
+from django.db.models import Q
+from django.contrib.auth import get_user_model # Use this if settings.AUTH_USER_MODEL is Django's default
+from django.contrib.auth.decorators import login_required, user_passes_test # For permission checking
+from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger # Import Paginator
 
 from .models import *
 from .models import ChatSession
 from django.utils.timezone import localtime
 from django.db import connection
+from .forms import IssueForm, CommentForm, IssueUpdateForm # Import the forms
+import logging
+
+logger = logging.getLogger(__name__)
 
 env = environ.Env()
 environ.Env.read_env()
@@ -46,6 +54,7 @@ open_ai_key = env("open_ai_api_key")
 
 client = OpenAI(api_key=open_ai_key)
 
+User = InvitedUser # Or User = get_user_model()
 
 def session_login_required(view_func):
     @wraps(view_func)
@@ -438,8 +447,8 @@ def user_login(request):
 
 @login_required
 def room_data_list(request):
-    # Fetch room data from the database
-    rooms = RoomData.objects.all()
+    # Fetch room data from the database, including related RoomModel
+    rooms = RoomData.objects.select_related('room_model_id').all()
 
     # Pass the room data to the template
     return render(request, "room_data_list.html", {"rooms": rooms})
@@ -564,8 +573,13 @@ def room_model_list(request):
 
 @login_required
 def install_list(request):
-    # Get all installation records
-    install = Installation.objects.all()
+    # Get all installation records, including related user data
+    install = Installation.objects.select_related(
+        'prework_checked_by',
+        'post_work_checked_by',
+        'product_arrived_at_floor_checked_by',
+        'retouching_checked_by'
+    ).all()
     
     # Convert the dates to a proper format for use in the template
     for installation in install:
@@ -1872,3 +1886,293 @@ def room_number_products_list(request):
         'error_message': error_message,
     }
     return render(request, 'room_products_list.html', context)
+
+# --- Issue Tracking Views --- 
+from django.contrib.auth.models import User
+
+@session_login_required
+def issue_list(request):
+    user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
+    print(f"DEBUG: Querying for user: ID={user.id}, Type={type(user)}, Name={user.name}")
+    user_roles = user.role
+    queryset = Issue.objects.filter(created_by=user).distinct()
+    queryset = queryset.order_by('-created_at').select_related('created_by', 'assignee')
+    context = {
+        'issues': queryset,
+        'user_roles': user_roles
+    }
+    return render(request, 'issues/issue_list.html', context)
+
+from .forms import CommentForm
+
+@session_login_required
+def issue_detail(request, issue_id):
+    issue = get_object_or_404(Issue.objects.select_related('created_by', 'assignee').prefetch_related('observers', 'comments__user'), id=issue_id)
+    print("\n\n\n\n",request.session.get("user_id"))
+    user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
+    user_roles = getattr(user, 'role', [])
+
+    can_view = False
+    if 'admin' in user_roles or ('hotel_admin' in user_roles and issue.is_for_hotel_admin) or \
+       user == issue.created_by or user == issue.assignee or user in issue.observers.all():
+        can_view = True
+        
+    if not can_view:
+        messages.error(request, "You do not have permission to view this issue.")
+        return redirect('issue_list')
+
+    can_comment = False
+    if 'admin' in user_roles or ('hotel_admin' in user_roles and issue.is_for_hotel_admin) or \
+       user == issue.created_by or user == issue.assignee or user in issue.observers.all():
+        can_comment = True
+
+    if request.method == 'POST':
+        if not can_comment:
+            messages.error(request, "You do not have permission to comment on this issue.")
+            # Redirect or render with error, avoid processing form
+            return redirect('issue_detail', issue_id=issue.id)
+            
+        comment_form = CommentForm(request.POST, request.FILES) 
+        if comment_form.is_valid():
+            new_comment = comment_form.save(commit=False)
+            new_comment.issue = issue
+            new_comment.user = user
+            
+            media_data_for_json = []
+            
+            # Process uploaded images from cleaned_data
+            uploaded_images = comment_form.cleaned_data.get('images', [])
+            for image_file in uploaded_images:
+                # Ensure a unique filename to prevent overwrites
+                unique_filename = f"issues/comments/images/{issue.id}/{uuid.uuid4()}_{image_file.name}"
+                file_path = default_storage.save(unique_filename, image_file)
+                file_url = default_storage.url(file_path)
+                media_data_for_json.append({
+                    'type': 'image',
+                    'url': file_url,
+                    'name': image_file.name,
+                    'size': image_file.size
+                })
+
+            # Process uploaded video from cleaned_data
+            uploaded_video = comment_form.cleaned_data.get('video', None)
+            if uploaded_video:
+                unique_filename = f"issues/comments/videos/{issue.id}/{uuid.uuid4()}_{uploaded_video.name}"
+                file_path = default_storage.save(unique_filename, uploaded_video)
+                file_url = default_storage.url(file_path)
+                media_data_for_json.append({
+                    'type': 'video',
+                    'url': file_url,
+                    'name': uploaded_video.name,
+                    'size': uploaded_video.size
+                })
+            
+            new_comment.media = media_data_for_json # Store the list of dicts
+            new_comment.save()
+            messages.success(request, "Comment added successfully.")
+            return redirect('issue_detail', issue_id=issue.id)
+        else:
+            messages.error(request, "Please correct the errors in your comment.")
+    else:
+        comment_form = CommentForm()
+
+    comments = issue.comments.all().order_by('created_at')
+
+    context = {
+        'issue': issue,
+        'comments': comments,
+        'comment_form': comment_form,
+        'can_comment': can_comment,
+        'user_roles': user_roles
+    }
+    return render(request, 'issues/issue_detail.html', context)
+
+from django.core.files.storage import default_storage
+import uuid
+import os
+
+@session_login_required
+def issue_create(request):
+    user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
+
+    if request.method == 'POST':
+        logger.debug(f"Request FILES: {request.FILES}")
+        form = IssueForm(request.POST, request.FILES)
+        if form.is_valid():
+            issue = form.save(commit=False)
+            issue.created_by = user
+            issue.save()
+            issue.observers.add(user)
+
+            logger.info(f"Issue created by {user.name} with ID {issue.id}")
+            logger.info(f"Issue observers: {issue.observers.all()}")
+
+            # Process and save media files
+            media_urls = []
+            images = form.cleaned_data.get('images', [])
+            video = form.cleaned_data.get('video')
+
+            # Save images
+            for image in images:
+                file_name = default_storage.save(f"issues/images/{uuid.uuid4()}_{image.name}", image)
+                file_url = default_storage.url(file_name)
+                media_urls.append({'type': 'image', 'url': file_url, 'size': image.size, 'name': image.name})
+
+            # Save video
+            if video:
+                file_name = default_storage.save(f"issues/videos/{uuid.uuid4()}_{video.name}", video)
+                file_url = default_storage.url(file_name)
+                media_urls.append({'type': 'video', 'url': file_url, 'size': video.size, 'name':video.name})
+
+            # Save initial comment with media info
+            Comment.objects.create(
+                issue=issue,
+                user=user,
+                text_content=form.cleaned_data['initial_comment'],
+                media=media_urls
+            )
+
+            success_message = f"Issue #{issue.id} created successfully."
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({
+                    'success': True,
+                    'message': success_message,
+                    'redirect_url': reverse('issue_detail', kwargs={'issue_id': issue.id})
+                })
+            else:
+                messages.success(request, success_message)
+                return redirect('issue_detail', issue_id=issue.id)
+        else:
+            logger.error(f"Form errors: {form.errors.as_json()}")
+            error_message = "Please correct the errors below."
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({
+                    'success': False,
+                    'message': error_message,
+                    'errors': json.loads(form.errors.as_json())  # Parse JSON string to dict
+                }, status=400)
+            else:
+                messages.error(request, error_message)
+    else:
+        form = IssueForm()
+
+    return render(request, 'issues/issue_form.html', {'form': form})
+# --- Admin-specific Issue Views --- 
+
+def is_admin(user):
+
+    try:
+        return 'admin' in user.role
+    except Exception as e:
+        return 'admin'
+        
+    #     user_data = User.objects.get(email=user.email)
+            
+# @user_passes_test(is_admin, login_url='/user_login/')
+@session_login_required
+def admin_issue_list(request):
+    if request.user.is_authenticated:
+        if request.user.is_superuser:
+            logger.info("\n\n\n\nAdmin Issue List")
+            issue_list_all = Issue.objects.all().order_by('-created_at').select_related('created_by', 'assignee')
+            paginator = Paginator(issue_list_all, 25)
+            page_number = request.GET.get('page')
+            try:
+                issues_page = paginator.page(page_number)
+            except PageNotAnInteger:
+                issues_page = paginator.page(1)
+            except EmptyPage:
+                issues_page = paginator.page(paginator.num_pages)
+            context = {
+                'issues_page': issues_page,
+            }
+            return render(request, 'issues/admin_issue_list.html', context)
+
+
+@user_passes_test(is_admin, login_url='/user_login/')
+@session_login_required
+def admin_issue_edit(request, issue_id):
+    issue = get_object_or_404(Issue, pk=issue_id)
+    user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
+    if request.method == 'POST':
+        form = IssueUpdateForm(request.POST, instance=issue)
+        if form.is_valid():
+            updated_observers = form.cleaned_data.get('observers')
+            if issue.created_by not in updated_observers:
+                updated_observers |= InvitedUser.objects.filter(pk=issue.created_by.pk)
+                form.instance.observers.set(updated_observers)
+            form.save()
+            messages.success(request, f"Issue #{issue.id} updated successfully.")
+            return redirect('admin_issue_list')
+        else:
+            messages.error(request, "Please correct the errors below.")
+    else:
+        form = IssueUpdateForm(instance=issue)
+    context = {
+        'form': form,
+        'issue': issue
+    }
+    return render(request, 'issues/admin_issue_form.html', context)
+
+
+
+@session_login_required
+def comment_create(request, issue_id):
+    user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
+    issue = get_object_or_404(Issue, id=issue_id)
+
+    if request.method == 'POST':
+        logger.debug(f"Request FILES: {request.FILES}")
+        form = CommentForm(request.POST, request.FILES)
+        if form.is_valid():
+            comment = form.save(commit=False)
+            comment.user = user
+            comment.issue = issue
+            comment.save()
+
+            # Process and save media files
+            media_urls = []
+            images = form.cleaned_data.get('images', [])
+            video = form.cleaned_data.get('video')
+
+            # Save images
+            for image in images:
+                file_name = default_storage.save(f"comments/images/{uuid.uuid4()}_{image.name}", image)
+                file_url = default_storage.url(file_name)
+                media_urls.append({'type': 'image', 'url': file_url, 'size': image.size, 'name': image.name})
+
+            # Save video
+            if video:
+                file_name = default_storage.save(f"comments/videos/{uuid.uuid4()}_{video.name}", video)
+                file_url = default_storage.url(file_name)
+                media_urls.append({'type': 'video', 'url': file_url, 'size': video.size, 'name': video.name})
+
+            # Update comment with media URLs
+            comment.media = media_urls
+            comment.save()
+
+            success_message = "Comment added successfully."
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({
+                    'success': True,
+                    'message': success_message,
+                    'redirect_url': reverse('issue_detail', kwargs={'issue_id': issue.id})
+                })
+            else:
+                messages.success(request, success_message)
+                return redirect('issue_detail', issue_id=issue.id)
+        else:
+            logger.error(f"Form errors: {form.errors.as_json()}")
+            error_message = "Please correct the errors below."
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({
+                    'success': False,
+                    'message': error_message,
+                    'errors': json.loads(form.errors.as_json())
+                }, status=400)
+            else:
+                messages.error(request, error_message)
+    else:
+        form = CommentForm()
+
+    return render(request, 'issues/comment_form.html', {'form': form, 'issue': issue})

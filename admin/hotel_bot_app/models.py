@@ -1,5 +1,7 @@
 from django.db import models
 from django.contrib.postgres.fields import ArrayField
+from django.conf import settings
+from django.utils.translation import gettext_lazy as _
 
 class InvitedUser(models.Model):
     id = models.AutoField(primary_key=True)
@@ -270,3 +272,100 @@ class InventoryReceived(models.Model):
 
     class Meta:
         db_table = "inventory_received"
+
+class IssueStatus(models.TextChoices):
+    OPEN = 'OPEN', _('Open')
+    CLOSE = 'CLOSE', _('Close')
+    PENDING = 'PENDING', _('Pending')
+    WORKING = 'WORKING', _('Working')
+
+class IssueType(models.TextChoices):
+    ROOM = 'ROOM', _('Room')
+    FLOOR = 'FLOOR', _('Floor')
+    INVENTORY = 'INVENTORY', _('Inventory') # Added INVENTORY based on description
+
+class Issue(models.Model):
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        'InvitedUser',
+        on_delete=models.PROTECT,
+        related_name='created_issues'
+    )
+    status = models.CharField(
+        max_length=10,
+        choices=IssueStatus.choices,
+        default=IssueStatus.OPEN
+    )
+    type = models.CharField(
+        max_length=10,
+        choices=IssueType.choices
+        # Default type might be better set in the view based on context
+    )
+    is_for_hotel_admin = models.BooleanField(default=False)
+    assignee = models.ForeignKey(
+        'InvitedUser',
+        on_delete=models.SET_NULL,
+        related_name='assigned_issues',
+        blank=True,
+        null=True
+    )
+    observers = models.ManyToManyField(
+        'InvitedUser',
+        related_name='observed_issues',
+        blank=True
+    )
+
+    def __str__(self):
+        return f"{self.id}: {self.title} ({self.status})"
+
+class Comment(models.Model):
+    issue = models.ForeignKey(
+        Issue,
+        on_delete=models.CASCADE, # Delete comments if the issue is deleted
+        related_name='comments'
+    )
+    user = models.ForeignKey(
+        'InvitedUser',
+        on_delete=models.PROTECT,
+        related_name='issue_comments'
+    )
+    text_content = models.TextField(blank=True, null=True)
+    # Using JSONField for flexibility. Requires PostgreSQL or Django >= 3.1 with other DBs
+    # Consider alternatives like a separate Media model if JSONField is not suitable
+    media = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Comment by {self.user} on Issue {self.issue.id} at {self.created_at}"
+
+# Potential next steps:
+# - Add validation for media field (max images, video size) - likely in forms/serializers
+# - Create a signal to automatically add creator to observers on Issue save
+
+"""
+from hotel_bot_app.models import Issue, IssueStatus, IssueType, InvitedUser
+from django.utils import timezone
+inv = InvitedUser.objects.filter(id=7).first()
+issue2 = Issue.objects.create(
+
+    title="Broken Tile on 3rd Floor Hallway",
+
+    description="A tile in the hallway on the 3rd floor is cracked and loose. Potential tripping hazard.",
+
+    created_by=inv,
+
+    status=IssueStatus.WORKING,
+
+    type=IssueType.FLOOR,
+
+    assignee=None,
+
+    is_for_hotel_admin=True,
+
+    created_at=timezone.now() - timezone.timedelta(days=1) # Example of setting a past creation date
+
+)
+"""

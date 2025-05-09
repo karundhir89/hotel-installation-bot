@@ -1,0 +1,149 @@
+{% extends 'frontend_base.html' %}
+{% load static %}
+{% load crispy_forms_tags %}
+
+{% block title %}Report a New Issue{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <h2 class="mb-4 text-center">Report a New Issue</h2>
+
+    <!-- Message container for dynamic alerts -->
+    <div id="message-container">
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    </div>
+
+    <div class="card shadow-sm p-4">
+        <form id="issue-form" method="post" enctype="multipart/form-data" novalidate>
+            {% csrf_token %}
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    {{ form.title|as_crispy_field }}
+                </div>
+                <div class="col-md-6 mb-3">
+                    {{ form.type|as_crispy_field }}
+                </div>
+            </div>
+
+            <div class="mb-3">
+                {{ form.description|as_crispy_field }}
+            </div>
+
+            <div class="mb-3">
+                {{ form.initial_comment|as_crispy_field }}
+            </div>
+
+            <div class="mb-3">
+                {{ form.images|as_crispy_field }}
+                <div class="form-text">You can upload up to 4 images. Accepted formats: JPG, PNG, etc.</div>
+            </div>
+
+            <div class="mb-3">
+                {{ form.video|as_crispy_field }}
+                <div class="form-text">Optional video upload. Max size: 100MB. Accepted formats: MP4, AVI, etc.</div>
+            </div>
+
+            <div class="d-flex justify-content-end mt-4">
+                <a href="{% url 'issue_list' %}" class="btn btn-outline-secondary me-2">Cancel</a>
+                <button type="submit" class="btn btn-primary" id="submit-btn">Submit Issue</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<!-- JavaScript for AJAX form submission -->
+<script>
+document.getElementById('issue-form').addEventListener('submit', async function (event) {
+    event.preventDefault(); // Prevent default form submission
+
+    const form = this;
+    const submitBtn = document.getElementById('submit-btn');
+    const messageContainer = document.getElementById('message-container');
+
+    // Disable submit button and show loading spinner
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Submitting...';
+
+    // Clear previous messages and errors
+    messageContainer.innerHTML = '';
+    form.querySelectorAll('.invalid-feedback').forEach(el => el.remove());
+    form.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+
+    // Prepare form data
+    const formData = new FormData(form);
+
+    try {
+        const response = await fetch(form.action || window.location.href, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+
+        const data = await response.json();
+
+        // Create Bootstrap alert
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `alert alert-${data.success ? 'success' : 'danger'} alert-dismissible fade show`;
+        alertDiv.role = 'alert';
+        alertDiv.innerHTML = `
+            ${data.message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        messageContainer.appendChild(alertDiv);
+
+        if (data.success) {
+            // Reset form and redirect after showing message
+            form.reset();
+            setTimeout(() => {
+                window.location.href = data.redirect_url;
+            }, 2000);
+        } else {
+            // Display form errors
+            if (data.errors) {
+                Object.keys(data.errors).forEach(field => {
+                    const fieldElement = form.querySelector(`[name="${field}"]`);
+                    if (fieldElement) {
+                        const errorMessages = data.errors[field].map(err => err.message).join(', ');
+                        const errorDiv = document.createElement('div');
+                        errorDiv.className = 'invalid-feedback';
+                        errorDiv.style.display = 'block';
+                        errorDiv.textContent = errorMessages;
+                        fieldElement.classList.add('is-invalid');
+                        fieldElement.parentNode.appendChild(errorDiv);
+                    }
+                });
+            }
+            // Re-enable submit button
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = 'Submit Issue';
+        }
+    } catch (error) {
+        // Handle network or other errors
+        const alertDiv = document.createElement('div');
+        alertDiv.className = 'alert alert-danger alert-dismissible fade show';
+        alertDiv.role = 'alert';
+        alertDiv.innerHTML = `
+            An error occurred while submitting the form. Please try again.
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        messageContainer.appendChild(alertDiv);
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = 'Submit Issue';
+    }
+});
+</script>
+
+{% endblock %}

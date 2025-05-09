@@ -1,0 +1,50 @@
+{% extends 'frontend_base.html' %} {# Adjust this to your actual base template #}
+{% load static %}
+
+{% block title %}My Reported Issues{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>My Reported Issues</h2>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="mb-3">
+        <a href="{% url 'issue_create' %}" class="btn btn-primary">Create New Issue</a>
+    </div>
+
+    {% if issues %}
+        <div class="list-group">
+            {% if issues.count > 0 %}
+            {% for issue in issues %}
+                <a href="{% url 'issue_detail' issue.id %}" class="list-group-item list-group-item-action flex-column align-items-start">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h5 class="mb-1">{{ issue.title }} ({{issue.id}})</h5>
+                        <small class="text-muted">{{ issue.created_at|date:"Y-m-d H:i" }}</small>
+                    </div>
+                    <p class="mb-1">
+                        Status: <span class="badge bg-{% if issue.status == 'OPEN' %}primary{% elif issue.status == 'WORKING' %}warning{% elif issue.status == 'PENDING' %}info{% elif issue.status == 'CLOSE' %}success{% else %}secondary{% endif %}">{{ issue.get_status_display }}</span>
+                        Type: <span class="badge bg-secondary">{{ issue.get_type_display }}</span>
+                    </p>
+                    <small class="text-muted">Created by: {{ issue.created_by.name }}</small>
+                    {% if issue.assignee %}
+                        <br><small class="text-muted">Assigned to: {{ issue.assignee.name }}</small>name
+                    {% endif %}
+                </a>
+            {% endfor %}
+            {% else %}
+                <p>You have not reported or been assigned to any issues yet.</p>
+            {% endif %}
+        </div>
+    {% else %}
+        <p>You have not reported or been assigned to any issues yet.</p>
+    {% endif %}
+</div>
+{% endblock %} 
