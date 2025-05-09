@@ -17,6 +17,16 @@
       width: 22px;
       height: 22px;
     }
+
+    #search_room {
+  height: 40px; /* Adjust the height as needed */
+  font-size: 16px; /* Optional: to match other elements */
+  padding: 5px 15px; /* Optional: control inner spacing */
+}
+
+}
+.card{
+  font-size: 16px; /* adjust as needed */
 }
 
 
@@ -32,9 +42,9 @@
                 <!-- Room Info -->
                 <div class="row mb-4">
                     <div class="col-md-6">
-                        <label for="room_number" class="form-label">Room #</label>
+                        <label for="room_number" class="form-label" style="font-size: 16px;">Room #</label>
                         <div class="input-group">
-                            <input type="text" class="form-control" name="room_number" id="room_number" required>
+                            <input type="text" class="form-control" name="room_number" id="room_number" style="font-size: 16px;" required>
                             <button type="button" class="btn btn-secondary" id="search_room">
                                 <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true" id="search_spinner"></span>
                                 <span id="search_text">Search</span>
@@ -43,7 +53,7 @@
                     </div>
                     <div class="col-md-6">
                         <label for="room_type" class="form-label">Room Type</label>
-                        <input type="text" class="form-control" name="room_type" id="room_type" readonly required>
+                        <input type="text" style="font-size: 16px;" class="form-control" name="room_type" id="room_type" readonly required>
                     </div>
                 </div>
 
@@ -136,17 +146,17 @@
             <div class="col-md-5 mt-3">
               <div class="form-check mb-2">
                 <input type="hidden" name="step_${item.type}_${item.id}" value="off">
-                <input class="form-check-input" type="checkbox" name="step_${item.type}_${item.id}" id="step_${item.type}_${item.id}" value="on" ${isChecked ? 'checked' : ''}>
+                <input class="form-check-input"  type="checkbox" name="step_${item.type}_${item.id}" id="step_${item.type}_${item.id}" value="on" ${isChecked ? 'checked' : ''}>
                 <label class="form-check-label" for="step_${item.type}_${item.id}">
                   ${item.label} 
                 </label>
               </div>
             </div>
             <div class="col-md-3 mt-2 mb-2">
-              <input type="date" class="form-control" name="date_${item.type}_${item.id}" value="${installedOn}">
+              <input type="date" style="font-size:16px" class="form-control" name="date_${item.type}_${item.id}" value="${installedOn}">
             </div>
             <div class="col-md-4 mt-2 mb-2">
-              <input type="text" class="form-control" name="checked_by_${item.type}_${item.id}" value="${installedBy}" placeholder="Checked by">
+              <input type="text" style="font-size:16px"  class="form-control" name="checked_by_${item.type}_${item.id}" value="${installedBy}" placeholder="Checked by">
             </div>
           </div>
         `;
