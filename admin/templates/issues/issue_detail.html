@@ -83,7 +83,7 @@
                     {% endif %}
                 </div>
                 <div class="card-footer text-muted small">
-                    By {{ comment.user.name }} on {{ comment.created_at|date:"Y-m-d H:i" }}
+                    By {{ comment.commenter.name }} on {{ comment.created_at|date:"Y-m-d H:i" }}
                 </div>
             </div>
         {% empty %}

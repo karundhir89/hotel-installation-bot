@@ -144,7 +144,8 @@ def admin_issue_detail(request, issue_id):
 		'issue': issue,
 		'comments': comments,
 		'comment_form': comment_form,
-		'user': request.user 
+		'user': request.user,
+		'can_comment': True  # Admins can always comment on this page
 	}
 	return render(request, 'admin_dashboard/issues/admin_issue_detail.html', context)
 
