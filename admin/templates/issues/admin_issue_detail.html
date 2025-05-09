@@ -75,7 +75,7 @@
 
     {% if can_comment %} {# Assuming 'can_comment' will be passed from the new admin_issue_detail view #}
     <h5>Add Comment</h5>
-    <form method="post" enctype="multipart/form-data" class="comment-form position-relative" action="{% url 'comment_create' issue.id %}"> {# Ensure form action points to a valid comment creation URL #}
+    <form method="post" enctype="multipart/form-data" class="comment-form position-relative" action="{% url 'admin_comment_create' issue.id %}"> {# Ensure form action points to a valid comment creation URL #}
         {% csrf_token %}
         
         <div class="mb-3 position-relative">

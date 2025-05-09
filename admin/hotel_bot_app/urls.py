@@ -59,4 +59,8 @@ urlpatterns = [
     path('admin_issue_list/', admin_issue_list, name='admin_issue_list'),
     path('admin_issue_edit/<int:issue_id>/', admin_issue_edit, name='admin_issue_edit'),
     path('admin_issue_detail/<int:issue_id>/', admin_issue_detail, name='admin_issue_detail'),
+
+    # URLs for the new separate comment creation views
+    path('issues/<int:issue_id>/comment/invited/', invited_user_comment_create, name='invited_user_comment_create'),
+    path('admin/issues/<int:issue_id>/comment/admin/', admin_comment_create, name='admin_comment_create'),
 ]

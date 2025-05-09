@@ -75,7 +75,7 @@
 
     {% if can_comment %}
     <h5>Add Comment</h5>
-    <form method="post" enctype="multipart/form-data" class="comment-form position-relative">
+    <form method="post" enctype="multipart/form-data" class="comment-form position-relative" action="{% url 'invited_user_comment_create' issue.id %}">
         {% csrf_token %}
         
         <div class="mb-3 position-relative">
@@ -117,25 +117,28 @@
     /* Adjust textarea to accommodate buttons */
     #{{ comment_form.text_content.id_for_label }} {
         width: 100%;
-        padding: 12px 90px 12px 15px; /* Increased right padding to fit both buttons */
+        padding: 12px 90px 12px 15px; /* Increased right padding for buttons */
         border-radius: 20px;
         resize: none;
-        min-height: 60px; /* Reduced height for a more compact look */
+        min-height: 60px; 
     }
+
     .message-actions {
-        transform: translate(10px, -36px);
+        position: absolute; /* Ensure it's positioned relative to its parent */
+        bottom: 10px; /* Adjust as needed for vertical alignment */
+        right: 10px;  /* Adjust as needed for horizontal alignment */
+        display: flex;
+        align-items: center;
+        gap: 0.5rem; /* Space between buttons */
+        /* transform: translate(0, -75%); /* This might be too aggressive or depend on parent height, using bottom/right for now */
     }
+
     .attachment-btn i {
-  font-size: 1.5em; /* Increase to 1.5 times the default size */
-}
+        font-size: 1.5em;
+    }
 
-.send-btn i {
-  font-size: 2em; /* Increase to 2 times the default size */
-}
-.message-actions {
-    transform: translate(0, -75%);
-    right: 0;
-}
-
+    .send-btn i {
+        font-size: 2em;
+    }
 </style>
 {% endblock %} 

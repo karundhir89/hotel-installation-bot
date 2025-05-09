@@ -1891,7 +1891,7 @@ def room_number_products_list(request):
 # --- Issue Tracking Views --- 
 from django.contrib.auth.models import User
 
-@login_required # Changed back from @login_required
+@session_login_required # Corrected decorator
 def issue_list(request):
     user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
     print(f"DEBUG: Querying for user: ID={user.id}, Type={type(user)}, Name={user.name}")
@@ -1913,11 +1913,7 @@ def issue_detail(request, issue_id):
         'content_type' # For GFK
     ) #.order_by('-created_at') # Ordering is now in model Meta
 
-    # Dynamically fetch commenter objects for display
-    # This is needed because GenericForeignKey doesn't do select_related automatically for commenter
-    # We can optimize this if it becomes a performance issue (e.g., by fetching all unique commenters in one go)
     for comment in comments:
-        # This will fault in the commenter object from the DB if not already loaded
         _ = comment.commenter 
 
     if request.method == 'POST':
@@ -2149,9 +2145,8 @@ def admin_issue_edit(request, issue_id):
     return render(request, 'issues/admin_issue_form.html', context)
 
 
-
 @login_required
-def comment_create(request, issue_id):
+def admincomment_create(request, issue_id):
     user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
     issue = get_object_or_404(Issue, id=issue_id)
 
@@ -2266,4 +2261,150 @@ def admin_issue_detail(request, issue_id):
         'user': request.user
     }
     # Ensure this template path is correct and the template exists/will be created
+    return render(request, 'issues/admin_issue_detail.html', context)
+
+# Renamed and modified for Admin users
+@login_required # Standard Django login
+# @user_passes_test(is_admin) # Optional: if you want to restrict to admins only
+def admin_comment_create(request, issue_id): # Renamed from admincomment_create for consistency
+    issue = get_object_or_404(Issue, id=issue_id)
+    # Admin user is request.user
+    admin_user = request.user 
+
+    if request.method == 'POST':
+        form = CommentForm(request.POST, request.FILES)
+        if form.is_valid():
+            comment = form.save(commit=False)
+            comment.commenter = admin_user # Assign the admin user
+            comment.issue = issue
+            
+            media_info = []
+            images = form.cleaned_data.get('images', []) # Assuming CommentForm handles multiple images
+            video = form.cleaned_data.get('video')
+
+            for img in images:
+                if img.size > 4 * 1024 * 1024: # 4MB
+                    messages.error(request, f"Image '{img.name}' exceeds 4MB limit.")
+                    continue
+                file_name = default_storage.save(f"issues/comments/admin/{issue.id}/{uuid.uuid4()}_{img.name}", img)
+                media_info.append({"type": "image", "url": default_storage.url(file_name), "name": img.name, "size": img.size})
+
+            if video:
+                if video.size > 100 * 1024 * 1024: # 100MB
+                    messages.error(request, f"Video '{video.name}' exceeds 100MB limit.")
+                else:
+                    file_name = default_storage.save(f"issues/comments/admin/{issue.id}/{uuid.uuid4()}_{video.name}", video)
+                    media_info.append({"type": "video", "url": default_storage.url(file_name), "name": video.name, "size": video.size})
+            
+            comment.media = media_info
+            comment.save()
+            messages.success(request, "Admin comment added successfully.")
+            return redirect('admin_issue_detail', issue_id=issue.id) # Redirect to admin issue detail
+        else:
+            messages.error(request, "Error submitting admin comment.")
+            # Optionally, render the admin_issue_detail page again with the form and errors
+            # For simplicity, redirecting; consider passing form back to template
+            return redirect('admin_issue_detail', issue_id=issue.id) 
+    else:
+        # GET request typically shouldn't happen directly to a create view,
+        # but redirect if it does. Or, the form could be part of admin_issue_detail.
+        return redirect('admin_issue_detail', issue_id=issue.id)
+
+# New view for Invited Users to create comments
+@session_login_required # Uses custom session auth
+def invited_user_comment_create(request, issue_id):
+    invited_user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
+    issue = get_object_or_404(Issue, id=issue_id)
+
+    if request.method == 'POST':
+        form = CommentForm(request.POST, request.FILES)
+        if form.is_valid():
+            comment = form.save(commit=False)
+            comment.commenter = invited_user # Assign the InvitedUser instance
+            comment.issue = issue
+
+            media_info = []
+            images = form.cleaned_data.get('images', [])
+            video = form.cleaned_data.get('video')
+
+            for img in images:
+                if img.size > 4 * 1024 * 1024: # 4MB
+                    messages.error(request, f"Image '{img.name}' exceeds 4MB limit.")
+                    continue # Skip this file
+                file_name = default_storage.save(f"issues/comments/user/{issue.id}/{uuid.uuid4()}_{img.name}", img)
+                media_info.append({"type": "image", "url": default_storage.url(file_name), "name": img.name, "size": img.size})
+            
+            if video:
+                if video.size > 100 * 1024 * 1024: # 100MB
+                    messages.error(request, f"Video '{video.name}' exceeds 100MB limit.")
+                else:
+                    file_name = default_storage.save(f"issues/comments/user/{issue.id}/{uuid.uuid4()}_{video.name}", video)
+                    media_info.append({"type": "video", "url": default_storage.url(file_name), "name": video.name, "size": video.size})
+
+            comment.media = media_info
+            comment.save()
+            messages.success(request, "Your comment has been added.")
+            return redirect('issue_detail', issue_id=issue.id) # Redirect to standard issue detail
+        else:
+            messages.error(request, "There was an error with your comment. Please check the details.")
+            # Re-render the issue_detail page with the form and errors
+            # This requires comments and issue context to be available.
+            # A common pattern is to include the comment form directly in the issue_detail view's logic.
+            # For now, simple redirect, but consider full context re-render.
+            # Fetching context again for re-render:
+            comments = issue.comments.all().select_related('content_type')
+            for c in comments: # Pre-fetch commenter
+                _ = c.commenter
+            return render(request, 'issues/issue_detail.html', {
+                'issue': issue,
+                'comments': comments,
+                'comment_form': form, # Pass the invalid form back
+                'user': request.user # Or invited_user if more appropriate for template
+            })
+    else:
+        # GET request usually means the form is displayed on the issue_detail page
+        return redirect('issue_detail', issue_id=issue.id)
+
+# The existing admin_issue_detail view (which also handles comment form for admins)
+# might need its POST handling adjusted if admin_comment_create is now separate.
+# For now, I'm assuming admin_issue_detail's POST was for general issue updates,
+# and the comment form part of it will now point to admin_comment_create.
+
+@user_passes_test(is_admin, login_url='/user_login/') # Ensure only admins can access
+@login_required
+def admin_issue_detail(request, issue_id):
+# ... (existing admin_issue_detail GET logic remains largely the same)
+# ...
+    # POST handling in admin_issue_detail was for comments, this should be reviewed.
+    # If admin_issue_detail form POSTs to admin_comment_create, then this POST
+    # block here might not be needed for comments anymore, or it's for other updates.
+    # The user had this view also handling comment form POSTs:
+    if request.method == 'POST': # This block is for comments based on previous context
+        # This looks like it was intended for admins to post comments.
+        # If we now have a separate admin_comment_create, the form in admin_issue_detail.html
+        # should POST to that URL.
+        # For now, I will keep the existing logic from admin_issue_detail's POST handling
+        # for comments, but ensure it uses request.user as commenter.
+        # This means admin_comment_create might be redundant if admin_issue_detail already does this.
+        # Let's assume the user wants admin_comment_create to be the dedicated endpoint.
+        # So, the form in 'admin_issue_detail.html' should action="{% url 'admin_comment_create' issue.id %}"
+        # And this POST block in admin_issue_detail could be removed or repurposed.
+        # Given the user's request, I will simplify admin_issue_detail to not handle comment posts,
+        # assuming that will be done by admin_comment_create.
+        pass # Comment form submission will be handled by admin_comment_create
+
+    # The GET logic for admin_issue_detail:
+    issue = get_object_or_404(Issue, id=issue_id)
+    comments = issue.comments.all().select_related('content_type')
+    for comment in comments:
+        _ = comment.commenter 
+
+    comment_form = CommentForm() # Provide an empty form for GET requests
+
+    context = {
+        'issue': issue,
+        'comments': comments,
+        'comment_form': comment_form,
+        'user': request.user
+    }
     return render(request, 'issues/admin_issue_detail.html', context)
