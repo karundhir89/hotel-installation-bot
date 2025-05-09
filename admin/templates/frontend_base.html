@@ -52,7 +52,7 @@
         <!-- Logo + Logout -->
         <div class="d-flex justify-content-between align-items-center mb-4">
             <div class="logo">
-                <a href="{% url 'dashboard' %}" class="simple-text logo-normal">
+                <a href="{% url 'home' %}" class="simple-text logo-normal">
                     <img class="img-fluid" width="200" height="50" src="{% static 'img/LOGO.png' %}" alt="Logo" />
                 </a>
             </div>
@@ -61,7 +61,7 @@
                 {# Check if user is logged in and has the 'inventory' role in session #}
                 {% if request.session.user_id and 'inventory' in request.session.user_roles %} 
                     <div class="d-flex flex-row align-items-center mt-4" style="font-size: 1.4rem;">
-                         <a href="{% url 'dashboard' %}" class="text-secondary mr-5">Home</a>
+                         <a href="{% url 'home' %}" class="text-secondary mr-5">Home</a>
                          <a href="{% url 'floor_products_list' %}" class="text-secondary mr-5">Floor Products</a>
                          <a href="{% url 'room_number_products_list' %}" class="text-secondary">Room Products</a>
                     </div>

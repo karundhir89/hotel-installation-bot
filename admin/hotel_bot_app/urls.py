@@ -3,7 +3,7 @@ from .views import *
 
 urlpatterns = [
     path('chat/', chatbot, name='chatbot'),
-    path('dashboard/', dashboard, name='dashboard'),
+    path('home/', home, name='home'),
     path('api/chatbot/', chatbot_api, name='chatbot_api'),  # API for chatbot
     path('display_prompts/', display_prompts, name='display_prompts'),  # API for chatbot
     path('update_prompt/', update_prompt, name='update_prompt'),  # API for chatbot,
