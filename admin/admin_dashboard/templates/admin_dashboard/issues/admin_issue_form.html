@@ -1,4 +1,4 @@
-{% extends 'dashboard_layout.html' %}
+{% extends 'admin_dashboard/dashboard_layout.html' %}
 {% load static %}
 {% load crispy_forms_tags %}
 
@@ -78,9 +78,9 @@
                             </div>
 
                             <button type="submit" class="btn primary mt-3">Save Changes</button>
-                            <a href="{% url 'admin_issue_list' %}" class="btn btn-secondary mt-3">Cancel</a>
+                            <a href="{% url 'admin_dashboard:admin_issue_list' %}" class="btn btn-secondary mt-3">Cancel</a>
                             {% if issue.id %}
-                            <a href="{% url 'admin_issue_detail' issue.id %}" class="btn btn-sm edit-button ">View</a>
+                            <a href="{% url 'admin_dashboard:admin_issue_detail' issue.id %}" class="btn btn-sm edit-button ">View</a>
                             {% else %}
                                 <a href="#" class="btn btn-info mt-3 disabled" aria-disabled="true">View Issue Details</a>
                             {% endif %}

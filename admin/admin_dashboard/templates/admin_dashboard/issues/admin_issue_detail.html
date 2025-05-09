@@ -1,4 +1,4 @@
-{% extends 'dashboard_layout.html' %}
+{% extends 'admin_dashboard/dashboard_layout.html' %}
 {% load static %}
 {% load crispy_forms_tags %} {# Assuming crispy_forms, otherwise use {{ comment_form.as_p }} #}
 
@@ -40,7 +40,7 @@
             </small></p>
             {% endif %}
              {# Admin link to edit is already here and correct #}
-            <a href="{% url 'admin_issue_edit' issue.id %}" class="btn btn-sm primary">Edit Issue Details</a>
+            <a href="{% url 'admin_dashboard:admin_issue_edit' issue.id %}" class="btn btn-sm primary">Edit Issue Details</a>
         </div>
     </div>
 
@@ -113,7 +113,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.min.css">
 
     <div class="mt-4">
-        <a href="{% url 'admin_issue_list' %}" class="btn btn-secondary">Back to Admin Issue List</a>
+        <a href="{% url 'admin_dashboard:admin_issue_list' %}" class="btn btn-secondary">Back to Admin Issue List</a>
     </div>
 
     <style>

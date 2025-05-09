@@ -1,4 +1,4 @@
-{% extends 'dashboard_layout.html' %}
+{% extends 'admin_dashboard/dashboard_layout.html' %}
 
 {% load static %}
 
@@ -62,8 +62,8 @@
                                                 <td>{% if issue.is_for_hotel_admin %}Yes{% else %}No{% endif %}</td>
                                                 <td>{{ issue.created_at|date:"Y-m-d H:i" }}</td>
                                                 <td>
-                                                    <a href="{% url 'admin_issue_edit' issue.id %}" class="btn btn-sm edit-button ">Edit</a>
-                                                    <a href="{% url 'admin_issue_detail' issue.id %}" class="btn btn-sm edit-button ">View</a>
+                                                    <a href="{% url 'admin_dashboard:admin_issue_edit' issue.id %}" class="btn btn-sm edit-button ">Edit</a>
+                                                    <a href="{% url 'admin_dashboard:admin_issue_detail' issue.id %}" class="btn btn-sm edit-button ">View</a>
                                        
                                                     {# Add delete button/logic if needed #}
                                                 </td>

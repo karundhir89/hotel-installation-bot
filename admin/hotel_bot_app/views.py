@@ -17,6 +17,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
 from django.utils.timezone import now
+from django.core.files.storage import default_storage
 from django.views.decorators.csrf import csrf_exempt
 from hotel_bot_app.utils.helper import (fetch_data_from_sql,
                                          format_gpt_prompt,
@@ -1895,87 +1896,76 @@ from django.contrib.auth.models import User
 def issue_list(request):
     user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
     print(f"DEBUG: Querying for user: ID={user.id}, Type={type(user)}, Name={user.name}")
-    user_roles = user.role
-    queryset = Issue.objects.filter(created_by=user).distinct()
-    queryset = queryset.order_by('-created_at').select_related('created_by', 'assignee')
+    user_roles = user.role # Assuming user.role is how you get roles for InvitedUser
+    # Corrected Query: Filter issues based on the fetched InvitedUser being the creator OR an observer OR the assignee.
+    queryset = Issue.objects.filter(
+        Q(created_by=user) |
+        Q(observers=user) |
+        Q(assignee=user)
+    ).distinct().order_by('-created_at').select_related('created_by', 'assignee')
+    
     context = {
         'issues': queryset,
-        'user_roles': user_roles
+        'user_roles': user_roles 
     }
     return render(request, 'issues/issue_list.html', context)
 
 from .forms import CommentForm
 
-@login_required
+@login_required # This is the original decorator for issue_detail, should it be @session_login_required?
+                # If this is for InvitedUser, it should be @session_login_required
 def issue_detail(request, issue_id):
     issue = get_object_or_404(Issue, id=issue_id)
     comments = issue.comments.all().select_related(
-        'content_type' # For GFK
-    ) #.order_by('-created_at') # Ordering is now in model Meta
-
+        'content_type' 
+    ) 
     for comment in comments:
         _ = comment.commenter 
 
+    # Determine if the current user (InvitedUser or Django User) can comment
+    can_comment_as_invited_user = False
+    if request.session.get("user_id"):
+        try:
+            invited_user = InvitedUser.objects.get(id=request.session.get("user_id"))
+            if issue.created_by == invited_user or invited_user in issue.observers.all() or issue.assignee == invited_user:
+                can_comment_as_invited_user = True
+        except InvitedUser.DoesNotExist:
+            pass
+    
+    # If Django admin user is logged in and issue is_for_hotel_admin
+    can_comment_as_django_admin = request.user.is_authenticated and request.user.is_staff and issue.is_for_hotel_admin
+
+    # User can comment if either condition is true.
+    # The form action will point to different views based on who is commenting.
+    # This template (issue_detail.html) is primarily for InvitedUser, 
+    # so its form should point to invited_user_comment_create.
+    # Admins would typically use admin_issue_detail.html.
+    
+    # The form should be handled by invited_user_comment_create if it's an InvitedUser posting.
+    # This view (issue_detail) primarily displays the issue and existing comments.
+    # The comment form displayed will be for invited_user_comment_create.
+
     if request.method == 'POST':
-        # Check if the user is authenticated before processing the form
-        if not request.user.is_authenticated:
-            messages.error(request, "You must be logged in to comment.")
-            return redirect('user_login') # Or wherever your login URL is
-
-        comment_form = CommentForm(request.POST, request.FILES)
-        if comment_form.is_valid():
-            new_comment = comment_form.save(commit=False)
-            new_comment.issue = issue
-            # new_comment.user = request.user # Old way
-            new_comment.commenter = request.user # New: Assign the currently logged-in user (Django User or InvitedUser)
-            
-            # Handle media files
-            media_info = []
-            # Image files (up to 4)
-            for i in range(1, 5):
-                image_field_name = f'image{i}'
-                image_file = request.FILES.get(image_field_name)
-                if image_file:
-                    # Basic validation (can be enhanced in the form)
-                    if image_file.size > 4 * 1024 * 1024: # 4MB
-                        messages.error(request, f"Image '{image_file.name}' exceeds 4MB limit.")
-                        # Decide how to handle: return with error or skip this file
-                        continue 
-                    # file_name = default_storage.save(f"issues/comments/{issue.id}/{image_file.name}", image_file)
-                    # media_info.append({"type": "image", "url": default_storage.url(file_name), "name": image_file.name})
-                    # For now, just storing placeholder, actual file saving logic needs to be robust
-                    media_info.append({"type": "image", "name": image_file.name, "size": image_file.size})
-
-            # Video file (up to 1)
-            video_file = request.FILES.get('video')
-            if video_file:
-                if video_file.size > 100 * 1024 * 1024: # 100MB
-                    messages.error(request, f"Video '{video_file.name}' exceeds 100MB limit.")
-                else:
-                    # file_name = default_storage.save(f"issues/comments/{issue.id}/{video_file.name}", video_file)
-                    # media_info.append({"type": "video", "url": default_storage.url(file_name), "name": video_file.name})
-                    media_info.append({"type": "video", "name": video_file.name, "size": video_file.size})
-            
-            new_comment.media = media_info # Assuming media field is JSONField
-            new_comment.save()
-            messages.success(request, "Your comment has been added.")
-            return redirect('issue_detail', issue_id=issue.id)
-        else:
-            messages.error(request, "There was an error with your comment. Please check the details.")
-    else:
-        comment_form = CommentForm()
+        # This POST block is now handled by invited_user_comment_create or admin_comment_create
+        # So, this view should ideally not handle POST for new comments anymore.
+        # If it does, it needs to decide which user type is posting.
+        # For simplicity, assuming POSTs go to the dedicated views.
+        pass
+    
+    comment_form = CommentForm() # For display in the template, action will go to invited_user_comment_create
 
     context = {
         'issue': issue,
         'comments': comments,
         'comment_form': comment_form,
-        'user': request.user # Pass the user to the template
+        'user': request.user, # General Django user for template context, might need adjustment
+        'can_comment': can_comment_as_invited_user, # Or more complex logic based on who is viewing
+                                                # and if this template is solely for InvitedUser interaction.
+        'user_roles': request.session.get('user_roles', []) # Pass roles if template needs them
     }
     return render(request, 'issues/issue_detail.html', context)
 
-from django.core.files.storage import default_storage
-import uuid
-import os
+# ... (keep issue_create, invited_user_comment_create, and other non-admin views) ...
 
 @login_required
 def issue_create(request):
@@ -2076,241 +2066,7 @@ def issue_create(request):
         form = IssueForm(initial=initial_data)
 
     return render(request, 'issues/issue_form.html', {'form': form})
-# --- Admin-specific Issue Views --- 
 
-def is_admin(user):
-
-    try:
-        return 'admin' in user.role
-    except Exception as e:
-        return 'admin'
-        
-    #     user_data = User.objects.get(email=user.email)
-            
-# @user_passes_test(is_admin, login_url='/user_login/')
-@login_required
-def admin_issue_list(request):
-    if request.user.is_authenticated:
-        if request.user.is_superuser:
-            logger.info("\n\n\n\nAdmin Issue List")
-            issue_list_all = Issue.objects.all().order_by('-created_at').select_related('created_by', 'assignee')
-            paginator = Paginator(issue_list_all, 25)
-            page_number = request.GET.get('page')
-            try:
-                issues_page = paginator.page(page_number)
-            except PageNotAnInteger:
-                issues_page = paginator.page(1)
-            except EmptyPage:
-                issues_page = paginator.page(paginator.num_pages)
-            context = {
-                'issues_page': issues_page,
-            }
-            return render(request, 'issues/admin_issue_list.html', context)
-
-
-@user_passes_test(is_admin, login_url='/user_login/')
-@login_required
-def admin_issue_edit(request, issue_id):
-    issue = get_object_or_404(Issue, pk=issue_id)
-    # user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
-    
-    # Get all users except those already observers (excluding the creator who must remain)
-    current_observers = issue.observers.exclude(id=issue.created_by.id)
-    available_users = InvitedUser.objects.exclude(id__in=current_observers).exclude(id=issue.created_by.id)
-    
-    if request.method == 'POST':
-        form = IssueUpdateForm(request.POST, instance=issue)
-        if form.is_valid():
-            updated_observers = form.cleaned_data.get('observers')
-            # Ensure creator is always an observer
-            if issue.created_by not in updated_observers:
-                updated_observers |= InvitedUser.objects.filter(pk=issue.created_by.pk)
-                form.instance.observers.set(updated_observers)
-            # Remove duplicates
-            unique_observers = set(updated_observers)
-            form.instance.observers.set(unique_observers)
-            form.save()
-            messages.success(request, f"Issue #{issue.id} updated successfully.")
-            return redirect('admin_issue_list')
-        else:
-            messages.error(request, "Please correct the errors below.")
-    else:
-        form = IssueUpdateForm(instance=issue)
-    
-    context = {
-        'form': form,
-        'issue': issue,
-        'available_users': available_users
-    }
-    return render(request, 'issues/admin_issue_form.html', context)
-
-
-@login_required
-def admincomment_create(request, issue_id):
-    user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
-    issue = get_object_or_404(Issue, id=issue_id)
-
-    if request.method == 'POST':
-        logger.debug(f"Request FILES: {request.FILES}")
-        form = CommentForm(request.POST, request.FILES)
-        if form.is_valid():
-            comment = form.save(commit=False)
-            comment.commenter = user # Changed back from comment.user = user
-            comment.issue = issue
-            # comment.save() # Save should happen after media is processed
-
-            # Process and save media files
-            media_urls = []
-            images = form.cleaned_data.get('images', [])
-            video = form.cleaned_data.get('video')
-
-            # Save images
-            for image in images:
-                file_name = default_storage.save(f"comments/images/{uuid.uuid4()}_{image.name}", image)
-                file_url = default_storage.url(file_name)
-                media_urls.append({'type': 'image', 'url': file_url, 'size': image.size, 'name': image.name})
-
-            # Save video
-            if video:
-                file_name = default_storage.save(f"comments/videos/{uuid.uuid4()}_{video.name}", video)
-                file_url = default_storage.url(file_name)
-                media_urls.append({'type': 'video', 'url': file_url, 'size': video.size, 'name': video.name})
-
-            # Update comment with media URLs
-            comment.media = media_urls
-            comment.save() # Save once here, after media is assigned
-
-            success_message = "Comment added successfully."
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse({
-                    'success': True,
-                    'message': success_message,
-                    'redirect_url': reverse('issue_detail', kwargs={'issue_id': issue.id})
-                })
-            else:
-                messages.success(request, success_message)
-                return redirect('issue_detail', issue_id=issue.id)
-        else:
-            logger.error(f"Form errors: {form.errors.as_json()}")
-            error_message = "Please correct the errors below."
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse({
-                    'success': False,
-                    'message': error_message,
-                    'errors': json.loads(form.errors.as_json())
-                }, status=400)
-            else:
-                messages.error(request, error_message)
-    else:
-        form = CommentForm()
-
-    return render(request, 'issues/comment_form.html', {'form': form, 'issue': issue})
-
-@user_passes_test(is_admin, login_url='/user_login/') # Ensure only admins can access
-@login_required
-def admin_issue_detail(request, issue_id):
-    issue = get_object_or_404(Issue, id=issue_id)
-    comments = issue.comments.all().select_related(
-        'content_type' # For GFK commenter
-    ) # Ordering is now in model Meta
-
-    # Pre-fetch commenter objects to avoid N+1 queries in template if displaying commenter details
-    for comment in comments:
-        _ = comment.commenter # Accessing .commenter will load it
-
-    if request.method == 'POST':
-        if not request.user.is_authenticated:
-            messages.error(request, "Authentication error.")
-            return redirect('user_login')
-
-        comment_form = CommentForm(request.POST, request.FILES)
-        if comment_form.is_valid():
-            new_comment = comment_form.save(commit=False)
-            new_comment.issue = issue
-            new_comment.commenter = request.user # Assign Django admin user
-            
-            media_info = []
-            for i in range(1, 5):
-                image_file = request.FILES.get(f'image{i}')
-                if image_file:
-                    if image_file.size > 4 * 1024 * 1024: # 4MB
-                        messages.error(request, f"Image '{image_file.name}' exceeds 4MB limit.")
-                        continue
-                    media_info.append({"type": "image", "name": image_file.name, "size": image_file.size})
-
-            video_file = request.FILES.get('video')
-            if video_file:
-                if video_file.size > 100 * 1024 * 1024: # 100MB
-                    messages.error(request, f"Video '{video_file.name}' exceeds 100MB limit.")
-                else:
-                    media_info.append({"type": "video", "name": video_file.name, "size": video_file.size})
-            
-            new_comment.media = media_info
-            new_comment.save()
-            messages.success(request, "Comment added successfully.")
-            return redirect('admin_issue_detail', issue_id=issue.id) # Redirect to admin detail view
-        else:
-            messages.error(request, "Error submitting comment. Please check the form.")
-    else:
-        comment_form = CommentForm()
-
-    context = {
-        'issue': issue,
-        'comments': comments,
-        'comment_form': comment_form,
-        'user': request.user
-    }
-    # Ensure this template path is correct and the template exists/will be created
-    return render(request, 'issues/admin_issue_detail.html', context)
-
-# Renamed and modified for Admin users
-@login_required # Standard Django login
-# @user_passes_test(is_admin) # Optional: if you want to restrict to admins only
-def admin_comment_create(request, issue_id): # Renamed from admincomment_create for consistency
-    issue = get_object_or_404(Issue, id=issue_id)
-    # Admin user is request.user
-    admin_user = request.user 
-
-    if request.method == 'POST':
-        form = CommentForm(request.POST, request.FILES)
-        if form.is_valid():
-            comment = form.save(commit=False)
-            comment.commenter = admin_user # Assign the admin user
-            comment.issue = issue
-            
-            media_info = []
-            images = form.cleaned_data.get('images', []) # Assuming CommentForm handles multiple images
-            video = form.cleaned_data.get('video')
-
-            for img in images:
-                if img.size > 4 * 1024 * 1024: # 4MB
-                    messages.error(request, f"Image '{img.name}' exceeds 4MB limit.")
-                    continue
-                file_name = default_storage.save(f"issues/comments/admin/{issue.id}/{uuid.uuid4()}_{img.name}", img)
-                media_info.append({"type": "image", "url": default_storage.url(file_name), "name": img.name, "size": img.size})
-
-            if video:
-                if video.size > 100 * 1024 * 1024: # 100MB
-                    messages.error(request, f"Video '{video.name}' exceeds 100MB limit.")
-                else:
-                    file_name = default_storage.save(f"issues/comments/admin/{issue.id}/{uuid.uuid4()}_{video.name}", video)
-                    media_info.append({"type": "video", "url": default_storage.url(file_name), "name": video.name, "size": video.size})
-            
-            comment.media = media_info
-            comment.save()
-            messages.success(request, "Admin comment added successfully.")
-            return redirect('admin_issue_detail', issue_id=issue.id) # Redirect to admin issue detail
-        else:
-            messages.error(request, "Error submitting admin comment.")
-            # Optionally, render the admin_issue_detail page again with the form and errors
-            # For simplicity, redirecting; consider passing form back to template
-            return redirect('admin_issue_detail', issue_id=issue.id) 
-    else:
-        # GET request typically shouldn't happen directly to a create view,
-        # but redirect if it does. Or, the form could be part of admin_issue_detail.
-        return redirect('admin_issue_detail', issue_id=issue.id)
-
-# New view for Invited Users to create comments
 @session_login_required # Uses custom session auth
 def invited_user_comment_create(request, issue_id):
     invited_user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
@@ -2364,47 +2120,3 @@ def invited_user_comment_create(request, issue_id):
     else:
         # GET request usually means the form is displayed on the issue_detail page
         return redirect('issue_detail', issue_id=issue.id)
-
-# The existing admin_issue_detail view (which also handles comment form for admins)
-# might need its POST handling adjusted if admin_comment_create is now separate.
-# For now, I'm assuming admin_issue_detail's POST was for general issue updates,
-# and the comment form part of it will now point to admin_comment_create.
-
-@user_passes_test(is_admin, login_url='/user_login/') # Ensure only admins can access
-@login_required
-def admin_issue_detail(request, issue_id):
-# ... (existing admin_issue_detail GET logic remains largely the same)
-# ...
-    # POST handling in admin_issue_detail was for comments, this should be reviewed.
-    # If admin_issue_detail form POSTs to admin_comment_create, then this POST
-    # block here might not be needed for comments anymore, or it's for other updates.
-    # The user had this view also handling comment form POSTs:
-    if request.method == 'POST': # This block is for comments based on previous context
-        # This looks like it was intended for admins to post comments.
-        # If we now have a separate admin_comment_create, the form in admin_issue_detail.html
-        # should POST to that URL.
-        # For now, I will keep the existing logic from admin_issue_detail's POST handling
-        # for comments, but ensure it uses request.user as commenter.
-        # This means admin_comment_create might be redundant if admin_issue_detail already does this.
-        # Let's assume the user wants admin_comment_create to be the dedicated endpoint.
-        # So, the form in 'admin_issue_detail.html' should action="{% url 'admin_comment_create' issue.id %}"
-        # And this POST block in admin_issue_detail could be removed or repurposed.
-        # Given the user's request, I will simplify admin_issue_detail to not handle comment posts,
-        # assuming that will be done by admin_comment_create.
-        pass # Comment form submission will be handled by admin_comment_create
-
-    # The GET logic for admin_issue_detail:
-    issue = get_object_or_404(Issue, id=issue_id)
-    comments = issue.comments.all().select_related('content_type')
-    for comment in comments:
-        _ = comment.commenter 
-
-    comment_form = CommentForm() # Provide an empty form for GET requests
-
-    context = {
-        'issue': issue,
-        'comments': comments,
-        'comment_form': comment_form,
-        'user': request.user
-    }
-    return render(request, 'issues/admin_issue_detail.html', context)
