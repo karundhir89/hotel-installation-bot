@@ -1897,18 +1897,49 @@ from django.contrib.auth.models import User
 @session_login_required # Corrected decorator
 def issue_list(request):
     user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
-    print(f"DEBUG: Querying for user: ID={user.id}, Type={type(user)}, Name={user.name}")
-    user_roles = user.role # Assuming user.role is how you get roles for InvitedUser
-    # Corrected Query: Filter issues based on the fetched InvitedUser being the creator OR an observer OR the assignee.
+    user_roles = user.role
     queryset = Issue.objects.filter(
         Q(created_by=user) |
         Q(observers=user) |
         Q(assignee=user)
     ).distinct().order_by('-created_at').select_related('created_by', 'assignee')
-    
+
+    # Filtering
+    status = request.GET.get('status')
+    if status:
+        queryset = queryset.filter(status=status)
+    issue_type = request.GET.get('type')
+    if issue_type:
+        queryset = queryset.filter(type=issue_type)
+    q = request.GET.get('q')
+    if q:
+        queryset = queryset.filter(Q(title__icontains=q) | Q(id__icontains=q))
+
+    # Pagination
+    paginator = Paginator(queryset, 10)  # Show 10 issues per page
+    page_number = request.GET.get('page')
+    try:
+        issues_page = paginator.page(page_number)
+    except PageNotAnInteger:
+        issues_page = paginator.page(1)
+    except EmptyPage:
+        issues_page = paginator.page(paginator.num_pages)
+
+    # For filter dropdowns
+    issue_statuses = Issue.IssueStatus.choices if hasattr(Issue, 'IssueStatus') else [
+        ('OPEN', 'Open'), ('WORKING', 'Working'), ('PENDING', 'Pending'), ('CLOSE', 'Close')
+    ]
+    issue_types = Issue.IssueType.choices if hasattr(Issue, 'IssueType') else [
+        ('ROOM', 'Room'), ('INVENTORY', 'Inventory')
+    ]
+
     context = {
-        'issues': queryset,
-        'user_roles': user_roles 
+        'issues': issues_page,
+        'user_roles': user_roles,
+        'is_paginated': issues_page.has_other_pages(),
+        'page_obj': issues_page,
+        'issue_statuses': issue_statuses,
+        'issue_types': issue_types,
     }
     return render(request, 'issues/issue_list.html', context)
 
