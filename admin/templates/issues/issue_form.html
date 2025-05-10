@@ -85,11 +85,11 @@
                         {{ form.related_rooms|as_crispy_field }}
                 </div>
                 
-                <div id="related-inventory-container" class="mb-3" style="display: none;">
+                <div id="related-floor-container" class="mb-3" style="display: none;">
                     <div class="form-check">
-                        <input class="form-check-input" type="checkbox" value="" id="allowMultipleInventory" checked>
-                        <label class="form-check-label" for="allowMultipleInventory">
-                            Allow selecting multiple inventory items
+                        <input class="form-check-input" type="checkbox" value="" id="allowMultipleFloor" checked>
+                        <label class="form-check-label" for="allowMultipleFloor">
+                            Allow selecting multiple floor items
                         </label>
                     </div>
                     {{ form.related_inventory_items|as_crispy_field }}
@@ -129,10 +129,10 @@ document.addEventListener('DOMContentLoaded', function () {
     // Select all radio buttons with name="type"
     const issueTypeRadioGroup = document.querySelectorAll('input[name="type"]'); 
     const roomsContainer = document.getElementById('related-rooms-container');
-    const inventoryContainer = document.getElementById('related-inventory-container');
+    const floorContainer = document.getElementById('related-floor-container');
     const allowMultipleRoomsCheckbox = document.getElementById('allowMultipleRooms');
-    const allowMultipleInventoryCheckbox = document.getElementById('allowMultipleInventory');
-    let relatedRoomsSelectInstance, relatedInventorySelectInstance;
+    const allowMultipleFloorCheckbox = document.getElementById('allowMultipleFloor');
+    let relatedRoomsSelectInstance, relatedFloorSelectInstance;
 
     const commonSelect2Options = {
         allowClear: true,
@@ -185,7 +185,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Initializations (will now use the template functions)
     initializeSelect2('#id_related_rooms', "Search and select rooms", allowMultipleRoomsCheckbox.checked ? 0 : 1);
-    initializeSelect2('#id_related_inventory_items', "Search and select inventory items", allowMultipleInventoryCheckbox.checked ? 0 : 1);
+    initializeSelect2('#id_related_inventory_items', "Search and select floor items", allowMultipleFloorCheckbox.checked ? 0 : 1);
 
     if (allowMultipleRoomsCheckbox && typeof jQuery !== 'undefined' && jQuery.fn.select2) {
         allowMultipleRoomsCheckbox.addEventListener('change', function() {
@@ -204,15 +204,15 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    if (allowMultipleInventoryCheckbox && typeof jQuery !== 'undefined' && jQuery.fn.select2) {
-        allowMultipleInventoryCheckbox.addEventListener('change', function() {
+    if (allowMultipleFloorCheckbox && typeof jQuery !== 'undefined' && jQuery.fn.select2) {
+        allowMultipleFloorCheckbox.addEventListener('change', function() {
             const max = this.checked ? 0 : 1;
             const currentValues = jQuery('#id_related_inventory_items').val();
             if (!this.checked && currentValues && currentValues.length > 1) {
                 jQuery('#id_related_inventory_items').val([currentValues[0]]).trigger('change');
             }
             jQuery('#id_related_inventory_items').select2('destroy').select2({
-                placeholder: "Search and select inventory items",
+                placeholder: "Search and select floor items",
                 allowClear: true,
                 width: '100%',
                 theme: "bootstrap-5",
@@ -237,8 +237,8 @@ document.addEventListener('DOMContentLoaded', function () {
         if (roomsContainer) {
             roomsContainer.style.display = selectedType === 'ROOM' ? 'block' : 'none';
         }
-        if (inventoryContainer) {
-            inventoryContainer.style.display = selectedType === 'INVENTORY' ? 'block' : 'none';
+        if (floorContainer) {
+            floorContainer.style.display = selectedType === 'FLOOR' ? 'block' : 'none';
         }
     }
 
@@ -251,8 +251,8 @@ document.addEventListener('DOMContentLoaded', function () {
         const initialType = getSelectedTypeValue();
         if (initialType === 'ROOM') {
             roomsContainer.style.display = 'block';
-        } else if (initialType === 'INVENTORY') {
-            inventoryContainer.style.display = 'block';
+        } else if (initialType === 'FLOOR') {
+            floorContainer.style.display = 'block';
         }
     } else {
         console.warn('Issue type radio buttons (name="type") not found.');
@@ -322,7 +322,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             if (field === 'related_rooms') {
                                 errorDisplayContainer = roomsContainer;
                             } else if (field === 'related_inventory_items') {
-                                errorDisplayContainer = inventoryContainer;
+                                errorDisplayContainer = floorContainer;
                             }
 
                             if (errorDisplayContainer) {

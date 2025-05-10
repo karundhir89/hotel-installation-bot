@@ -226,7 +226,7 @@ class IssueForm(forms.ModelForm):
         queryset=Inventory.objects.all(),
         widget=forms.SelectMultiple(attrs={'class': 'form-control select2-multiple'}),
         required=False,
-        label="Related Inventory Items (if type is Inventory)"
+        label="Related Floor Items (if type is Floor)"
     )
 
     class Meta:
@@ -253,12 +253,12 @@ class IssueForm(forms.ModelForm):
                 queryset=Inventory.objects.all(),
                 widget=forms.SelectMultiple(attrs={'class': 'form-control select2-multiple'}),
                 required=False,
-                label="Related Inventory Items (if type is Inventory)"
+                label="Related Floor Items (if type is Floor)"
             )
 
         self.fields['type'].choices = [
             ('ROOM', 'Room Issue'),
-            ('INVENTORY', 'Inventory Issue'),
+            ('FLOOR', 'Floor Issue'),
         ]
 
         # self.fields['type'] = forms.ChoiceField(
@@ -303,13 +303,13 @@ class IssueForm(forms.ModelForm):
 
         if issue_type == "ROOM" and not related_rooms:
             self.add_error('related_rooms', "Please select at least one room for issues of type 'Room'.")
-        elif issue_type == "INVENTORY" and not related_inventory_items:
-            self.add_error('related_inventory_items', "Please select at least one inventory item for issues of type 'Inventory'.")
+        elif issue_type == "FLOOR" and not related_inventory_items:
+            self.add_error('related_inventory_items', "Please select at least one floor item for issues of type 'Floor'.")
         
-        # Prevent submission of room/inventory if type doesn't match, to avoid saving unrelated data
+        # Prevent submission of room/floor if type doesn't match, to avoid saving unrelated data
         if issue_type != "ROOM" and related_rooms:
             cleaned_data['related_rooms'] = RoomData.objects.none() # Clear if not relevant
-        if issue_type != "INVENTORY" and related_inventory_items:
+        if issue_type != "FLOOR" and related_inventory_items:
             cleaned_data['related_inventory_items'] = Inventory.objects.none() # Clear if not relevant
             
         return cleaned_data
@@ -405,3 +405,10 @@ class IssueUpdateForm(forms.ModelForm):
             unique_observers = list(dict.fromkeys(observers))
             return unique_observers
         return observers
+
+    # Update type choices for edit form
+    def clean_type(self):
+        type = self.cleaned_data.get('type')
+        if type not in ['ROOM', 'FLOOR']:
+            raise ValidationError("Invalid type selected.")
+        return type

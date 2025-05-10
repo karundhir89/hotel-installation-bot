@@ -283,8 +283,7 @@ class IssueStatus(models.TextChoices):
 
 class IssueType(models.TextChoices):
     ROOM = 'ROOM', _('Room')
-    # FLOOR = 'FLOOR', _('Floor') # This line is now commented out
-    INVENTORY = 'INVENTORY', _('Inventory')
+    FLOOR = 'FLOOR', _('Floor')
 
 class Issue(models.Model):
     title = models.CharField(max_length=255)

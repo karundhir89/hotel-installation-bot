@@ -1930,7 +1930,7 @@ def issue_list(request):
         ('OPEN', 'Open'), ('WORKING', 'Working'), ('PENDING', 'Pending'), ('CLOSE', 'Close')
     ]
     issue_types = Issue.IssueType.choices if hasattr(Issue, 'IssueType') else [
-        ('ROOM', 'Room'), ('INVENTORY', 'Inventory')
+        ('ROOM', 'Room'), ('FLOOR', 'Floor')
     ]
 
     context = {
@@ -2017,11 +2017,11 @@ def issue_create(request):
                     initial_data['related_rooms'] = [int(prefill_room_id)]
             except (ValueError, TypeError): 
                 pass # Ignore invalid ID format
-        elif prefill_type == IssueType.INVENTORY and prefill_inventory_id:
+        elif prefill_type == IssueType.FLOOR and prefill_inventory_id:
             try:
                 # Ensure inventory item exists, pass its pk as a list
                 if Inventory.objects.filter(pk=int(prefill_inventory_id)).exists():
-                    initial_data['type'] = IssueType.INVENTORY
+                    initial_data['type'] = IssueType.FLOOR
                     initial_data['related_inventory_items'] = [int(prefill_inventory_id)]
             except (ValueError, TypeError):
                 pass # Ignore invalid ID format
