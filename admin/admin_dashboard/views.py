@@ -112,13 +112,26 @@ def admin_issue_list(request):
 @user_passes_test(is_staff_user)
 def admin_issue_edit(request, issue_id):
 	issue = get_object_or_404(Issue, pk=issue_id)
+	available_users = InvitedUser.objects.all()
 	
 	if request.method == 'POST':
 		form = IssueUpdateForm(request.POST, instance=issue)
 		if form.is_valid():
+			# Get the observers from the form data
+			observer_ids = request.POST.getlist('observers')
+			# Clear existing observers
+			issue.observers.clear()
+			# Add new observers
+			for observer_id in observer_ids:
+				try:
+					observer = InvitedUser.objects.get(id=observer_id)
+					issue.observers.add(observer)
+				except InvitedUser.DoesNotExist:
+					continue
+			
 			form.save()
 			messages.success(request, f"Issue #{issue.id} updated successfully.")
-			return redirect('admin_dashboard:admin_issue_list') 
+			# return redirect('admin_dashboard:admin_issue_list')
 		else:
 			messages.error(request, "Please correct the errors below.")
 	else:
@@ -127,6 +140,8 @@ def admin_issue_edit(request, issue_id):
 	context = {
 		'form': form,
 		'issue': issue,
+		'available_users': available_users,
+		'observers': issue.observers.all(),  # Pass the current observers to the template
 	}
 	return render(request, 'admin_dashboard/issues/admin_issue_form.html', context)
 

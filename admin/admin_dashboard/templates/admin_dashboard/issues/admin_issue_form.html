@@ -19,10 +19,63 @@
         background-color: #5a6268;
     }
 
-    /* Custom style for selected options */
-    select option:checked {
-        background-color: #5a6268 !important;
-        color: white;
+    /* Observer Modal Styles */
+    .observer-list {
+        max-height: 200px;
+        overflow-y: auto;
+        padding: 10px;
+        background-color: #f8f9fa;
+        border-radius: 4px;
+        margin-bottom: 15px;
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+    }
+    .observer-item {
+        padding: 5px 10px;
+        margin-bottom: 5px;
+        background-color: #fff;
+        border-radius: 4px;
+        border: 1px solid #dee2e6;
+    }
+    .observer-search {
+        margin-bottom: 15px;
+    }
+    .modal-body {
+        max-height: 70vh;
+        overflow-y: auto;
+    }
+    .user-checkbox {
+        margin-right: 10px;
+    }
+    .user-item {
+        padding: 8px;
+        border-bottom: 1px solid #dee2e6;
+    }
+    .user-item:hover {
+        background-color: #f8f9fa;
+    }
+    .user-item:last-child {
+        border-bottom: none;
+    }
+    .selected-users {
+        margin-top: 10px;
+        padding: 10px;
+        background-color: #f8f9fa;
+        border-radius: 4px;
+    }
+    .selected-user {
+        display: inline-block;
+        padding: 5px 10px;
+        margin: 2px;
+        background-color: #e9ecef;
+        border-radius: 15px;
+        font-size: 0.9em;
+    }
+    .selected-user .remove-user {
+        margin-left: 5px;
+        cursor: pointer;
+        color: #dc3545;
     }
 </style>
 <div class="content">
@@ -31,7 +84,7 @@
             <div class="col-md-12">
                 <div class="card">
                     <div class="card-header card-header-primary d-flex justify-content-between">
-                        <h4 class="card-title pt-2 text-dark">Issue: {{ issue.title|default:"Untitled" }}</h4>
+                        <h4 class="card-title pt-2 text-dark">Issue: {{ issue.title|default:"Untitled"|title }}</h4>
                     </div>
                     <div class="card-body">
                         <p class="text-dark left">Created by: {{ issue.created_by }} </p>
@@ -51,28 +104,20 @@
                             {# Custom layout for observers #}
                             <div class="form-group">
                                 <label for="id_observers">Observers</label>
-                                <div class="row">
-                                    <div class="col-md-12">
-                                        {# Empty left side #}
-                                    </div>
-                                    <div class="col-md-12">
-                                        <div class="d-flex flex-column">
-                                            <select name="observers" id="id_observers" class="form-select mb-2" multiple size="5" readonly>
-                                                {% for observer in form.observers.initial %}
-                                                    <option value="{{ observer.id }}" selected>{{ observer }}</option>
-                                                {% endfor %}
-                                            </select>
-                                            <button type="button" id="editObservers" class="btn primary mb-2">Edit Observers</button>
-                                            <div id="editControls" style="display: none;">
-                                                <select id="availableUsers" class="form-select mb-2" size="5">
-                                                    {% for user in available_users %}
-                                                        <option value="{{ user.id }}">{{ user }}</option>
-                                                    {% endfor %}
-                                                </select>
-                                                <button type="button" id="addObserver" class="btn primary mb-2">Add Observer</button>
-                                                <button type="button" id="removeObserver" class="btn btn-danger">Remove Selected</button>
+                                <div style="display: flex; justify-content: space-between;">
+                                    <div class="observer-list">
+                                        {% for observer in observers %}
+                                            <div class="observer-item" data-user-id="{{ observer.id }}">
+                                                {{ observer.name }}
                                             </div>
-                                        </div>
+                                        {% empty %}
+                                            <p class="text-muted">No observers selected</p>
+                                        {% endfor %}
+                                    </div>
+                                    <div>
+                                        <button type="button" class="btn primary" data-bs-toggle="modal" data-bs-target="#observersModal">
+                                            Edit Observers
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -92,71 +137,123 @@
     </div>
 </div>
 
+<!-- Observers Modal -->
+<div class="modal fade" id="observersModal" tabindex="-1" aria-labelledby="observersModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="observersModalLabel">Edit Observers</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="observer-search">
+                    <input type="text" class="form-control" id="userSearch" placeholder="Search users...">
+                </div>
+                <div class="selected-users" id="selectedUsers">
+                    <!-- Selected users will be displayed here -->
+                </div>
+                <div class="user-list" id="userList">
+                    {% for user in available_users %}
+                        <div class="user-item" style="display: flex; align-items: center;">
+                            <input type="checkbox" class="user-checkbox" id="user_{{ user.id }}" 
+                                   value="{{ user.id }}" data-user-name="{{ user.name }}"
+                                   {% if user in observers %}checked{% endif %}>
+                            <label for="user_{{ user.id }}">{{ user.name }}</label>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn primary" id="saveObservers">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const observersSelect = document.getElementById('id_observers');
-    const availableUsersSelect = document.getElementById('availableUsers');
-    const editButton = document.getElementById('editObservers');
-    const addButton = document.getElementById('addObserver');
-    const removeButton = document.getElementById('removeObserver');
-    const editControls = document.getElementById('editControls');
+    const userSearch = document.getElementById('userSearch');
+    const userList = document.getElementById('userList');
+    const selectedUsers = document.getElementById('selectedUsers');
+    const saveObserversBtn = document.getElementById('saveObservers');
+    const observerList = document.querySelector('.observer-list');
+    
+    // Create multiple hidden inputs for observers
+    function createObserverInputs(selectedIds) {
+        // Remove existing observer inputs
+        document.querySelectorAll('input[name="observers"]').forEach(input => input.remove());
+        
+        // Create new inputs for each selected observer
+        selectedIds.forEach(id => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'observers';
+            input.value = id;
+            document.getElementById('issueForm').appendChild(input);
+        });
+    }
 
-    // Toggle edit controls
-    editButton.addEventListener('click', function() {
-        if (editControls.style.display === 'none') {
-            editControls.style.display = 'block';
-            observersSelect.removeAttribute('readonly');
-            editButton.textContent = 'Done Editing';
-        } else {
-            editControls.style.display = 'none';
-            observersSelect.setAttribute('readonly', 'readonly');
-            editButton.textContent = 'Edit Observers';
+    // Initialize selected users display
+    function updateSelectedUsers() {
+        const selected = Array.from(document.querySelectorAll('.user-checkbox:checked'));
+        selectedUsers.innerHTML = selected.map(checkbox => `
+            <span class="selected-user" data-user-id="${checkbox.value}">
+                ${checkbox.dataset.userName}
+                <span class="remove-user" onclick="removeUser(${checkbox.value})">&times;</span>
+            </span>
+        `).join('');
+    }
+
+    // Search functionality
+    userSearch.addEventListener('input', function(e) {
+        const searchTerm = e.target.value.toLowerCase();
+        const userItems = userList.getElementsByClassName('user-item');
+        
+        Array.from(userItems).forEach(item => {
+            const userName = item.querySelector('label').textContent.toLowerCase();
+            item.style.display = userName.includes(searchTerm) ? '' : 'none';
+        });
+    });
+
+    // Handle checkbox changes
+    userList.addEventListener('change', function(e) {
+        if (e.target.classList.contains('user-checkbox')) {
+            updateSelectedUsers();
         }
     });
 
-    // Add observer
-    addButton.addEventListener('click', function() {
-        const selectedOptions = Array.from(availableUsersSelect.selectedOptions);
-        const currentObserverIds = Array.from(observersSelect.options).map(opt => opt.value);
+    // Remove user function
+    window.removeUser = function(userId) {
+        const checkbox = document.querySelector(`#user_${userId}`);
+        if (checkbox) {
+            checkbox.checked = false;
+            updateSelectedUsers();
+        }
+    };
+
+    // Save observers
+    saveObserversBtn.addEventListener('click', function() {
+        const selected = Array.from(document.querySelectorAll('.user-checkbox:checked'));
+        const selectedIds = selected.map(checkbox => checkbox.value);
         
-        selectedOptions.forEach(option => {
-            // Ensure uniqueness
-            if (!currentObserverIds.includes(option.value)) {
-                const newOption = new Option(option.text, option.value, true, true);
-                observersSelect.appendChild(newOption);
-                option.remove();
-            }
-        });
+        // Update hidden inputs
+        createObserverInputs(selectedIds);
+        
+        // Update observer list display
+        observerList.innerHTML = selected.map(checkbox => `
+            <div class="observer-item" data-user-id="${checkbox.value}">
+                ${checkbox.dataset.userName}
+            </div>
+        `).join('') || '<p class="text-muted">No observers selected</p>';
+        
+        // Close modal
+        const modal = bootstrap.Modal.getInstance(document.getElementById('observersModal'));
+        modal.hide();
     });
 
-    // Remove observer
-    removeButton.addEventListener('click', function() {
-        const selectedOptions = Array.from(observersSelect.selectedOptions);
-        selectedOptions.forEach(option => {
-            if (option.value != '{{ issue.created_by.id|default:"" }}') { // Prevent removing creator
-                // Only add back to available users if not already present
-                const existingAvailableIds = Array.from(availableUsersSelect.options).map(opt => opt.value);
-                if (!existingAvailableIds.includes(option.value)) {
-                    const newOption = new Option(option.text, option.value);
-                    availableUsersSelect.appendChild(newOption);
-                }
-                option.remove();
-            }
-        });
-    });
-
-    // Ensure all options are selected before form submission and maintain uniqueness
-    document.getElementById('issueForm').addEventListener('submit', function() {
-        const uniqueOptions = new Set();
-        Array.from(observersSelect.options).forEach(option => {
-            if (!uniqueOptions.has(option.value)) {
-                uniqueOptions.add(option.value);
-                option.selected = true;
-            } else {
-                option.remove(); // Remove duplicates
-            }
-        });
-    });
+    // Initialize selected users display
+    updateSelectedUsers();
 });
 </script>
 {% endblock %}
