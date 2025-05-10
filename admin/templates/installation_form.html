@@ -33,7 +33,7 @@
                 <hr class="my-4">
 
                 <!-- Select All Checkbox -->
-                <div class="form-group row align-items-center mb-3">
+                <div class="form-group row align-items-center mb-3" id="select_all_section" style="display: none;">
                     <div class="col-md-5">
                         <div class="form-check">
                             <input class="form-check-input" type="checkbox" id="select_all_checkboxes">
@@ -70,6 +70,7 @@
       }
 
       setLoading('search_room', true);
+      $('#select_all_section').hide(); // Hide select all section while loading
 
       $.ajax({
         url: "{% url 'get_room_type' %}",
@@ -100,6 +101,13 @@
     function renderCheckItems(items, savedItems = []) {
       const wrapper = $('#check-items-wrapper');
       wrapper.html('');
+
+      // Show/hide select all section based on whether there are items
+      if (items.length > 0) {
+        $('#select_all_section').show();
+      } else {
+        $('#select_all_section').hide();
+      }
 
       const savedItemsMap = {};
       savedItems.forEach(item => {
