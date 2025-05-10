@@ -1169,7 +1169,7 @@ def inventory_received_item_num(request):
 
 
 @login_required
-def save_installation(request):
+def save_admin_installation(request):
     if request.method == "POST":
         installation_id = request.POST.get("installation_id")
         print("[hello]", installation_id)
@@ -1431,22 +1431,29 @@ def installation_form(request):
                 date = request.POST.get(f"date_{step_type}_{step_id}") or now().date()
 
                 if step_type == "installation":
-                    if step_id == 0:
+                    if step_id == 0:  # Pre-Work completed
                         installation.prework = "YES" if is_checked else "NO"
-                        installation.prework_check_on = now().date() if is_checked else None
+                        installation.prework_check_on = date if is_checked else None
                         installation.prework_checked_by = invited_user_instance if is_checked else None
+                        # Update day_install_began when pre-work is completed
+                        if is_checked:
+                            installation.day_install_began = date
                     elif step_id == 1:
                         installation.product_arrived_at_floor = "YES" if is_checked else "NO"
-                        installation.product_arrived_at_floor_check_on = now().date() if is_checked else None
+                        installation.product_arrived_at_floor_check_on = date if is_checked else None
                         installation.product_arrived_at_floor_checked_by = invited_user_instance if is_checked else None
                     elif step_id == 12:
                         installation.retouching = "YES" if is_checked else "NO"
-                        installation.retouching_check_on = now().date() if is_checked else None
+                        installation.retouching_check_on = date if is_checked else None
                         installation.retouching_checked_by = invited_user_instance if is_checked else None
-                    elif step_id == 13:
+                    elif step_id == 13:  # Post Work
                         installation.post_work = "YES" if is_checked else "NO"
-                        installation.post_work_check_on = now().date() if is_checked else None
+                        installation.post_work_check_on = date if is_checked else None
                         installation.post_work_checked_by = invited_user_instance if is_checked else None
+                        # Update day_install_complete and install when post-work is completed
+                        if is_checked:
+                            installation.day_install_complete = date
+                            installation.install = "YES"
 
                 elif step_type == "detail":
                     try:

@@ -138,7 +138,7 @@ th.sorting, th.sorting_asc, th.sorting_desc {
             <h2 id="modelModalTitle">Add Installation</h2>
             <span class="close" id="closeModelModal">×</span>
         </div>
-        <form id="modelForm" method="POST" action="{% url 'save_installation' %}">
+        <form id="modelForm" method="POST" action="{% url 'save_admin_installation' %}">
             {% csrf_token %}
             <input type="hidden" id="model-id" name="installation_id">
 
