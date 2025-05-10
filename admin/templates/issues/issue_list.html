@@ -6,16 +6,14 @@
 {% block content %}
 <style>
     #issueTable tbody tr {
-        height: 60px; /* Matching floor_products_list.html */
+        height: 60px;
     }
     #issueTable th, #issueTable td {
         white-space: nowrap;
-        padding: 15px; /* Matching floor_products_list.html */
+        padding: 15px;
         vertical-align: middle;
     }
-    .table-responsive {
-        margin-top: 20px;
-    }
+
 </style>
 
 <div class="content">
@@ -55,7 +53,7 @@
                                 </div>
                                 <button type="submit" class="btn btn-secondary btn-sm mb-2">Search</button>
                             </form>
-                            <a href="{% url 'issue_create' %}" class="btn btn-primary btn-md">Report New Issue</a>
+                            <a href="{% url 'issue_create' %}" class="btn btn-secondary btn-md  ">Report New Issue</a>
                         </div>
 
                         {% if issues %}
@@ -76,11 +74,16 @@
                                     <tbody>
                                         {% for issue in issues %}
                                         <tr>
-                                            <td>#{{ issue.id }}</td>
+                                            <td>{{ issue.id }}</td>
                                             <td title="{{ issue.title }}">{{ issue.title|truncatechars:30 }}</td>
-                                            <td><span class="badge bg-info text-dark">{{ issue.get_type_display }}</span></td>
+                                            <td><span class="text-info">{{ issue.get_type_display }}</span></td>
                                             <td>
-                                                <span class="badge bg-{% if issue.status == 'OPEN' %}primary{% elif issue.status == 'WORKING' %}warning{% elif issue.status == 'PENDING' %}info{% elif issue.status == 'CLOSE' %}success{% else %}secondary{% endif %}">
+                                                <span class="
+                                                    {% if issue.status == 'OPEN' %}text-primary
+                                                    {% elif issue.status == 'WORKING' %}text-warning
+                                                    {% elif issue.status == 'PENDING' %}text-info
+                                                    {% elif issue.status == 'CLOSE' %}text-success
+                                                    {% else %}text-secondary{% endif %}">
                                                     {{ issue.get_status_display }}
                                                 </span>
                                             </td>
@@ -88,7 +91,7 @@
                                             <td>{{ issue.created_by.name|default:"N/A" }}</td>
                                             <td>{{ issue.assignee.name|default:"Not Assigned" }}</td>
                                             <td>
-                                                <a href="{% url 'issue_detail' issue.id %}" class="btn btn-info btn-sm">View</a>
+                                                <a href="{% url 'issue_detail' issue.id %}" class="btn btn-secondary btn-sm">View</a>
                                                 {# Add other actions like edit if applicable for user #}
                                             </td>
                                         </tr>
