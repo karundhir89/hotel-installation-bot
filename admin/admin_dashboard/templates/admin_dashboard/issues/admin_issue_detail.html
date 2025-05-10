@@ -5,116 +5,140 @@
 {% block title %}Admin - Issue #{{ issue.id }}: {{ issue.title }}{% endblock %}
 
 {% block content %}
-<div class="container mt-4"> {# Or use "content" and "container-fluid" classes if dashboard_layout expects that #}
-    
+<div class="container mt-4" style="margin-top: 100px!important;">
     {% if messages %}
-        {% for message in messages %}
-            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            </div>
-        {% endfor %}
+    {% for message in messages %}
+    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endfor %}
     {% endif %}
 
     <div class="card mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
-            {# Consider using card-header-primary like other admin pages if dashboard_layout provides it #}
-            <h4 class="mb-0">Issue : {{ issue.title }}</h4>
-            <span class="badge bg-{% if issue.status == 'OPEN' %}primary{% elif issue.status == 'WORKING' %}warning{% elif issue.status == 'PENDING' %}info{% elif issue.status == 'CLOSE' %}success{% else %}secondary{% endif %}">{{ issue.get_status_display }}</span>
+            <h4 class="mb-0">Issue : {{ issue.title|title }}</h4>
+            <span
+                class="badge bg-{% if issue.status == 'OPEN' %}primary{% elif issue.status == 'WORKING' %}warning{% elif issue.status == 'PENDING' %}info{% elif issue.status == 'CLOSE' %}success{% else %}secondary{% endif %}">{{issue.get_status_display}}
+            </span>
         </div>
         <div class="card-body">
-            <p><strong>Type:</strong> {{ issue.get_type_display }}</p>
+            <div class="row">
+                <div class="col-md-6">
+                    <p><strong>Type:</strong> {{ issue.get_type_display|title }}</p>
+                </div>
+                <div class="col-md-6">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p>
+                                <small class="text-muted">Reported by: {{issue.created_by.name|title}} on {{issue.created_at|date:"Y-m-d H:i"}}
+                                </small>
+                            </p>
+                        </div>
+                        {% if issue.assignee %}
+                        <div class="col-md-6">
+                            <p><small class="text-muted">Assigned to: {{ issue.assignee.name|title }}aaa</small></p>
+                        </div>
+                        {% endif %}
+                    </div>  
+                </div>
+            </div>
             {% if issue.description %}
-                <p><strong>Description: {{ issue.description|truncatechars:100 }}</strong></p>
+            <div class="row">
+                <div class="col-md-12">
+                    <p><strong>Description:</strong> {{ issue.description|truncatechars:100 }}</p>
+                </div>
+            </div>
             {% endif %}
             <hr>
-            <p><small class="text-muted">Reported by: {{ issue.created_by.name }} on {{ issue.created_at|date:"Y-m-d H:i" }}</small></p>
-            {% if issue.assignee %}
-                <p><small class="text-muted">Assigned to: {{ issue.assignee.name }}</small></p>
-            {% endif %}
             {% if issue.observers.count > 0 %}
-            <p><small class="text-muted">Observers: 
-                {% for observer in issue.observers.all %}
+            <p><small class="text-muted">Observers:
+                    {% for observer in issue.observers.all %}
                     {{ observer.name }}{% if not forloop.last %}, {% endif %}
-                {% endfor %}
-            </small></p>
+                    {% endfor %}
+                </small></p>
             {% endif %}
-             {# Admin link to edit is already here and correct #}
-            <a href="{% url 'admin_dashboard:admin_issue_edit' issue.id %}" class="btn btn-sm primary">Edit Issue Details</a>
+            {# Admin link to edit is already here and correct #}
+            <a href="{% url 'admin_dashboard:admin_issue_edit' issue.id %}" class="btn btn-sm primary">Edit Issue
+                Details</a>
         </div>
     </div>
 
     <h5>Comments</h5>
     <div class="comments-section mb-4">
         {% for comment in comments %}
-            <div class="card mb-2">
-                <div class="card-body">
-                    <p>{{ comment.text_content|linebreaksbr }}</p>
-    
-                    {% if comment.media %}
-                        <!-- Images -->
-                        <div class="issue-image d-flex flex-wrap gap-2">
-                            {% for media_item in comment.media %}
-                                {% if media_item.type == 'image' %}
-                                    <a href="{{ media_item.url }}" target="_blank" style="display: block; width: 200px; height: 200px; overflow: hidden;">
-                                        <img src="{{ media_item.url }}" alt="{{ media_item.name }}"
-                                            style="width: 100%; height: 100%; object-fit: cover; border-radius: 4px;">
-                                    </a>
-                                {% endif %}
-                            {% endfor %}
-                        </div>
-                        <!-- Videos -->
-                        <div class="issue-video">
-                            {% for media_item in comment.media %}
-                                {% if media_item.type == 'video' %}
-                                    <a href="{{ media_item.url }}" target="_blank">[Video: {{ media_item.name }}]</a><br>
-                                {% endif %}
-                            {% endfor %}
-                        </div>
-    
-                        <!-- Other Media -->
-                        <div class="issue-other-media">
-                            {% for media_item in comment.media %}
-                                {% if media_item.type != 'image' and media_item.type != 'video' %}
-                                    <a href="{{ media_item.url }}" target="_blank">[Media: {{ media_item.name }}]</a><br>
-                                {% endif %}
-                            {% endfor %}
-                        </div>
+        <div class="card mb-2">
+            <div class="card-body">
+                <p>{{ comment.text_content|linebreaksbr }}</p>
+
+                {% if comment.media %}
+                <!-- Images -->
+                <div class="issue-image d-flex flex-wrap gap-2">
+                    {% for media_item in comment.media %}
+                    {% if media_item.type == 'image' %}
+                    <a href="{{ media_item.url }}" target="_blank"
+                        style="display: block; width: 200px; height: 200px; overflow: hidden;">
+                        <img src="{{ media_item.url }}" alt="{{ media_item.name }}"
+                            style="width: 100%; height: 100%; object-fit: cover; border-radius: 4px;">
+                    </a>
                     {% endif %}
+                    {% endfor %}
                 </div>
-                <div class="card-footer text-muted small">
-                    By {{ comment.commenter.name }} on {{ comment.created_at|date:"Y-m-d H:i" }}
+                <!-- Videos -->
+                <div class="issue-video">
+                    {% for media_item in comment.media %}
+                    {% if media_item.type == 'video' %}
+                    <a href="{{ media_item.url }}" target="_blank">[Video: {{ media_item.name }}]</a><br>
+                    {% endif %}
+                    {% endfor %}
                 </div>
+
+                <!-- Other Media -->
+                <div class="issue-other-media">
+                    {% for media_item in comment.media %}
+                    {% if media_item.type != 'image' and media_item.type != 'video' %}
+                    <a href="{{ media_item.url }}" target="_blank">[Media: {{ media_item.name }}]</a><br>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+                {% endif %}
             </div>
+            <div class="card-footer text-muted small">
+                By {{ comment.commenter.name }} on {{ comment.created_at|date:"Y-m-d H:i" }}
+            </div>
+        </div>
         {% empty %}
-            <p>No comments yet.</p>
+        <p>No comments yet.</p>
         {% endfor %}
     </div>
-    
+
 
     {% if can_comment %} {# Assuming 'can_comment' will be passed from the new admin_issue_detail view #}
     <h5>Add Comment</h5>
-    <form method="post" enctype="multipart/form-data" class="comment-form position-relative" action="{% url 'admin_dashboard:admin_comment_create' issue.id %}"> {# Ensure form action points to a valid comment creation URL #}
+    <form method="post" enctype="multipart/form-data" class="comment-form position-relative"
+        action="{% url 'admin_dashboard:admin_comment_create' issue.id %}">
         {% csrf_token %}
-        
+
         <div class="mb-3 position-relative">
             <label for="{{ comment_form.text_content.id_for_label }}" class="visually-hidden">Your Comment</label>
             {{ comment_form.text_content }} {# This will need comment_form in context #}
-            
+
             <div class="message-actions position-absolute end-0 bottom-0 me-3 mb-2 d-flex align-items-center gap-2">
                 <div class="file-attachment-images me-1">
-                    <label for="{{ comment_form.images.id_for_label }}" class="attachment-btn btn p-0 text-muted" title="Attach Images (Max 4)">
+                    <label for="{{ comment_form.images.id_for_label }}" class="attachment-btn btn p-0 text-muted"
+                        title="Attach Images (Max 4)">
                         <i class="bi bi-images fs-5"></i>
                     </label>
                     {{ comment_form.images }} {# This will be hidden by d-none class from widget attrs #}
                 </div>
                 <div class="file-attachment-video me-1">
-                    <label for="{{ comment_form.video.id_for_label }}" class="attachment-btn btn p-0 text-muted" title="Attach Video (Max 1, <100MB)">
+                    <label for="{{ comment_form.video.id_for_label }}" class="attachment-btn btn p-0 text-muted"
+                        title="Attach Video (Max 1, <100MB)">
                         <i class="bi bi-camera-reels fs-5"></i>
                     </label>
                     {{ comment_form.video }} {# This will be hidden by d-none class from widget attrs #}
                 </div>
-            
+
                 <button type="submit" class="send-btn btn" title="Send Comment">
                     <i class="bi bi-arrow-right-circle-fill fs-5"></i>
                 </button>
@@ -126,36 +150,37 @@
         {{ comment_form.video.label_tag }} {{ comment_form.video.help_text }}
     </div>
     {% else %}
-        <p class="text-muted">Commenting is managed on this issue.</p> {# Or specific admin message #}
+    <p class="text-muted">Commenting is managed on this issue.</p> {# Or specific admin message #}
     {% endif %}
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.min.css">
 
     <div class="mt-4">
-        <a href="{% url 'admin_dashboard:admin_issue_list' %}" class="btn btn-secondary">Back to Admin Issue List</a>
+        <a href="{% url 'admin_dashboard:admin_issue_list' %}" class="btn btn-secondary">Back to Admin Issue
+            List</a>
     </div>
 
     <style>
-        .comment-textarea { /* Changed from ID to class */
+        .comment-textarea {
+            /* Changed from ID to class */
             width: 100%;
             padding: 12px 90px 12px 15px;
             border-radius: 20px;
             resize: none;
             min-height: 60px;
         }
+
         .message-actions {
             transform: translate(10px, -36px);
         }
+
         .attachment-btn i {
             font-size: 1.5em;
         }
+
         .send-btn i {
             font-size: 2em;
         }
-        /* This rule was duplicated, keeping the more specific one if needed, or remove if covered by the above */
-        /* .message-actions {
-            transform: translate(0, -75%);
-            right: 0;
-        } */
+
     </style>
-{% endblock %} 
+    {% endblock %}
