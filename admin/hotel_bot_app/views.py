@@ -413,9 +413,9 @@ def add_users_roles(request):
 
 @csrf_exempt
 def user_login(request):
-    # Redirect to dashboard if already logged in
+    # Redirect to home page if already logged in
     if request.session.get("user_id"):
-        return redirect("/dashboard")
+        return redirect("/home")
 
     if request.method == "POST":
         try:
@@ -1360,7 +1360,7 @@ def user_logout(request):
 
 
 @session_login_required
-def dashboard(request):
+def home(request):
     user_id = request.session.get("user_id")
 
     if not user_id:
@@ -1397,7 +1397,7 @@ def dashboard(request):
         request.session['user_roles'] = user_roles 
 
         return render(
-            request, "dashboard.html", {"name": user.name, "roles": user_roles}
+            request, "home.html", {"name": user.name, "roles": user_roles}
         )
     except InvitedUser.DoesNotExist:
         # Clear potentially invalid session data if user doesn't exist
