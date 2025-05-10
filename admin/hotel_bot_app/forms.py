@@ -385,7 +385,10 @@ class IssueUpdateForm(forms.ModelForm):
             'description': forms.Textarea(attrs={'rows': 1}),
             'status': forms.Select(attrs={'class': 'form-select'}),
             'type': forms.Select(attrs={'class': 'form-select'}),
-            'is_for_hotel_admin': forms.Select(choices=[(False, 'Hidden from Hotel Admin'), (True, 'Visible to Hotel Admin')], attrs={'class': 'form-select'}),
+            'is_for_hotel_admin': forms.Select(choices=[
+                (False, 'Hidden from Hotel Admin'),
+                (True, 'Visible to Hotel Admin')
+                ], attrs={'class': 'form-select'}),
 
         }
 

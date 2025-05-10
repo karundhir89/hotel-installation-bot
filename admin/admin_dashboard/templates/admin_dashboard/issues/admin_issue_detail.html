@@ -67,48 +67,47 @@
     <h5>Comments</h5>
     <div class="comments-section mb-4">
         {% for comment in comments %}
-        <div class="card mb-2">
-            <div class="card-body">
-                <p>{{ comment.text_content|linebreaksbr }}</p>
+            <div class="card mb-2">
+                <div class="card-body">
+                    <p>{{ comment.text_content|linebreaksbr }}</p>
 
-                {% if comment.media %}
-                <!-- Images -->
-                <div class="issue-image d-flex flex-wrap gap-2">
-                    {% for media_item in comment.media %}
-                    {% if media_item.type == 'image' %}
-                    <a href="{{ media_item.url }}" target="_blank"
-                        style="display: block; width: 200px; height: 200px; overflow: hidden;">
-                        <img src="{{ media_item.url }}" alt="{{ media_item.name }}"
-                            style="width: 100%; height: 100%; object-fit: cover; border-radius: 4px;">
-                    </a>
-                    {% endif %}
-                    {% endfor %}
-                </div>
-                <!-- Videos -->
-                <div class="issue-video">
-                    {% for media_item in comment.media %}
-                    {% if media_item.type == 'video' %}
-                    <a href="{{ media_item.url }}" target="_blank">[Video: {{ media_item.name }}]</a><br>
-                    {% endif %}
-                    {% endfor %}
-                </div>
+                    {% if comment.media %}
+                        <!-- Images -->
+                        <div class="issue-image d-flex flex-wrap gap-2">
+                            {% for media_item in comment.media %}
+                                {% if media_item.type == 'image' %}
+                                    <a href="{{ media_item.url }}" target="_blank" style="display: block; width: 200px; height: 200px; overflow: hidden;">
+                                        <img src="{{ media_item.url }}" alt="{{ media_item.name }}"
+                                            style="width: 100%; height: 100%; object-fit: cover; border-radius: 4px;">
+                                    </a>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
+                        <!-- Videos -->
+                        <div class="issue-video">
+                            {% for media_item in comment.media %}
+                                {% if media_item.type == 'video' %}
+                                    <a href="{{ media_item.url }}" target="_blank">[Video: {{ media_item.name }}]</a><br>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
 
-                <!-- Other Media -->
-                <div class="issue-other-media">
-                    {% for media_item in comment.media %}
-                    {% if media_item.type != 'image' and media_item.type != 'video' %}
-                    <a href="{{ media_item.url }}" target="_blank">[Media: {{ media_item.name }}]</a><br>
+                        <!-- Other Media -->
+                        <div class="issue-other-media">
+                            {% for media_item in comment.media %}
+                                {% if media_item.type != 'image' and media_item.type != 'video' %}
+                                    <a href="{{ media_item.url }}" target="_blank">[Media: {{ media_item.name }}]</a><br>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
                     {% endif %}
-                    {% endfor %}
                 </div>
-                {% endif %}
+                <div class="card-footer text-muted small">
+                    By {{ comment.commenter.name }} on {{ comment.created_at|date:"Y-m-d H:i" }}
+                </div>
             </div>
-            <div class="card-footer text-muted small">
-                By {{ comment.commenter.name }} on {{ comment.created_at|date:"Y-m-d H:i" }}
-            </div>
-        </div>
         {% empty %}
-        <p>No comments yet.</p>
+            <p>No comments yet.</p>
         {% endfor %}
     </div>
 
@@ -161,26 +160,48 @@
     </div>
 
     <style>
-        .comment-textarea {
-            /* Changed from ID to class */
-            width: 100%;
-            padding: 12px 90px 12px 15px;
-            border-radius: 20px;
-            resize: none;
-            min-height: 60px;
-        }
+ .comment-textarea {
+        width: 100%;
+        padding: 12px 90px 12px 15px; /* Increased right padding for buttons */
+        border-radius: 20px;
+        resize: none;
+        min-height: 60px; 
+    }
 
-        .message-actions {
-            transform: translate(10px, -36px);
-        }
+    .message-actions {
+        position: absolute; /* Ensure it's positioned relative to its parent */
+        bottom: 10px; /* Adjust as needed for vertical alignment */
+        right: 10px;  /* Adjust as needed for horizontal alignment */
+        display: flex;
+        align-items: center;
+        gap: 0.5rem; /* Space between buttons */
+        /* transform: translate(0, -75%); /* This might be too aggressive or depend on parent height, using bottom/right for now */
+    }
 
-        .attachment-btn i {
-            font-size: 1.5em;
-        }
+    .attachment-btn i {
+        font-size: 1.5em;
+    }
 
-        .send-btn i {
-            font-size: 2em;
-        }
+    .send-btn i {
+        font-size: 2em;
+    }
+    .comment-form textarea {
+    border-radius: 20px; /* Optional: Rounded corners for the input */
+    padding-right: 50px; /* Make space for the icons */
+}
+
+    .message-actions .btn i {
+        /* Adjust icon size if needed */
+        /* font-size: 1.2em; */
+    }
+
+    .file-attachment .attachment-btn {
+        /* Style the attachment button if needed */
+    }
+
+    .send-btn {
+        /* Style the send button if needed */
+    }
 
     </style>
     {% endblock %}
