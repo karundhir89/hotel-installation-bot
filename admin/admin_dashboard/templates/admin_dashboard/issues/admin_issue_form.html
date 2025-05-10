@@ -2,23 +2,26 @@
 {% load static %}
 {% load crispy_forms_tags %}
 
-{% block title %}Admin - Edit Issue #{{ issue.id|default:"Unknown" }}{% endblock %}
+{% block title %}Admin - Edit Issue {{ issue.id|default:"Unknown" }}{% endblock %}
 
 {% block content %}
 <style>
-    .primary{
+    .primary {
         background-color: #5a6268;
-        &:hover{
-            background-color: #5a6268;
-        }
+        border-color: #5a6268;
+        color: white;
     }
-    .left{
+    .primary:hover {
+        background-color: #4a5156;
+        border-color: #4a5156;
+    }
+    .left {
         text-align: left;
     }
     .selected {
         background-color: #5a6268;
+        color: white;
     }
-
     /* Observer Modal Styles */
     .observer-list {
         max-height: 200px;
@@ -77,17 +80,56 @@
         cursor: pointer;
         color: #dc3545;
     }
+    /* Toggle Switch Styling */
+    .form-switch {
+        padding-left: 2.5em;
+    }
+    .form-switch .form-check-input {
+        width: 2.5em;
+        height: 1.25em;
+        margin-left: -2.5em;
+        background-color: #adb5bd;
+        border-color: #adb5bd;
+    }
+    .form-switch .form-check-input:checked {
+        background-color: #5a6268;
+        border-color: #5a6268;
+    }
+    .form-switch .form-check-label {
+        margin-left: 0.5rem;
+        font-weight: 500;
+    }
+    /* Card Styling */
+    .card {
+        border: none;
+        border-radius: 0.5rem;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    .card-header-primary {
+        background: #5a6268;
+        color: white;
+        border-radius: 0.5rem 0.5rem 0 0;
+    }
+    /* Button Container */
+    .button-container {
+        margin-top: 2rem;
+        padding-top: 1rem;
+        border-top: 1px solid #dee2e6;
+    }
+    .show-hotel-admin{
+        border:2px solid #5a6268;
+    }
 </style>
 <div class="content">
     <div class="container-fluid">
         <div class="row">
             <div class="col-md-12">
                 <div class="card">
-                    <div class="card-header card-header-primary d-flex justify-content-between">
+                    <div class="card-header card-header-primary d-flex justify-content-between align-items-center">
                         <h4 class="card-title pt-2 text-dark">Issue: {{ issue.title|default:"Untitled"|title }}</h4>
                     </div>
-                    <div class="card-body">
-                        <p class="text-dark left">Created by: {{ issue.created_by }} </p>
+                    <div class="card-body p-4">
+                        <p class="text-dark left">Created by: {{ issue.created_by }}</p>
                         <p class="text-dark left">Created on: {{ issue.created_at|date:"F d, Y" }}</p>
                         {% include 'common/messages.html' %}
                         
@@ -102,9 +144,9 @@
                             {% endfor %}
 
                             {# Custom layout for observers #}
-                            <div class="form-group">
+                            <div class="form-group mb-4">
                                 <label for="id_observers">Observers</label>
-                                <div style="display: flex; justify-content: space-between;">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
                                     <div class="observer-list">
                                         {% for observer in observers %}
                                             <div class="observer-item" data-user-id="{{ observer.id }}">
@@ -122,13 +164,15 @@
                                 </div>
                             </div>
 
-                            <button type="submit" class="btn primary mt-3">Save Changes</button>
-                            <a href="{% url 'admin_dashboard:admin_issue_list' %}" class="btn btn-secondary mt-3">Cancel</a>
-                            {% if issue.id %}
-                            <a href="{% url 'admin_dashboard:admin_issue_detail' issue.id %}" class="btn btn-sm edit-button ">View</a>
-                            {% else %}
-                                <a href="#" class="btn btn-info mt-3 disabled" aria-disabled="true">View Issue Details</a>
-                            {% endif %}
+                            <div class="button-container">
+                                <button type="submit" class="btn primary">Save Changes</button>
+                                <a href="{% url 'admin_dashboard:admin_issue_list' %}" class="btn btn-secondary">Cancel</a>
+                                {% if issue.id %}
+                                    <a href="{% url 'admin_dashboard:admin_issue_detail' issue.id %}" class="btn primary">View</a>
+                                {% else %}
+                                    <a href="#" class="btn btn-info disabled" aria-disabled="true">View Issue Details</a>
+                                {% endif %}
+                            </div>
                         </form>
                     </div>
                 </div>
@@ -178,13 +222,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const selectedUsers = document.getElementById('selectedUsers');
     const saveObserversBtn = document.getElementById('saveObservers');
     const observerList = document.querySelector('.observer-list');
-    
+
     // Create multiple hidden inputs for observers
     function createObserverInputs(selectedIds) {
-        // Remove existing observer inputs
         document.querySelectorAll('input[name="observers"]').forEach(input => input.remove());
-        
-        // Create new inputs for each selected observer
         selectedIds.forEach(id => {
             const input = document.createElement('input');
             input.type = 'hidden';
@@ -200,7 +241,7 @@ document.addEventListener('DOMContentLoaded', function() {
         selectedUsers.innerHTML = selected.map(checkbox => `
             <span class="selected-user" data-user-id="${checkbox.value}">
                 ${checkbox.dataset.userName}
-                <span class="remove-user" onclick="removeUser(${checkbox.value})">&times;</span>
+                <span class="remove-user" onclick="removeUser(${checkbox.value})">×</span>
             </span>
         `).join('');
     }
@@ -209,7 +250,6 @@ document.addEventListener('DOMContentLoaded', function() {
     userSearch.addEventListener('input', function(e) {
         const searchTerm = e.target.value.toLowerCase();
         const userItems = userList.getElementsByClassName('user-item');
-        
         Array.from(userItems).forEach(item => {
             const userName = item.querySelector('label').textContent.toLowerCase();
             item.style.display = userName.includes(searchTerm) ? '' : 'none';
@@ -236,18 +276,12 @@ document.addEventListener('DOMContentLoaded', function() {
     saveObserversBtn.addEventListener('click', function() {
         const selected = Array.from(document.querySelectorAll('.user-checkbox:checked'));
         const selectedIds = selected.map(checkbox => checkbox.value);
-        
-        // Update hidden inputs
         createObserverInputs(selectedIds);
-        
-        // Update observer list display
         observerList.innerHTML = selected.map(checkbox => `
             <div class="observer-item" data-user-id="${checkbox.value}">
                 ${checkbox.dataset.userName}
             </div>
         `).join('') || '<p class="text-muted">No observers selected</p>';
-        
-        // Close modal
         const modal = bootstrap.Modal.getInstance(document.getElementById('observersModal'));
         modal.hide();
     });

@@ -365,6 +365,7 @@ class CommentForm(forms.ModelForm):
         if not text_content and not images and not video:
             raise ValidationError("A comment must contain text or at least one media file.")
         return cleaned_data
+
 class IssueUpdateForm(forms.ModelForm):
     assignee = forms.ModelChoiceField(
         queryset=InvitedUser.objects.all(),
@@ -381,10 +382,11 @@ class IssueUpdateForm(forms.ModelForm):
         model = Issue
         fields = ['title', 'description', 'status', 'type', 'is_for_hotel_admin', 'assignee', 'observers']
         widgets = {
-            'description': forms.Textarea(attrs={'rows': 3}),
+            'description': forms.Textarea(attrs={'rows': 1}),
             'status': forms.Select(attrs={'class': 'form-select'}),
             'type': forms.Select(attrs={'class': 'form-select'}),
-            'is_for_hotel_admin': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'is_for_hotel_admin': forms.Select(choices=[(False, 'Hidden from Hotel Admin'), (True, 'Visible to Hotel Admin')], attrs={'class': 'form-select'}),
+
         }
 
     def __init__(self, *args, **kwargs):
