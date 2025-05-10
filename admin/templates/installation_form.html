@@ -32,6 +32,18 @@
 
                 <hr class="my-4">
 
+                <!-- Select All Checkbox -->
+                <div class="form-group row align-items-center mb-3">
+                    <div class="col-md-5">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="select_all_checkboxes">
+                            <label class="form-check-label" for="select_all_checkboxes">
+                                <strong>Select All Items</strong>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Dynamic Check Items Render Here -->
                 <div id="check-items-wrapper"></div>
 
@@ -137,23 +149,37 @@
       });
     }
 
-    // Fill checked_by and check_on when checkbox is ticked
-    $(document).on("change", ".form-check-input", function () {
-      const checkbox = $(this);
-      const idParts = checkbox.attr("id").split("_"); // ["step", "detail", "23"]
-      const type = idParts[1];
-      const id = idParts[2];
-
-      const isChecked = checkbox.is(":checked");
+    // Select All Checkbox Functionality
+    $(document).on("change", "#select_all_checkboxes", function() {
+      const isChecked = $(this).is(":checked");
       const currentDate = new Date().toISOString().split("T")[0];
       const currentUser = "{{ invited_user.name|escapejs }}";
 
-      if (isChecked) {
-        $(`input[name="date_${type}_${id}"]`).val(currentDate);
-        $(`input[name="checked_by_${type}_${id}"]`).val(currentUser);
-      } else {
-        $(`input[name="date_${type}_${id}"]`).val("");
-        $(`input[name="checked_by_${type}_${id}"]`).val("");
+      $(".form-check-input").each(function() {
+        if ($(this).attr("id") !== "select_all_checkboxes") {
+          $(this).prop("checked", isChecked);
+          
+          const idParts = $(this).attr("id").split("_");
+          const type = idParts[1];
+          const id = idParts[2];
+
+          if (isChecked) {
+            $(`input[name="date_${type}_${id}"]`).val(currentDate);
+            $(`input[name="checked_by_${type}_${id}"]`).val(currentUser);
+          } else {
+            $(`input[name="date_${type}_${id}"]`).val("");
+            $(`input[name="checked_by_${type}_${id}"]`).val("");
+          }
+        }
+      });
+    });
+
+    // Update Select All checkbox state when individual checkboxes change
+    $(document).on("change", ".form-check-input", function() {
+      if ($(this).attr("id") !== "select_all_checkboxes") {
+        const totalCheckboxes = $(".form-check-input").not("#select_all_checkboxes").length;
+        const checkedCheckboxes = $(".form-check-input:checked").not("#select_all_checkboxes").length;
+        $("#select_all_checkboxes").prop("checked", totalCheckboxes === checkedCheckboxes);
       }
     });
 
