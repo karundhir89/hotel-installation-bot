@@ -220,13 +220,11 @@ class IssueForm(forms.ModelForm):
         queryset=RoomData.objects.all(),
         widget=forms.SelectMultiple(attrs={'class': 'form-control select2-multiple'}),
         required=False,
-        label="Related Rooms (if type is Room)"
     )
     related_inventory_items = forms.ModelMultipleChoiceField(
         queryset=Inventory.objects.all(),
         widget=forms.SelectMultiple(attrs={'class': 'form-control select2-multiple'}),
         required=False,
-        label="Related Floor Items (if type is Floor)"
     )
 
     class Meta:
