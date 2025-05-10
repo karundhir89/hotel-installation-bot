@@ -2,6 +2,8 @@ from django.db import models
 from django.contrib.postgres.fields import ArrayField
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.models import ContentType
 
 class InvitedUser(models.Model):
     id = models.AutoField(primary_key=True)
@@ -282,7 +284,6 @@ class IssueStatus(models.TextChoices):
 class IssueType(models.TextChoices):
     ROOM = 'ROOM', _('Room')
     FLOOR = 'FLOOR', _('Floor')
-    INVENTORY = 'INVENTORY', _('Inventory') # Added INVENTORY based on description
 
 class Issue(models.Model):
     title = models.CharField(max_length=255)
@@ -317,6 +318,20 @@ class Issue(models.Model):
         blank=True
     )
 
+    # New fields for linking to Rooms or Inventory based on IssueType
+    related_rooms = models.ManyToManyField(
+        'RoomData',
+        related_name='issues',
+        blank=True,
+        verbose_name='Related Rooms'
+    )
+    related_inventory_items = models.ManyToManyField(
+        'Inventory',
+        related_name='issues',
+        blank=True,
+        verbose_name='Related Inventory Items'
+    )
+
     def __str__(self):
         return f"{self.id}: {self.title} ({self.status})"
 
@@ -326,20 +341,52 @@ class Comment(models.Model):
         on_delete=models.CASCADE, # Delete comments if the issue is deleted
         related_name='comments'
     )
-    user = models.ForeignKey(
-        'InvitedUser',
-        on_delete=models.PROTECT,
-        related_name='issue_comments'
+
+    # Fields for GenericForeignKey to allow different commenter types
+    content_type = models.ForeignKey(
+        ContentType,
+        on_delete=models.CASCADE,
+
     )
+    object_id = models.PositiveIntegerField(
+        # Same as above, potentially nullable during transition
+    )
+    commenter = GenericForeignKey('content_type', 'object_id')
+
     text_content = models.TextField(blank=True, null=True)
     # Using JSONField for flexibility. Requires PostgreSQL or Django >= 3.1 with other DBs
     # Consider alternatives like a separate Media model if JSONField is not suitable
-    media = models.JSONField(default=list, blank=True)
+    media = models.JSONField(default=list, blank=True) # Stores list of media info
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    @property
+    def commenter_display_name(self):
+        if not self.commenter:
+            return "Unknown User"
+
+
+        if isinstance(self.commenter, InvitedUser):
+            return self.commenter.name
+        # Check if it's an instance of the model specified by AUTH_USER_MODEL
+        # This requires from django.conf import settings
+        elif isinstance(self.commenter, eval(settings.AUTH_USER_MODEL.split('.')[0] + ".models." + settings.AUTH_USER_MODEL.split('.')[1])):
+             # if settings.AUTH_USER_MODEL is 'auth.User' this becomes isinstance(self.commenter, auth.models.User)
+            user_model_name = self.commenter.__class__.__name__
+            if hasattr(self.commenter, 'get_full_name') and self.commenter.get_full_name():
+                return self.commenter.get_full_name()
+            elif hasattr(self.commenter, 'username'):
+                return self.commenter.username
+            else: # Fallback for other potential user models
+                return str(self.commenter)
+
+        return str(self.commenter) # Fallback
+
     def __str__(self):
-        return f"Comment by {self.user} on Issue {self.issue.id} at {self.created_at}"
+        return f"Comment by {self.commenter_display_name} on {self.issue.title} at {self.created_at.strftime('%Y-%m-%d %H:%M')}"
+
+    class Meta:
+        ordering = ['created_at']
 
 # Potential next steps:
 # - Add validation for media field (max images, video size) - likely in forms/serializers

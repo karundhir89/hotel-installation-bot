@@ -1,5 +1,4 @@
 {% extends 'frontend_base.html' %}
- {# Adjust to your actual base template #}
 {% load static %}
 {% load crispy_forms_tags %} {# Assuming crispy_forms, otherwise use {{ comment_form.as_p }} #}
 
@@ -51,39 +50,57 @@
             <div class="card mb-2">
                 <div class="card-body">
                     <p>{{ comment.text_content|linebreaksbr }}</p>
-                    {% if comment.media %} {# Basic rendering of media URLs - needs refinement #}
-                        <p><strong>Media:</strong>
-                        {% for media_item in comment.media %}
-                            {% if media_item.type == 'image' %}
-                                <a href="{{ media_item.url }}" target="_blank"><img src="{{ media_item.url }}" alt="{{ media_item.name }}" style="max-width: 200px; max-height: 200px; margin: 5px;"></a>
-                            {% elif media_item.type == 'video' %}
-                                <a href="{{ media_item.url }}" target="_blank">[Video: {{ media_item.name }}]</a>
-                            {% else %}
-                                <a href="{{ media_item.url }}" target="_blank">[Media: {{ media_item.name }}]</a>
-                            {% endif %}
-                        {% endfor %}
-                        </p>
+    
+                    {% if comment.media %}
+                        <!-- Images -->
+                        <div class="issue-image d-flex flex-wrap gap-2">
+                            {% for media_item in comment.media %}
+                                {% if media_item.type == 'image' %}
+                                    <a href="{{ media_item.url }}" target="_blank" style="display: block; width: 200px; height: 200px; overflow: hidden;">
+                                        <img src="{{ media_item.url }}" alt="{{ media_item.name }}"
+                                            style="width: 100%; height: 100%; object-fit: cover; border-radius: 4px;">
+                                    </a>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
+                        <!-- Videos -->
+                        <div class="issue-video">
+                            {% for media_item in comment.media %}
+                                {% if media_item.type == 'video' %}
+                                    <a href="{{ media_item.url }}" target="_blank">[Video: {{ media_item.name }}]</a><br>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
+    
+                        <!-- Other Media -->
+                        <div class="issue-other-media">
+                            {% for media_item in comment.media %}
+                                {% if media_item.type != 'image' and media_item.type != 'video' %}
+                                    <a href="{{ media_item.url }}" target="_blank">[Media: {{ media_item.name }}]</a><br>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
                     {% endif %}
                 </div>
                 <div class="card-footer text-muted small">
-                    By {{ comment.user.name }} on {{ comment.created_at|date:"Y-m-d H:i" }}
+                    By {{ comment.commenter.name }} on {{ comment.created_at|date:"Y-m-d H:i" }}
                 </div>
             </div>
         {% empty %}
             <p>No comments yet.</p>
         {% endfor %}
     </div>
-
     {% if can_comment %}
     <h5>Add Comment</h5>
-    <form method="post" enctype="multipart/form-data" class="comment-form position-relative">
+    <form method="post" enctype="multipart/form-data" class="comment-form position-relative" action="{% url 'invited_user_comment_create' issue.id %}">
         {% csrf_token %}
-        
-        <div class="mb-3 position-relative">
-            <label for="{{ comment_form.text_content.id_for_label }}" class="visually-hidden">Your Comment</label>
-            {{ comment_form.text_content }}
-            
-            <div class="message-actions position-absolute end-0 bottom-0 me-3 mb-2 d-flex align-items-center gap-2">
+
+        <div class="mb-3 d-flex align-items-center">
+            <div class="flex-grow-1 position-relative">
+                <label for="{{ comment_form.text_content.id_for_label }}" class="visually-hidden">Your Comment</label>
+                {{ comment_form.text_content }}
+            </div>
+            <div class="message-actions d-flex align-items-center gap-2 ms-2">
                 <div class="file-attachment">
                     <label for="{{ comment_form.images.id_for_label }}" class="attachment-btn btn p-0 text-muted" title="Attach Files">
                         <i class="bi bi-upload fs-5"></i>
@@ -92,13 +109,12 @@
                     <input type="file" name="images" id="{{ comment_form.images.id_for_label }}"
                            class="d-none" multiple accept="image/*,video/*,audio/*">
                 </div>
-            
-                <button type="submit" class="send-btn btn" title="Send Comment">
-                    <i class="bi bi-arrow-right-circle-fill fs-5"></i>
+
+                <button type="submit" class="send-btn btn p-0 text-primary" title="Send Comment">
+                    <i class="bi bi-send-fill fs-5"></i>
                     <span class="visually-hidden"></span>
                 </button>
             </div>
-            
         </div>
     </form>
     <div class="form-text small text-muted mt-1">
@@ -116,27 +132,47 @@
 
 <style>
     /* Adjust textarea to accommodate buttons */
-    #{{ comment_form.text_content.id_for_label }} {
+    .comment-textarea {
         width: 100%;
-        padding: 12px 90px 12px 15px; /* Increased right padding to fit both buttons */
+        padding: 12px 90px 12px 15px; /* Increased right padding for buttons */
         border-radius: 20px;
         resize: none;
-        min-height: 60px; /* Reduced height for a more compact look */
+        min-height: 60px; 
     }
+
     .message-actions {
-        transform: translate(10px, -36px);
+        position: absolute; /* Ensure it's positioned relative to its parent */
+        bottom: 10px; /* Adjust as needed for vertical alignment */
+        right: 10px;  /* Adjust as needed for horizontal alignment */
+        display: flex;
+        align-items: center;
+        gap: 0.5rem; /* Space between buttons */
+        /* transform: translate(0, -75%); /* This might be too aggressive or depend on parent height, using bottom/right for now */
     }
+
     .attachment-btn i {
-  font-size: 1.5em; /* Increase to 1.5 times the default size */
+        font-size: 1.5em;
+    }
+
+    .send-btn i {
+        font-size: 2em;
+    }
+    .comment-form textarea {
+    border-radius: 20px; /* Optional: Rounded corners for the input */
+    padding-right: 50px; /* Make space for the icons */
 }
 
-.send-btn i {
-  font-size: 2em; /* Increase to 2 times the default size */
-}
-.message-actions {
-    transform: translate(0, -75%);
-    right: 0;
-}
+    .message-actions .btn i {
+        /* Adjust icon size if needed */
+        /* font-size: 1.2em; */
+    }
 
+    .file-attachment .attachment-btn {
+        /* Style the attachment button if needed */
+    }
+
+    .send-btn {
+        /* Style the send button if needed */
+    }
 </style>
 {% endblock %} 

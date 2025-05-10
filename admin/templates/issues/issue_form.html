@@ -4,12 +4,50 @@
 
 {% block title %}Report a New Issue{% endblock %}
 
+{% block extra_head %}
+    {{ block.super }}
+    <!-- Select2 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <style>
+        /* Hide asterisk for required fields */
+        span.asteriskField {
+            display: none !important; 
+        }
+
+        /* Optional: Improve Select2 styling with Bootstrap 5 */
+        .select2-container .select2-selection--multiple {
+            min-height: calc(1.5em + .75rem + 2px); /* Match Bootstrap input height */
+            border: 1px solid #ced4da;
+        }
+        .select2-container--bootstrap5 .select2-selection--multiple .select2-selection__choice {
+            background-color: #0d6efd;
+            border: 1px solid #0a58ca;
+            color: white;
+        }
+        .select2-container--bootstrap5 .select2-selection--multiple .select2-selection__choice__remove {
+            color: rgba(255,255,255,0.7);
+        }
+         /* Ensure select2 dropdown appears above other elements if in a modal or complex layout */
+        .select2-container {
+            z-index: 1050; /* Adjust if necessary, Bootstrap modal z-index is often around 1050 */
+        }
+        /* .select2-multiple {
+            overflow: auto;
+            height: 100px;
+        } */
+        .field-type-radio{
+            display: flex;
+            gap: 10px;
+        }
+  
+    </style>
+{% endblock %}
+
 {% block content %}
 <div class="container mt-5">
-    <h2 class="mb-4 text-center">Report a New Issue</h2>
-
+    
     <!-- Message container for dynamic alerts -->
-    <div id="message-container">
+    <div id="message-container" class="mb-3">
         {% if messages %}
             {% for message in messages %}
                 <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
@@ -20,130 +58,310 @@
         {% endif %}
     </div>
 
-    <div class="card shadow-sm p-4">
-        <form id="issue-form" method="post" enctype="multipart/form-data" novalidate>
-            {% csrf_token %}
+    <div class="card">
+        <div class="card-header card-header-primary">
+            <h4 class="card-title text-dark mt-2">Report a New Issue</h4>
+        </div>
+        <div class="card-body">
+            <form id="issue-form" method="post" enctype="multipart/form-data" novalidate>
+                {% csrf_token %}
 
-            <div class="row">
-                <div class="col-md-6 mb-3">
-                    {{ form.title|as_crispy_field }}
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        {{ form.title|as_crispy_field }}
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        {{ form.type|as_crispy_field }}
+                    </div>
                 </div>
-                <div class="col-md-6 mb-3">
-                    {{ form.type|as_crispy_field }}
+
+                <div id="related-rooms-container" class="mb-3" style="display: none;">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" value="" id="allowMultipleRooms" checked>
+                        <label class="form-check-label" for="allowMultipleRooms">
+                            Allow selecting multiple rooms
+                        </label>
+                    </div>
+
+                        {{ form.related_rooms|as_crispy_field }}
                 </div>
-            </div>
+                
+                <div id="related-floor-container" class="mb-3" style="display: none;">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" value="" id="allowMultipleFloor" checked>
+                        <label class="form-check-label" for="allowMultipleFloor">
+                            Allow selecting multiple floor items
+                        </label>
+                    </div>
+                    {{ form.related_inventory_items|as_crispy_field }}
+                </div>
 
-            <div class="mb-3">
-                {{ form.description|as_crispy_field }}
-            </div>
+                <div class="mb-3">
+                    {{ form.description|as_crispy_field }}
+                </div>
 
-            <div class="mb-3">
-                {{ form.initial_comment|as_crispy_field }}
-            </div>
+                <div class="mb-3">
+                    {{ form.initial_comment|as_crispy_field }}
+                </div>
 
-            <div class="mb-3">
-                {{ form.images|as_crispy_field }}
-                <div class="form-text">You can upload up to 4 images. Accepted formats: JPG, PNG, etc.</div>
-            </div>
+                <div class="mb-3">
+                    {{ form.images|as_crispy_field }}
+                </div>
 
-            <div class="mb-3">
-                {{ form.video|as_crispy_field }}
-                <div class="form-text">Optional video upload. Max size: 100MB. Accepted formats: MP4, AVI, etc.</div>
-            </div>
+                <div class="mb-3">
+                    {{ form.video|as_crispy_field }}
+                </div>
 
-            <div class="d-flex justify-content-end mt-4">
-                <a href="{% url 'issue_list' %}" class="btn btn-outline-secondary me-2">Cancel</a>
-                <button type="submit" class="btn btn-primary" id="submit-btn">Submit Issue</button>
-            </div>
-        </form>
+                <div class="d-flex justify-content-end mt-4">
+                    <a href="{% url 'issue_list' %}" class="btn btn-outline-secondary me-2">Cancel</a>
+                    <button type="submit" class="btn btn-primary" id="submit-btn">Submit Issue</button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
 
 <!-- Bootstrap JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
-<!-- JavaScript for AJAX form submission -->
+<!-- Script for AJAX and conditional fields -->
 <script>
-document.getElementById('issue-form').addEventListener('submit', async function (event) {
-    event.preventDefault(); // Prevent default form submission
+document.addEventListener('DOMContentLoaded', function () {
+    // Select all radio buttons with name="type"
+    const issueTypeRadioGroup = document.querySelectorAll('input[name="type"]'); 
+    const roomsContainer = document.getElementById('related-rooms-container');
+    const floorContainer = document.getElementById('related-floor-container');
+    const allowMultipleRoomsCheckbox = document.getElementById('allowMultipleRooms');
+    const allowMultipleFloorCheckbox = document.getElementById('allowMultipleFloor');
+    let relatedRoomsSelectInstance, relatedFloorSelectInstance;
 
-    const form = this;
-    const submitBtn = document.getElementById('submit-btn');
-    const messageContainer = document.getElementById('message-container');
+    const commonSelect2Options = {
+        allowClear: true,
+        width: '100%',
+        theme: "bootstrap-5"
+    };
 
-    // Disable submit button and show loading spinner
-    submitBtn.disabled = true;
-    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Submitting...';
-
-    // Clear previous messages and errors
-    messageContainer.innerHTML = '';
-    form.querySelectorAll('.invalid-feedback').forEach(el => el.remove());
-    form.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
-
-    // Prepare form data
-    const formData = new FormData(form);
-
-    try {
-        const response = await fetch(form.action || window.location.href, {
-            method: 'POST',
-            body: formData,
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest'
-            }
-        });
-
-        const data = await response.json();
-
-        // Create Bootstrap alert
-        const alertDiv = document.createElement('div');
-        alertDiv.className = `alert alert-${data.success ? 'success' : 'danger'} alert-dismissible fade show`;
-        alertDiv.role = 'alert';
-        alertDiv.innerHTML = `
-            ${data.message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        `;
-        messageContainer.appendChild(alertDiv);
-
-        if (data.success) {
-            // Reset form and redirect after showing message
-            form.reset();
-            setTimeout(() => {
-                window.location.href = data.redirect_url;
-            }, 2000);
+    // Function to format Select2 dropdown results (basic table-like)
+    function formatSelect2Result(data) {
+        if (!data.id) { return data.text; } // Handle placeholder
+        
+        let html = '<div style="display: flex; justify-content: space-between; width: 100%;">';
+        // Attempt to parse based on expected format
+        if (data.text.includes("Room") && data.text.includes("Floor")) {
+            const parts = data.text.split(' - ');
+            const room = parts[0] || ''; // e.g., "Room 101"
+            const floor = parts[1] || ''; // e.g., "Floor 1"
+            html += `<span style="min-width: 100px;">${room}</span><span style="color: #6c757d;">${floor}</span>`;
+        } else if (data.text.includes("Item:") && data.text.includes("Available:")) {
+            const parts = data.text.split(' - ');
+            const item = (parts[0] || '').replace("Item: ", "");
+            const available = parts[1] || '';
+            html += `<span style="flex-grow: 1; margin-right: 15px;">${item}</span><span style="color: #6c757d;">${available}</span>`;
         } else {
-            // Display form errors
-            if (data.errors) {
-                Object.keys(data.errors).forEach(field => {
-                    const fieldElement = form.querySelector(`[name="${field}"]`);
-                    if (fieldElement) {
-                        const errorMessages = data.errors[field].map(err => err.message).join(', ');
-                        const errorDiv = document.createElement('div');
-                        errorDiv.className = 'invalid-feedback';
-                        errorDiv.style.display = 'block';
-                        errorDiv.textContent = errorMessages;
-                        fieldElement.classList.add('is-invalid');
-                        fieldElement.parentNode.appendChild(errorDiv);
+            html += `<span>${data.text}</span>`; // Fallback
+        }
+        html += '</div>';
+        return jQuery(html);
+    }
+
+    // Function to format the selected items (usually just the text is fine)
+    function formatSelect2Selection(data) {
+        return data.text || data.placeholder; 
+    }
+
+    // Function to initialize or re-initialize Select2
+    function initializeSelect2(selector, placeholder, maxSelection) {
+        if (typeof jQuery !== 'undefined' && jQuery.fn.select2) {
+            const element = jQuery(selector);
+            if (element.data('select2')) { element.select2('destroy'); }
+            element.select2({
+                ...commonSelect2Options,
+                placeholder: placeholder,
+                maximumSelectionLength: maxSelection,
+                templateResult: formatSelect2Result,
+                templateSelection: formatSelect2Selection
+            });
+        } else { console.warn('jQuery or Select2 not loaded.'); }
+    }
+
+    // Initializations (will now use the template functions)
+    initializeSelect2('#id_related_rooms', "Search and select rooms", allowMultipleRoomsCheckbox.checked ? 0 : 1);
+    initializeSelect2('#id_related_inventory_items', "Search and select floor items", allowMultipleFloorCheckbox.checked ? 0 : 1);
+
+    if (allowMultipleRoomsCheckbox && typeof jQuery !== 'undefined' && jQuery.fn.select2) {
+        allowMultipleRoomsCheckbox.addEventListener('change', function() {
+            const max = this.checked ? 0 : 1;
+            const currentValues = jQuery('#id_related_rooms').val();
+            if (!this.checked && currentValues && currentValues.length > 1) {
+                jQuery('#id_related_rooms').val([currentValues[0]]).trigger('change'); // Keep only the first if unchecking and multiple were selected
+            }
+            jQuery('#id_related_rooms').select2('destroy').select2({
+                placeholder: "Search and select rooms",
+                allowClear: true,
+                width: '100%',
+                theme: "bootstrap-5",
+                maximumSelectionLength: max
+            });
+        });
+    }
+
+    if (allowMultipleFloorCheckbox && typeof jQuery !== 'undefined' && jQuery.fn.select2) {
+        allowMultipleFloorCheckbox.addEventListener('change', function() {
+            const max = this.checked ? 0 : 1;
+            const currentValues = jQuery('#id_related_inventory_items').val();
+            if (!this.checked && currentValues && currentValues.length > 1) {
+                jQuery('#id_related_inventory_items').val([currentValues[0]]).trigger('change');
+            }
+            jQuery('#id_related_inventory_items').select2('destroy').select2({
+                placeholder: "Search and select floor items",
+                allowClear: true,
+                width: '100%',
+                theme: "bootstrap-5",
+                maximumSelectionLength: max
+            });
+        });
+    }
+
+    // Helper function to get the value of the checked radio button
+    function getSelectedTypeValue() {
+        for (const radio of issueTypeRadioGroup) {
+            if (radio.checked) {
+                return radio.value;
+            }
+        }
+        return null;
+    }
+
+    // Updated toggle function using the helper
+    function toggleConditionalFields() {
+        const selectedType = getSelectedTypeValue();
+        if (roomsContainer) {
+            roomsContainer.style.display = selectedType === 'ROOM' ? 'block' : 'none';
+        }
+        if (floorContainer) {
+            floorContainer.style.display = selectedType === 'FLOOR' ? 'block' : 'none';
+        }
+    }
+
+    // Attach listener to all radios in the group
+    if (issueTypeRadioGroup.length > 0) {
+        issueTypeRadioGroup.forEach(radio => {
+            radio.addEventListener('change', toggleConditionalFields);
+        });
+        // Set initial state based on the checked radio button
+        const initialType = getSelectedTypeValue();
+        if (initialType === 'ROOM') {
+            roomsContainer.style.display = 'block';
+        } else if (initialType === 'FLOOR') {
+            floorContainer.style.display = 'block';
+        }
+    } else {
+        console.warn('Issue type radio buttons (name="type") not found.');
+    }
+
+    // AJAX Form Submission Logic (active)
+    const issueForm = document.getElementById('issue-form');
+    if (issueForm) {
+        issueForm.addEventListener('submit', async function (event) {
+            event.preventDefault(); // Prevent default form submission for AJAX
+
+            const form = this;
+            const submitBtn = document.getElementById('submit-btn');
+            const messageContainer = document.getElementById('message-container');
+
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Submitting...';
+
+            messageContainer.innerHTML = ''; // Clear previous messages
+            form.querySelectorAll('.invalid-feedback').forEach(el => el.remove());
+            form.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+
+            const formData = new FormData(form);
+
+            try {
+                const response = await fetch(form.action || window.location.href, {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
                     }
                 });
+
+                const data = await response.json();
+
+                const alertDiv = document.createElement('div');
+                alertDiv.className = `alert alert-${data.success ? 'success' : 'danger'} alert-dismissible fade show`;
+                alertDiv.role = 'alert';
+                alertDiv.innerHTML = `${data.message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>`;
+                messageContainer.appendChild(alertDiv);
+
+                if (data.success) {
+                    form.reset();
+                    // Clear Select2 fields
+                    if (typeof jQuery !== 'undefined' && jQuery.fn.select2) {
+                        jQuery('#id_related_rooms').val(null).trigger('change'); 
+                        jQuery('#id_related_inventory_items').val(null).trigger('change'); // Clear inventory Select2
+                    }
+                    toggleConditionalFields(); // Reset visibility of conditional fields
+                    setTimeout(() => {
+                        if (data.redirect_url) {
+                            window.location.href = data.redirect_url;
+                        }
+                    }, 2000);
+                } else {
+                    if (data.errors) {
+                        Object.keys(data.errors).forEach(field => {
+                            const fieldName = field;
+                            // Try to find the field by name or by id_name convention
+                            let fieldElement = form.querySelector(`[name="${fieldName}"]`);
+                            if (!fieldElement && document.getElementById(`id_${fieldName}`)) {
+                                fieldElement = document.getElementById(`id_${fieldName}`);
+                            }
+                            
+                            let errorDisplayContainer = fieldElement ? fieldElement.closest('.mb-3') || fieldElement.parentNode : null;
+
+                            if (field === 'related_rooms') {
+                                errorDisplayContainer = roomsContainer;
+                            } else if (field === 'related_inventory_items') {
+                                errorDisplayContainer = floorContainer;
+                            }
+
+                            if (errorDisplayContainer) {
+                                data.errors[field].forEach(error => {
+                                    const errorDiv = document.createElement('div');
+                                    // Use Django's default error class if possible, or a generic one
+                                    errorDiv.className = 'invalid-feedback d-block'; 
+                                    errorDiv.textContent = error.message || error; 
+                                    // Insert error message after the field or as a child of the container
+                                    if (fieldElement && fieldElement.parentNode === errorDisplayContainer) {
+                                        fieldElement.parentNode.insertBefore(errorDiv, fieldElement.nextSibling);
+                                    } else {
+                                        errorDisplayContainer.appendChild(errorDiv);
+                                    }
+                                });
+                                if (fieldElement && !fieldElement.classList.contains('is-invalid')){
+                                    fieldElement.classList.add('is-invalid');
+                                }
+                            } else {
+                                console.warn(`Could not find container for field errors: ${field}`);
+                            }
+                        });
+                    }
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = 'Submit Issue';
+                }
+            } catch (error) {
+                console.error('Form submission error:', error);
+                const alertDiv = document.createElement('div');
+                alertDiv.className = 'alert alert-danger alert-dismissible fade show';
+                alertDiv.role = 'alert';
+                alertDiv.innerHTML = `An unexpected error occurred. Please try again. (${error.message})<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>`;
+                messageContainer.appendChild(alertDiv);
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = 'Submit Issue';
             }
-            // Re-enable submit button
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = 'Submit Issue';
-        }
-    } catch (error) {
-        // Handle network or other errors
-        const alertDiv = document.createElement('div');
-        alertDiv.className = 'alert alert-danger alert-dismissible fade show';
-        alertDiv.role = 'alert';
-        alertDiv.innerHTML = `
-            An error occurred while submitting the form. Please try again.
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        `;
-        messageContainer.appendChild(alertDiv);
-        submitBtn.disabled = false;
-        submitBtn.innerHTML = 'Submit Issue';
+        });
     }
 });
 </script>
-
 {% endblock %}
