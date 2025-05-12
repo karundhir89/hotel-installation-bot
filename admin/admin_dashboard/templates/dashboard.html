@@ -32,7 +32,7 @@
                                         <div class="card-icon bg-success bg-gradient">
                                             <i class="material-icons">done_all</i>
                                         </div>
-                                        <p class="card-category text-ok h5 text-secondary">Floors Already Renovated</p>
+                                        <p class="card-category text-ok h5 text-secondary" title="When the post work is completed for all rooms on a floor, the floor is considered as renovated.">Floors Already Renovated</p>
                                         <h3 class="card-title mt-3">{{ floor_status_summary.renovated.count }}</h3>
                                     </div>
                                     <div class="card-footer">
@@ -48,7 +48,7 @@
                                         <div class="card-icon bg-primary bg-gradient">
                                             <i class="material-icons">construction</i>
                                         </div>
-                                        <p class="card-category text-ok h5 text-secondary">Floors Closed for Renovation</p>
+                                        <p class="card-category text-ok h5 text-secondary" title="When some rooms on a floor are have installation completed, the floor is considered as closed for renovation.">Floors Closed for Renovation</p>
                                         <h3 class="card-title mt-3">{{ floor_status_summary.closed.count }}</h3>
                                     </div>
                                     <div class="card-footer">
@@ -64,7 +64,7 @@
                                         <div class="card-icon bg-warning bg-gradient">
                                             <i class="material-icons">pending_actions</i>
                                         </div>
-                                        <p class="card-category text-ok h5 text-secondary">Floors Pending Renovation</p>
+                                        <p class="card-category text-ok h5 text-secondary" title="When no rooms on a floor have installation completed status, the floor is considered as pending renovation.">Floors Pending Renovation</p>
                                         <h3 class="card-title mt-3">{{ floor_status_summary.pending.count }}</h3>
                                     </div>
                                     <div class="card-footer">

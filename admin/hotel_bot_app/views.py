@@ -1389,7 +1389,7 @@ def home(request):
             
             # Ensure it's a list and process
             if isinstance(roles_raw, list):
-                 user_roles = [
+                user_roles = [
                     role.strip().lower() for role in roles_raw if isinstance(role, str)
                 ]
             
