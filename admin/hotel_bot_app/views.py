@@ -1960,46 +1960,23 @@ def issue_detail(request, issue_id):
     for comment in comments:
         _ = comment.commenter 
 
-    # Determine if the current user (InvitedUser or Django User) can comment
-    can_comment_as_invited_user = False
-    if request.session.get("user_id"):
-        try:
-            invited_user = InvitedUser.objects.get(id=request.session.get("user_id"))
-            if issue.created_by == invited_user or invited_user in issue.observers.all() or issue.assignee == invited_user:
-                can_comment_as_invited_user = True
-        except InvitedUser.DoesNotExist:
-            pass
-    
-    # If Django admin user is logged in and issue is_for_hotel_admin
-    can_comment_as_django_admin = request.user.is_authenticated and request.user.is_staff and issue.is_for_hotel_admin
+    # Get the current invited user
+    invited_user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
 
-    # User can comment if either condition is true.
-    # The form action will point to different views based on who is commenting.
-    # This template (issue_detail.html) is primarily for InvitedUser, 
-    # so its form should point to invited_user_comment_create.
-    # Admins would typically use admin_issue_detail.html.
+    # Determine if the current user can comment
+    can_comment = False
+    if issue.created_by == invited_user or invited_user in issue.observers.all() or issue.assignee == invited_user:
+        can_comment = True
     
-    # The form should be handled by invited_user_comment_create if it's an InvitedUser posting.
-    # This view (issue_detail) primarily displays the issue and existing comments.
-    # The comment form displayed will be for invited_user_comment_create.
-
-    if request.method == 'POST':
-        # This POST block is now handled by invited_user_comment_create or admin_comment_create
-        # So, this view should ideally not handle POST for new comments anymore.
-        # If it does, it needs to decide which user type is posting.
-        # For simplicity, assuming POSTs go to the dedicated views.
-        pass
-    
-    comment_form = CommentForm() # For display in the template, action will go to invited_user_comment_create
+    comment_form = CommentForm()
 
     context = {
         'issue': issue,
         'comments': comments,
         'comment_form': comment_form,
-        'user': request.user, # General Django user for template context, might need adjustment
-        'can_comment': can_comment_as_invited_user, # Or more complex logic based on who is viewing
-                                                # and if this template is solely for InvitedUser interaction.
-        'user_roles': request.session.get('user_roles', []) # Pass roles if template needs them
+        'user': invited_user,  # Pass the invited user instead of request.user
+        'can_comment': can_comment,
+        'user_roles': request.session.get('user_roles', [])
     }
     return render(request, 'issues/issue_detail.html', context)
 

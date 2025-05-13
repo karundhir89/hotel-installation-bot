@@ -43,7 +43,7 @@ INSTALLED_APPS = [
     'hotel_bot_app',
     'crispy_forms',
     'crispy_bootstrap5',
-    # 'debug_toolbar',
+    'widget_tweaks',
 ]
 
 MIDDLEWARE = [
