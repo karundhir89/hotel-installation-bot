@@ -28,7 +28,10 @@
 .card{
   font-size: 16px; /* adjust as needed */
 }
+.form-control{
+  font-size: 16px;
 
+}
 
 </style>
 <div class="container-lg my-5">
@@ -42,9 +45,9 @@
                 <!-- Room Info -->
                 <div class="row mb-4">
                     <div class="col-md-6">
-                        <label for="room_number" class="form-label" style="font-size: 16px;">Room #</label>
+                        <label for="room_number" class="form-label" >Room #</label>
                         <div class="input-group">
-                            <input type="text" class="form-control" name="room_number" id="room_number" style="font-size: 16px;" required>
+                            <input type="text" class="form-control" name="room_number" id="room_number"  required>
                             <button type="button" class="btn btn-secondary" id="search_room">
                                 <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true" id="search_spinner"></span>
                                 <span id="search_text">Search</span>
@@ -53,7 +56,7 @@
                     </div>
                     <div class="col-md-6">
                         <label for="room_type" class="form-label">Room Type</label>
-                        <input type="text" style="font-size: 16px;" class="form-control" name="room_type" id="room_type" readonly required>
+                        <input type="text" class="form-control" name="room_type" id="room_type" readonly required>
                     </div>
                 </div>
 
@@ -153,10 +156,10 @@
               </div>
             </div>
             <div class="col-md-3 mt-2 mb-2">
-              <input type="date" style="font-size:16px" class="form-control" name="date_${item.type}_${item.id}" value="${installedOn}">
+              <input type="date"  class="form-control" name="date_${item.type}_${item.id}" value="${installedOn}">
             </div>
             <div class="col-md-4 mt-2 mb-2">
-              <input type="text" style="font-size:16px"  class="form-control" name="checked_by_${item.type}_${item.id}" value="${installedBy}" placeholder="Checked by">
+              <input type="text"  class="form-control" name="checked_by_${item.type}_${item.id}" value="${installedBy}" placeholder="Checked by">
             </div>
           </div>
         `;
