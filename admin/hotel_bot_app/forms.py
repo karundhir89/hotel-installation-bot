@@ -206,14 +206,14 @@ class MultipleFileInput(forms.FileInput):
     def value_omitted_from_data(self, data, files, name):
         return not files.getlist(name)  # True if no files
 class IssueForm(forms.ModelForm):
-    initial_comment = forms.CharField(widget=forms.Textarea, required=True)
+    # initial_comment = forms.CharField(widget=forms.Textarea, required=True)
     images = forms.FileField(
         widget=MultipleFileInput(attrs={'class': 'form-control d-none', 'accept': 'image/*'}),
         required=False,
         label="Attach Images (Max 4)"
     )
     video = forms.FileField(
-        widget=forms.FileInput(attrs={'class': 'form-control', 'accept': 'video/*'}),
+        widget=forms.FileInput(attrs={'class': 'form-control d-none', 'accept': 'video/*'}),
         required=False
     )
     related_rooms = forms.ModelMultipleChoiceField(
@@ -229,7 +229,7 @@ class IssueForm(forms.ModelForm):
 
     class Meta:
         model = Issue
-        fields = ['title', 'type', 'description', 'initial_comment', 'images', 'video', 'related_rooms', 'related_inventory_items']
+        fields = ['title', 'type', 'description', 'images', 'video', 'related_rooms', 'related_inventory_items']
         widgets = {
             'type': forms.RadioSelect
         }
@@ -242,14 +242,14 @@ class IssueForm(forms.ModelForm):
         if 'related_rooms' not in self.fields or not isinstance(self.fields['related_rooms'].widget, forms.SelectMultiple):
             self.fields['related_rooms'] = forms.ModelMultipleChoiceField(
                 queryset=RoomData.objects.all(),
-                widget=forms.SelectMultiple(attrs={'class': 'form-control select2-multiple'}),
+                widget=forms.SelectMultiple(attrs={'class': 'form-check select2-multiple'}),
                 required=False,
                 label="Related Rooms (if type is Room)"
             )
         if 'related_inventory_items' not in self.fields or not isinstance(self.fields['related_inventory_items'].widget, forms.SelectMultiple):
             self.fields['related_inventory_items'] = forms.ModelMultipleChoiceField(
                 queryset=Inventory.objects.all(),
-                widget=forms.SelectMultiple(attrs={'class': 'form-control select2-multiple'}),
+                widget=forms.SelectMultiple(attrs={'class': 'form-check select2-multiple'}),
                 required=False,
                 label="Related Floor Items (if type is Floor)"
             )
@@ -258,17 +258,6 @@ class IssueForm(forms.ModelForm):
             ('ROOM', 'Room Issue'),
             ('FLOOR', 'Floor Issue'),
         ]
-
-        # self.fields['type'] = forms.ChoiceField(
-        #     choices=[
-        #         ('ROOM', 'Room Issue'),
-        #         ('INVENTORY', 'Inventory Issue'),
-        #     ],
-        #     widget=forms.CheckboxSelectMultiple(attrs={'class': 'field-type-radio'}),
-        #     # label="Issue Type"
-        # )
-        # self.fields['type'].widget.attrs.update({'class': 'form-check-input type-field'})
-
         
         # Set default to ROOM if not already set
         if not self.initial.get('type'):
