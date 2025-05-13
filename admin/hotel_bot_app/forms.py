@@ -207,7 +207,7 @@ class MultipleFileInput(forms.FileInput):
         return not files.getlist(name)  # True if no files
 class IssueForm(forms.ModelForm):
     # initial_comment = forms.CharField(widget=forms.Textarea, required=True)
-    images = forms.FileField(
+    images = MultipleFileField(
         widget=MultipleFileInput(attrs={'class': 'form-control d-none', 'accept': 'image/*'}),
         required=False,
         label="Attach Images (Max 4)"
@@ -263,14 +263,15 @@ class IssueForm(forms.ModelForm):
         if not self.initial.get('type'):
             self.initial['type'] = 'ROOM'
     def clean_images(self):
-        images = self.files.getlist('images')
-        print(f"Images in clean_images: {images}")  # Debug output
+        images = self.cleaned_data.get('images', [])
         if images:
             if len(images) > 4:
                 raise ValidationError("You can upload a maximum of 4 images.")
             for image in images:
                 if not image.content_type.startswith('image/'):
                     raise ValidationError(f"File '{image.name}' is not a valid image.")
+                if image.size > 4 * 1024 * 1024:
+                    raise ValidationError(f"Image '{image.name}' exceeds 4MB limit.")
         return images
 
     def clean_video(self):
@@ -292,13 +293,13 @@ class IssueForm(forms.ModelForm):
             self.add_error('related_rooms', "Please select at least one room for issues of type 'Room'.")
         elif issue_type == "FLOOR" and not related_inventory_items:
             self.add_error('related_inventory_items', "Please select at least one floor item for issues of type 'Floor'.")
-        
-        # Prevent submission of room/floor if type doesn't match, to avoid saving unrelated data
-        if issue_type != "ROOM" and related_rooms:
-            cleaned_data['related_rooms'] = RoomData.objects.none() # Clear if not relevant
-        if issue_type != "FLOOR" and related_inventory_items:
-            cleaned_data['related_inventory_items'] = Inventory.objects.none() # Clear if not relevant
-            
+
+        # Clear irrelevant fields
+        if issue_type != "ROOM":
+            cleaned_data['related_rooms'] = RoomData.objects.none()
+        if issue_type != "FLOOR":
+            cleaned_data['related_inventory_items'] = Inventory.objects.none()
+
         return cleaned_data
 
 class CommentForm(forms.ModelForm):
