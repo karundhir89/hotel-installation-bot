@@ -5,7 +5,7 @@
 {% block title %}Admin - Issue #{{ issue.id }}: {{ issue.title }}{% endblock %}
 
 {% block content %}
-<div class="container mt-4" style="margin-top: 100px!important;">
+<div class="container mt-4" style="margin-top: 50px!important;">
     {% if messages %}
     {% for message in messages %}
     <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
@@ -15,19 +15,19 @@
     {% endfor %}
     {% endif %}
 
-    <div class="card mb-4">
+    <div class="card" style="height: 250px; margin-bottom: 5px;">
         <div class="card-header d-flex justify-content-between align-items-center">
             <h4 class="mb-0">Issue : {{ issue.title|title }}</h4>
             <span
-                class="badge bg-{% if issue.status == 'OPEN' %}primary{% elif issue.status == 'WORKING' %}warning{% elif issue.status == 'PENDING' %}info{% elif issue.status == 'CLOSE' %}success{% else %}secondary{% endif %}">{{issue.get_status_display}}
+                class="badge fs-6 bg-{% if issue.status == 'OPEN' %}primary{% elif issue.status == 'WORKING' %}warning{% elif issue.status == 'PENDING' %}info{% elif issue.status == 'CLOSE' %}success{% else %}secondary{% endif %}">{{issue.get_status_display}}
             </span>
         </div>
         <div class="card-body">
             <div class="row">
-                <div class="col-md-6">
+                <div class="col-md-8">
                     <p><strong>Type:</strong> {{ issue.get_type_display|title }}</p>
                 </div>
-                <div class="col-md-6">
+                <div class="col-md-4">
                     <div class="row">
                         <div class="col-md-6">
                             <p>
@@ -51,21 +51,26 @@
             </div>
             {% endif %}
             <hr>
-            {% if issue.observers.count > 0 %}
-            <p><small class="text-muted">Observers:
-                    {% for observer in issue.observers.all %}
-                    {{ observer.name }}{% if not forloop.last %}, {% endif %}
-                    {% endfor %}
-                </small></p>
-            {% endif %}
-            {# Admin link to edit is already here and correct #}
-            <a href="{% url 'admin_dashboard:admin_issue_edit' issue.id %}" class="btn btn-sm primary">Edit Issue
-                Details</a>
+            <div class="row">
+                <div class="col-md-8">
+                    {% if issue.observers.count > 0 %}
+                    <p><small class="text-muted">Observers:
+                            {% for observer in issue.observers.all %}
+                            {{ observer.name }}{% if not forloop.last %}, {% endif %}
+                            {% endfor %}
+                        </small></p>
+                    {% endif %}
+                </div>
+                <div class="col-md-4">
+                    <div class="d-flex justify-content-end align-items-center gap-2">
+                        <a href="{% url 'admin_dashboard:admin_issue_list' %}" class="btn btn-secondary">Back to Admin Issue List</a>
+                        <a href="{% url 'admin_dashboard:admin_issue_edit' issue.id %}" class="btn  btn-sm primary">Edit Issue Details</a>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
-
-    <h5>Comments</h5>
-    <div class="comments-section mb-4" style="max-height: 400px; overflow-y: auto; padding: 15px; border-radius: 10px;">
+    <div class="comments-section" style="max-height: 520px; overflow-y: auto; border-radius: 10px;">
         {% for comment in comments %}
             <div class="d-flex mb-3 {% if comment.commenter.id == user.id %}justify-content-end{% else %}justify-content-start{% endif %}">
                 {% if comment.commenter.id == user.id %}
@@ -139,10 +144,9 @@
     </div>
 
     {% if can_comment %}
-    <h5>Add Comment</h5>
-    <form method="post" enctype="multipart/form-data" class="comment-form position-relative mt-3" action="{% url 'admin_dashboard:admin_comment_create' issue.id %}">
+    <form method="post" enctype="multipart/form-data" class="comment-form position-relative" action="{% url 'admin_dashboard:admin_comment_create' issue.id %}">
         {% csrf_token %}
-        <div class="comment-input-container d-flex align-items-end bg-white rounded-4 shadow-sm p-3 gap-2 flex-wrap">
+        <div class="comment-input-container d-flex align-items-end bg-white rounded-4 shadow-sm p-3 gap-2 flex-wrap" style="border: 2px solid whitesmoke; border-radius: 5px 0px 5px 0px;">
             <div class="flex-grow-1">
                 <label for="{{ comment_form.text_content.id_for_label }}" class="visually-hidden">Your Comment</label>
                 {{ comment_form.text_content|add_class:"form-control comment-textarea-custom border-0"|attr:"placeholder:Write a comment..." }}
@@ -156,25 +160,18 @@
                     <i class="bi bi-camera-reels fs-5"></i>
                 </label>
                 {{ comment_form.video|add_class:"d-none" }}
-                <button type="submit" class="send-btn btn btn-primary rounded-circle d-flex align-items-center justify-content-center ms-2" title="Send Comment" style="width: 40px; height: 40px;">
+                <button type="submit" class="send-btn btn-secondary rounded-circle d-flex align-items-center justify-content-center ms-2" title="Send Comment" style="width: 50px; height: 50px;">
                     <i class="bi bi-send-fill fs-5"></i>
                 </button>
             </div>
         </div>
     </form>
-    <div class="form-text small text-muted mt-1">
-        {{ comment_form.images.label_tag }} {{ comment_form.images.help_text }}
-        {{ comment_form.video.label_tag }} {{ comment_form.video.help_text }}
-    </div>
+
     {% else %}
     <p class="text-muted">Commenting is managed on this issue.</p>
     {% endif %}
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.min.css">
-
-    <div class="mt-4">
-        <a href="{% url 'admin_dashboard:admin_issue_list' %}" class="btn btn-secondary">Back to Admin Issue List</a>
-    </div>
 
     <style>
     .comment-input-container {
@@ -201,12 +198,13 @@
         box-shadow: none;
     }
     .comments-section {
-        background: #e9ecef;
+        background: #c8cdd2;
         border: 1px solid rgba(255, 255, 255, 0.3);
         background-size: cover;
         border-radius: 10px;
         position: relative;
         overflow: hidden;
+        padding: 0px 10px;
     }
 
     .comments-section::before {
@@ -216,7 +214,7 @@
         left: 0;
         right: 0;
         bottom: 0;
-        background: #e9ecef;
+        background: #c8cdd2;
         opacity: 0.1;
         z-index: -1;
     }
@@ -245,7 +243,7 @@
         transition: background 0.2s, box-shadow 0.2s;
     }
     .send-btn:hover {
-        background: #1565c0;
+        background: #3C4858;
         box-shadow: 0 2px 8px rgba(25, 118, 210, 0.12);
     }
     .rounded-pill {
