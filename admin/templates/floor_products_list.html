@@ -18,6 +18,7 @@
     -webkit-overflow-scrolling: touch;
 }
 
+
 @media (max-width: 768px) {
   
     .border.border-light {
@@ -51,7 +52,7 @@
                         <h4 class="card-title text-dark mt-2">Floor Wise Products Needed</h4>
                     </div>
                     <div class="card-body">
-                        <form method="GET" action="" class="form-inline mb-4">
+                        <form method="GET" action="" class="form-inline mb-4" style="gap:10px;">
                             <div class="form-group mr-2">
                                 <label for="floor_number" class="mr-2">Enter Floor Number:</label>
                                 <input type="number" class="form-control" id="floor_number" name="floor_number" value="{{ floor_number|default:'' }}" placeholder="e.g., 5" required>
@@ -59,7 +60,7 @@
                             <button type="submit" class="btn btn-secondary btn-md margin_class">Search</button>
                             {% if product_list and floor_number %}
                                 <!-- Add Download Button -->
-                                <a href="?floor_number={{ floor_number }}&download=xls" class="btn btn-success ml-2 margin_class">Download XLS</a>
+                                <a href="?floor_number={{ floor_number }}&download=xls" class="btn btn-success margin_class">Download XLS</a>
                             {% endif %}
                         </form>
 
