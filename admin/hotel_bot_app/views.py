@@ -4,19 +4,22 @@ import random
 import string
 from datetime import date, datetime
 from functools import wraps
+from .forms import CommentForm
+import uuid
 from django.db.models.functions import Lower
-
+from django.urls import reverse
 import bcrypt
 import environ
 import requests
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, user_passes_test
 from django.core.mail import send_mail
 from django.http import JsonResponse, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
 from django.utils.timezone import now
+from django.core.files.storage import default_storage
 from django.views.decorators.csrf import csrf_exempt
 from hotel_bot_app.utils.helper import (fetch_data_from_sql,
                                          format_gpt_prompt,
@@ -32,11 +35,20 @@ from openai import OpenAI
 from html import escape
 import xlwt
 
+from django.db.models import Q
+from django.contrib.auth import get_user_model # Use this if settings.AUTH_USER_MODEL is Django's default
+from django.contrib.auth.decorators import login_required, user_passes_test # For permission checking
+from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger # Import Paginator
 
 from .models import *
 from .models import ChatSession
 from django.utils.timezone import localtime
 from django.db import connection
+from .forms import IssueForm, CommentForm, IssueUpdateForm # Import the forms
+import logging
+from django.contrib.contenttypes.models import ContentType # Added for GFK
+
+logger = logging.getLogger(__name__)
 
 env = environ.Env()
 environ.Env.read_env()
@@ -46,6 +58,7 @@ open_ai_key = env("open_ai_api_key")
 
 client = OpenAI(api_key=open_ai_key)
 
+User = InvitedUser # Or User = get_user_model()
 
 def session_login_required(view_func):
     @wraps(view_func)
@@ -400,9 +413,9 @@ def add_users_roles(request):
 
 @csrf_exempt
 def user_login(request):
-    # Redirect to dashboard if already logged in
+    # Redirect to home page if already logged in
     if request.session.get("user_id"):
-        return redirect("/dashboard")
+        return redirect("/home")
 
     if request.method == "POST":
         try:
@@ -438,8 +451,8 @@ def user_login(request):
 
 @login_required
 def room_data_list(request):
-    # Fetch room data from the database
-    rooms = RoomData.objects.all()
+    # Fetch room data from the database, including related RoomModel
+    rooms = RoomData.objects.select_related('room_model_id').all()
 
     # Pass the room data to the template
     return render(request, "room_data_list.html", {"rooms": rooms})
@@ -564,8 +577,13 @@ def room_model_list(request):
 
 @login_required
 def install_list(request):
-    # Get all installation records
-    install = Installation.objects.all()
+    # Get all installation records, including related user data
+    install = Installation.objects.select_related(
+        'prework_checked_by',
+        'post_work_checked_by',
+        'product_arrived_at_floor_checked_by',
+        'retouching_checked_by'
+    ).all()
     
     # Convert the dates to a proper format for use in the template
     for installation in install:
@@ -1155,7 +1173,7 @@ def inventory_received_item_num(request):
 
 
 @login_required
-def save_installation(request):
+def save_admin_installation(request):
     if request.method == "POST":
         installation_id = request.POST.get("installation_id")
         print("[hello]", installation_id)
@@ -1342,7 +1360,7 @@ def user_logout(request):
 
 
 @session_login_required
-def dashboard(request):
+def home(request):
     user_id = request.session.get("user_id")
 
     if not user_id:
@@ -1371,7 +1389,7 @@ def dashboard(request):
             
             # Ensure it's a list and process
             if isinstance(roles_raw, list):
-                 user_roles = [
+                user_roles = [
                     role.strip().lower() for role in roles_raw if isinstance(role, str)
                 ]
             
@@ -1379,7 +1397,7 @@ def dashboard(request):
         request.session['user_roles'] = user_roles 
 
         return render(
-            request, "dashboard.html", {"name": user.name, "roles": user_roles}
+            request, "home.html", {"name": user.name, "roles": user_roles}
         )
     except InvitedUser.DoesNotExist:
         # Clear potentially invalid session data if user doesn't exist
@@ -1417,22 +1435,29 @@ def installation_form(request):
                 date = request.POST.get(f"date_{step_type}_{step_id}") or now().date()
 
                 if step_type == "installation":
-                    if step_id == 0:
+                    if step_id == 0:  # Pre-Work completed
                         installation.prework = "YES" if is_checked else "NO"
-                        installation.prework_check_on = now().date() if is_checked else None
+                        installation.prework_check_on = date if is_checked else None
                         installation.prework_checked_by = invited_user_instance if is_checked else None
+                        # Update day_install_began when pre-work is completed
+                        if is_checked:
+                            installation.day_install_began = date
                     elif step_id == 1:
                         installation.product_arrived_at_floor = "YES" if is_checked else "NO"
-                        installation.product_arrived_at_floor_check_on = now().date() if is_checked else None
+                        installation.product_arrived_at_floor_check_on = date if is_checked else None
                         installation.product_arrived_at_floor_checked_by = invited_user_instance if is_checked else None
                     elif step_id == 12:
                         installation.retouching = "YES" if is_checked else "NO"
-                        installation.retouching_check_on = now().date() if is_checked else None
+                        installation.retouching_check_on = date if is_checked else None
                         installation.retouching_checked_by = invited_user_instance if is_checked else None
-                    elif step_id == 13:
+                    elif step_id == 13:  # Post Work
                         installation.post_work = "YES" if is_checked else "NO"
-                        installation.post_work_check_on = now().date() if is_checked else None
+                        installation.post_work_check_on = date if is_checked else None
                         installation.post_work_checked_by = invited_user_instance if is_checked else None
+                        # Update day_install_complete and install when post-work is completed
+                        if is_checked:
+                            installation.day_install_complete = date
+                            installation.install = "YES"
 
                 elif step_type == "detail":
                     try:
@@ -1817,7 +1842,7 @@ def floor_products_list(request):
     return render(request, 'floor_products_list.html', context)
 
 
-@session_login_required
+@login_required
 def room_number_products_list(request):
     room_number = request.GET.get('room_number', '').strip()
     product_list = []
@@ -1872,3 +1897,272 @@ def room_number_products_list(request):
         'error_message': error_message,
     }
     return render(request, 'room_products_list.html', context)
+
+# --- Issue Tracking Views --- 
+from django.contrib.auth.models import User
+
+@session_login_required # Corrected decorator
+def issue_list(request):
+    user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
+    user_roles = user.role
+    queryset = Issue.objects.filter(
+        Q(created_by=user) |
+        Q(observers=user) |
+        Q(assignee=user)
+    ).distinct().order_by('-created_at').select_related('created_by', 'assignee')
+
+    # Filtering
+    status = request.GET.get('status')
+    if status:
+        queryset = queryset.filter(status=status)
+    issue_type = request.GET.get('type')
+    if issue_type:
+        queryset = queryset.filter(type=issue_type)
+    q = request.GET.get('q')
+    if q:
+        queryset = queryset.filter(Q(title__icontains=q) | Q(id__icontains=q))
+
+    # Pagination
+    paginator = Paginator(queryset, 10)  # Show 10 issues per page
+    page_number = request.GET.get('page')
+    try:
+        issues_page = paginator.page(page_number)
+    except PageNotAnInteger:
+        issues_page = paginator.page(1)
+    except EmptyPage:
+        issues_page = paginator.page(paginator.num_pages)
+
+    # For filter dropdowns
+    issue_statuses = Issue.IssueStatus.choices if hasattr(Issue, 'IssueStatus') else [
+        ('OPEN', 'Open'), ('WORKING', 'Working'), ('PENDING', 'Pending'), ('CLOSE', 'Close')
+    ]
+    issue_types = Issue.IssueType.choices if hasattr(Issue, 'IssueType') else [
+        ('ROOM', 'Room'), ('FLOOR', 'Floor')
+    ]
+
+    context = {
+        'issues': issues_page,
+        'user_roles': user_roles,
+        'is_paginated': issues_page.has_other_pages(),
+        'page_obj': issues_page,
+        'issue_statuses': issue_statuses,
+        'issue_types': issue_types,
+    }
+    return render(request, 'issues/issue_list.html', context)
+
+
+@session_login_required # Changed from @login_required
+def issue_detail(request, issue_id):
+    issue = get_object_or_404(Issue, id=issue_id)
+    comments = issue.comments.all().select_related(
+        'content_type' 
+    ) 
+    for comment in comments:
+        _ = comment.commenter 
+
+    # Determine if the current user (InvitedUser or Django User) can comment
+    can_comment_as_invited_user = False
+    if request.session.get("user_id"):
+        try:
+            invited_user = InvitedUser.objects.get(id=request.session.get("user_id"))
+            if issue.created_by == invited_user or invited_user in issue.observers.all() or issue.assignee == invited_user:
+                can_comment_as_invited_user = True
+        except InvitedUser.DoesNotExist:
+            pass
+    
+    # If Django admin user is logged in and issue is_for_hotel_admin
+    can_comment_as_django_admin = request.user.is_authenticated and request.user.is_staff and issue.is_for_hotel_admin
+
+    # User can comment if either condition is true.
+    # The form action will point to different views based on who is commenting.
+    # This template (issue_detail.html) is primarily for InvitedUser, 
+    # so its form should point to invited_user_comment_create.
+    # Admins would typically use admin_issue_detail.html.
+    
+    # The form should be handled by invited_user_comment_create if it's an InvitedUser posting.
+    # This view (issue_detail) primarily displays the issue and existing comments.
+    # The comment form displayed will be for invited_user_comment_create.
+
+    if request.method == 'POST':
+        # This POST block is now handled by invited_user_comment_create or admin_comment_create
+        # So, this view should ideally not handle POST for new comments anymore.
+        # If it does, it needs to decide which user type is posting.
+        # For simplicity, assuming POSTs go to the dedicated views.
+        pass
+    
+    comment_form = CommentForm() # For display in the template, action will go to invited_user_comment_create
+
+    context = {
+        'issue': issue,
+        'comments': comments,
+        'comment_form': comment_form,
+        'user': request.user, # General Django user for template context, might need adjustment
+        'can_comment': can_comment_as_invited_user, # Or more complex logic based on who is viewing
+                                                # and if this template is solely for InvitedUser interaction.
+        'user_roles': request.session.get('user_roles', []) # Pass roles if template needs them
+    }
+    return render(request, 'issues/issue_detail.html', context)
+
+# ... (keep issue_create, invited_user_comment_create, and other non-admin views) ...
+
+@session_login_required # Changed from @login_required
+def issue_create(request):
+    user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
+    
+    initial_data = {}
+    if request.method == 'GET': # Process GET params only on initial load
+        prefill_type = request.GET.get('type')
+        prefill_room_id = request.GET.get('related_rooms')
+        prefill_inventory_id = request.GET.get('related_inventory_items')
+
+        # Validate type and check corresponding ID
+        if prefill_type == IssueType.ROOM and prefill_room_id:
+            try:
+                # Ensure room exists, pass its pk as a list for M2M initial
+                if RoomData.objects.filter(pk=int(prefill_room_id)).exists():
+                    initial_data['type'] = IssueType.ROOM
+                    initial_data['related_rooms'] = [int(prefill_room_id)]
+            except (ValueError, TypeError): 
+                pass # Ignore invalid ID format
+        elif prefill_type == IssueType.FLOOR and prefill_inventory_id:
+            try:
+                # Ensure inventory item exists, pass its pk as a list
+                if Inventory.objects.filter(pk=int(prefill_inventory_id)).exists():
+                    initial_data['type'] = IssueType.FLOOR
+                    initial_data['related_inventory_items'] = [int(prefill_inventory_id)]
+            except (ValueError, TypeError):
+                pass # Ignore invalid ID format
+        # Note: No pre-filling if type doesn't match ID or if IDs are invalid/missing
+
+    if request.method == 'POST':
+        form = IssueForm(request.POST, request.FILES)
+        if form.is_valid():
+            issue = form.save(commit=False)
+            issue.created_by = user
+            issue.save() # Save the main instance first
+            form.save_m2m() # Crucial for saving M2M data like related_rooms/inventory
+            
+            # Add creator as observer (if not already handled elsewhere)
+            issue.observers.add(user)
+
+            logger.info(f"Issue created by {user.name} with ID {issue.id}")
+
+            # Process and save media files for initial comment
+            media_urls = []
+            images = form.cleaned_data.get('images', [])
+            video = form.cleaned_data.get('video')
+
+            for image in images:
+                # ... (saving logic as before) ...
+                file_name = default_storage.save(f"issues/images/{uuid.uuid4()}_{image.name}", image)
+                file_url = default_storage.url(file_name)
+                media_urls.append({'type': 'image', 'url': file_url, 'size': image.size, 'name': image.name})
+            if video:
+                # ... (saving logic as before) ...
+                file_name = default_storage.save(f"issues/videos/{uuid.uuid4()}_{video.name}", video)
+                file_url = default_storage.url(file_name)
+                media_urls.append({'type': 'video', 'url': file_url, 'size': video.size, 'name':video.name})
+
+            # Save initial comment if provided
+            initial_comment_text = form.cleaned_data.get('initial_comment')
+            if initial_comment_text or media_urls:
+                Comment.objects.create(
+                    issue=issue,
+                    commenter=user, # Changed back from user=user
+                    text_content=initial_comment_text,
+                    media=media_urls
+                )
+
+            success_message = f"Issue #{issue.id} created successfully."
+            # ... (AJAX/standard response logic as before) ...
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({
+                    'success': True,
+                    'message': success_message,
+                    'redirect_url': reverse('issue_detail', kwargs={'issue_id': issue.id})
+                })
+            else:
+                messages.success(request, success_message)
+                return redirect('issue_detail', issue_id=issue.id)
+        else:
+            logger.error(f"Form errors: {form.errors.as_json()}")
+            error_message = "Please correct the errors below."
+            # ... (AJAX/standard error response logic as before) ...
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                 return JsonResponse({
+                    'success': False,
+                    'message': error_message,
+                    'errors': json.loads(form.errors.as_json())  
+                }, status=400)
+            else:
+                # Re-render with errors, preserving initial data if GET had it
+                messages.error(request, error_message)
+                # Important: If re-rendering on POST error, DO NOT pass initial_data again.
+                # The form instance already has the submitted (invalid) data.
+                return render(request, 'issues/issue_form.html', {'form': form})
+    else: # GET request
+        form = IssueForm(initial=initial_data)
+
+    return render(request, 'issues/issue_form.html', {'form': form})
+
+@session_login_required # Uses custom session auth
+def invited_user_comment_create(request, issue_id):
+    invited_user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
+    issue = get_object_or_404(Issue, id=issue_id)
+
+    # Permission check: User must be creator, observer, or assignee to comment
+    can_comment = (
+        issue.created_by == invited_user or
+        invited_user in issue.observers.all() or
+        issue.assignee == invited_user
+    )
+
+    if not can_comment:
+        messages.error(request, "You do not have permission to comment on this issue.")
+        return redirect('issue_detail', issue_id=issue.id)
+
+    if request.method == 'POST':
+        form = CommentForm(request.POST, request.FILES)
+        if form.is_valid():
+            comment = form.save(commit=False)
+            comment.commenter = invited_user # Assign the InvitedUser instance
+            comment.issue = issue
+
+            media_info = []
+            images = form.cleaned_data.get('images', [])
+            video = form.cleaned_data.get('video')
+
+            for img in images:
+                if img.size > 4 * 1024 * 1024: # 4MB
+                    messages.error(request, f"Image '{img.name}' exceeds 4MB limit.")
+                    continue # Skip this file
+                file_name = default_storage.save(f"issues/comments/user/{issue.id}/{uuid.uuid4()}_{img.name}", img)
+                media_info.append({"type": "image", "url": default_storage.url(file_name), "name": img.name, "size": img.size})
+            
+            if video:
+                if video.size > 100 * 1024 * 1024: # 100MB
+                    messages.error(request, f"Video '{video.name}' exceeds 100MB limit.")
+                else:
+                    file_name = default_storage.save(f"issues/comments/user/{issue.id}/{uuid.uuid4()}_{video.name}", video)
+                    media_info.append({"type": "video", "url": default_storage.url(file_name), "name": video.name, "size": video.size})
+
+            comment.media = media_info
+            comment.save()
+            messages.success(request, "Your comment has been added.")
+            return redirect('issue_detail', issue_id=issue.id) # Redirect to standard issue detail
+        else:
+            messages.error(request, "There was an error with your comment. Please check the details.")
+
+            comments = issue.comments.all().select_related('content_type')
+            for c in comments: # Pre-fetch commenter
+                _ = c.commenter
+            return render(request, 'issues/issue_detail.html', {
+                'issue': issue,
+                'comments': comments,
+                'comment_form': form, # Pass the invalid form back
+                'user': request.user, # Or invited_user if more appropriate for template
+                'can_comment': can_comment # Pass the permission status, which must be True to reach here
+            })
+    else:
+        # GET request usually means the form is displayed on the issue_detail page
+        return redirect('issue_detail', issue_id=issue.id)

@@ -104,7 +104,7 @@
           message.classList.add("text-success");
           message.textContent = "Login successful! Redirecting...";
           localStorage.setItem("token", data.token);
-          setTimeout(() => window.location.href = "/dashboard", 1000);
+          setTimeout(() => window.location.href = "/home", 1000);
         } else {
           message.classList.remove("text-success");
           message.classList.add("text-danger");

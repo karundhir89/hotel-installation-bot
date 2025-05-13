@@ -3,9 +3,9 @@ from .views import *
 
 urlpatterns = [
     path('chat/', chatbot, name='chatbot'),
-    path('dashboard/', dashboard, name='dashboard'),
+    path('home/', home, name='home'),
     path('api/chatbot/', chatbot_api, name='chatbot_api'),  # API for chatbot
-    path('display_prompts/', display_prompts, name='display_prompts'),  # API for chatbot
+    path('display_prompts/', display_prompts, name='edit_prompts'),  # Changed name to edit_prompts
     path('update_prompt/', update_prompt, name='update_prompt'),  # API for chatbot,
     path("api/get_chat_history/", get_chat_history, name="get_chat_history"),   
     path("user_management/", user_management, name="user_management"),  
@@ -24,7 +24,7 @@ urlpatterns = [
     path('get-room-type/', get_room_type, name='get_room_type'),
     path('user_logout',user_logout,name='user_logout'),
     path('save_inventory/',save_inventory,name='save_inventory'),
-    path('save_installation/',save_installation,name='save_installation'),
+    path('save_admin_installation/',save_admin_installation,name='save_admin_installation'),
     path('delete_inventory/',delete_inventory,name='delete_inventory'),
     path('delete_products_data/',delete_products_data,name='delete_products_data'),
     path('delete_installation/',delete_installation,name='delete_installation'),
@@ -51,4 +51,10 @@ urlpatterns = [
     # New URLs for user-facing product lists with download
     path('floor-products/', floor_products_list, name='floor_products_list'),
     path('room-products/', room_number_products_list, name='room_number_products_list'),
+
+
+    path('issue_list/', issue_list, name='issue_list'),
+    path('issue_detail/<int:issue_id>/', issue_detail, name='issue_detail'),
+    path('issue_create/', issue_create, name='issue_create'),
+    path('issues/<int:issue_id>/comment/invited/', invited_user_comment_create, name='invited_user_comment_create'),
 ]

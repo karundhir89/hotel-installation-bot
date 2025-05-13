@@ -4,6 +4,36 @@
 {% block title %}Installation Control Form{% endblock %}
 
 {% block content %}
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@media (max-width: 768px) {
+  .border.border-light {
+    border-radius: 11px !important;
+    /* box-shadow: 14px 2px 17px 0px #ded8d8 !important; */
+
+    box-shadow: rgba(50, 50, 93, 0.25) 0px 6px 12px -2px, rgba(0, 0, 0, 0.3) 0px 3px 7px -3px;
+  }
+  input[type='checkbox'] {
+      width: 22px;
+      height: 22px;
+    }
+
+    #search_room {
+  height: 40px; /* Adjust the height as needed */
+  font-size: 16px; /* Optional: to match other elements */
+  padding: 5px 15px; /* Optional: control inner spacing */
+}
+
+}
+.card{
+  font-size: 16px; /* adjust as needed */
+}
+.form-control{
+  font-size: 16px;
+
+}
+
+</style>
 <div class="container-lg my-5">
     <div class="card shadow-sm rounded-4">
         <div class="card-body p-4">
@@ -15,9 +45,9 @@
                 <!-- Room Info -->
                 <div class="row mb-4">
                     <div class="col-md-6">
-                        <label for="room_number" class="form-label">Room #</label>
+                        <label for="room_number" class="form-label" >Room #</label>
                         <div class="input-group">
-                            <input type="text" class="form-control" name="room_number" id="room_number" required>
+                            <input type="text" class="form-control" name="room_number" id="room_number"  required>
                             <button type="button" class="btn btn-secondary" id="search_room">
                                 <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true" id="search_spinner"></span>
                                 <span id="search_text">Search</span>
@@ -31,6 +61,18 @@
                 </div>
 
                 <hr class="my-4">
+
+                <!-- Select All Checkbox -->
+                <div class="form-group row align-items-center mb-3" id="select_all_section" style="display: none;">
+                    <div class="col-md-5">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="select_all_checkboxes">
+                            <label class="form-check-label" for="select_all_checkboxes">
+                                <strong>Select All Items</strong>
+                            </label>
+                        </div>
+                    </div>
+                </div>
 
                 <!-- Dynamic Check Items Render Here -->
                 <div id="check-items-wrapper"></div>
@@ -58,6 +100,7 @@
       }
 
       setLoading('search_room', true);
+      $('#select_all_section').hide(); // Hide select all section while loading
 
       $.ajax({
         url: "{% url 'get_room_type' %}",
@@ -89,6 +132,13 @@
       const wrapper = $('#check-items-wrapper');
       wrapper.html('');
 
+      // Show/hide select all section based on whether there are items
+      if (items.length > 0) {
+        $('#select_all_section').show();
+      } else {
+        $('#select_all_section').hide();
+      }
+
       const savedItemsMap = {};
       savedItems.forEach(item => {
         if (item.install_id !== undefined) {
@@ -115,21 +165,21 @@
         }
 
         const html = `
-          <div class="form-group row align-items-center mb-3">
-            <div class="col-md-5">
-              <div class="form-check">
+          <div class="form-group row align-items-center mb-3 border border-light rounded-top">
+            <div class="col-md-5 mt-3">
+              <div class="form-check mb-2">
                 <input type="hidden" name="step_${item.type}_${item.id}" value="off">
-                <input class="form-check-input" type="checkbox" name="step_${item.type}_${item.id}" id="step_${item.type}_${item.id}" value="on" ${isChecked ? 'checked' : ''}>
+                <input class="form-check-input"  type="checkbox" name="step_${item.type}_${item.id}" id="step_${item.type}_${item.id}" value="on" ${isChecked ? 'checked' : ''}>
                 <label class="form-check-label" for="step_${item.type}_${item.id}">
                   ${item.label} 
                 </label>
               </div>
             </div>
-            <div class="col-md-3">
-              <input type="date" class="form-control" name="date_${item.type}_${item.id}" value="${installedOn}">
+            <div class="col-md-3 mt-2 mb-2">
+              <input type="date"  class="form-control" name="date_${item.type}_${item.id}" value="${installedOn}">
             </div>
-            <div class="col-md-4">
-              <input type="text" class="form-control" name="checked_by_${item.type}_${item.id}" value="${installedBy}" placeholder="Checked by">
+            <div class="col-md-4 mt-2 mb-2">
+              <input type="text"  class="form-control" name="checked_by_${item.type}_${item.id}" value="${installedBy}" placeholder="Checked by">
             </div>
           </div>
         `;
@@ -137,23 +187,37 @@
       });
     }
 
-    // Fill checked_by and check_on when checkbox is ticked
-    $(document).on("change", ".form-check-input", function () {
-      const checkbox = $(this);
-      const idParts = checkbox.attr("id").split("_"); // ["step", "detail", "23"]
-      const type = idParts[1];
-      const id = idParts[2];
-
-      const isChecked = checkbox.is(":checked");
+    // Select All Checkbox Functionality
+    $(document).on("change", "#select_all_checkboxes", function() {
+      const isChecked = $(this).is(":checked");
       const currentDate = new Date().toISOString().split("T")[0];
       const currentUser = "{{ invited_user.name|escapejs }}";
 
-      if (isChecked) {
-        $(`input[name="date_${type}_${id}"]`).val(currentDate);
-        $(`input[name="checked_by_${type}_${id}"]`).val(currentUser);
-      } else {
-        $(`input[name="date_${type}_${id}"]`).val("");
-        $(`input[name="checked_by_${type}_${id}"]`).val("");
+      $(".form-check-input").each(function() {
+        if ($(this).attr("id") !== "select_all_checkboxes") {
+          $(this).prop("checked", isChecked);
+          
+          const idParts = $(this).attr("id").split("_");
+          const type = idParts[1];
+          const id = idParts[2];
+
+          if (isChecked) {
+            $(`input[name="date_${type}_${id}"]`).val(currentDate);
+            $(`input[name="checked_by_${type}_${id}"]`).val(currentUser);
+          } else {
+            $(`input[name="date_${type}_${id}"]`).val("");
+            $(`input[name="checked_by_${type}_${id}"]`).val("");
+          }
+        }
+      });
+    });
+
+    // Update Select All checkbox state when individual checkboxes change
+    $(document).on("change", ".form-check-input", function() {
+      if ($(this).attr("id") !== "select_all_checkboxes") {
+        const totalCheckboxes = $(".form-check-input").not("#select_all_checkboxes").length;
+        const checkedCheckboxes = $(".form-check-input:checked").not("#select_all_checkboxes").length;
+        $("#select_all_checkboxes").prop("checked", totalCheckboxes === checkedCheckboxes);
       }
     });
 
