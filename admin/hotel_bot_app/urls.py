@@ -47,7 +47,7 @@ urlpatterns = [
     path('save_product_room_model/', save_product_room_model, name='save_product_room_model'),
     path('delete_product_room_model/', delete_product_room_model, name='delete_product_room_model'),
     path('get_floor_products/', get_floor_products, name='get_floor_products'),
-
+    path('get_room_products/', get_room_products, name='get_room_products'),
     # New URLs for user-facing product lists with download
     path('floor-products/', floor_products_list, name='floor_products_list'),
     path('room-products/', room_number_products_list, name='room_number_products_list'),

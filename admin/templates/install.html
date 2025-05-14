@@ -50,6 +50,17 @@ th.sorting, th.sorting_asc, th.sorting_desc {
     position: relative;
     margin: 20px 0 0;
 }
+.installation_page .form-check-input {
+    width: 18px;
+    height: 18px;
+    margin-top: 0;
+    opacity: 1;
+    z-index: 1;
+}
+.border.border-light {
+    border-radius: 11px !important;
+    box-shadow: rgba(50, 50, 93, 0.25) 0px 6px 12px -2px, rgba(0, 0, 0, 0.3) 0px 3px 7px -3px;
+}
 </style>
 
 <!-- Loader -->
@@ -84,8 +95,7 @@ th.sorting, th.sorting_asc, th.sorting_desc {
                                         <th>Prework</th>
                                         <th>Install</th>
                                         <th>Post Work</th>
-                                        <th>Install Started</th>
-                                        <th>Install Completed</th>
+                                        <th>Retouching</th>
                                         <th>Actions</th>
                                     </tr>
                                 </thead>
@@ -98,18 +108,29 @@ th.sorting, th.sorting_asc, th.sorting_desc {
                                         <td>{{ installation.prework }}</td>
                                         <td>{{ installation.install }}</td>
                                         <td>{{ installation.post_work }}</td>
-                                        <td>{{ installation.day_install_began }}</td>
-                                        <td>{{ installation.day_install_complete }}</td>
+                                        <td>{{ installation.retouching }}</td>
                                         <td>
                                             <button class="btn editModelBtn"
                                                 data-id="{{ installation.id }}"
                                                 data-room="{{ installation.room }}"
                                                 data-product_available="{{ installation.product_available }}"
+                                                data-product_arrival_date="{{ installation.formatted_product_arrival_date }}"
+                                                data-product_arrival_checked_by="{{ installation.product_arrival_checked_by }}"
                                                 data-prework="{{ installation.prework }}"
+                                                data-prework_date="{{ installation.formatted_prework_date }}"
+                                                data-prework_checked_by="{{ installation.prework_checked_by }}"
                                                 data-install="{{ installation.install }}"
+                                                data-install_date="{{ installation.formatted_install_date }}"
+                                                data-install_checked_by="{{ installation.install_checked_by }}"
                                                 data-post_work="{{ installation.post_work }}"
-                                                data-day_install_began="{{ installation.formatted_day_install_began }}"
-                                                data-day_install_complete="{{ installation.formatted_day_install_complete }}">
+                                                data-post_work_date="{{ installation.formatted_post_work_date }}"
+                                                data-post_work_checked_by="{{ installation.post_work_checked_by }}"
+                                                data-retouching="{{ installation.retouching }}"
+                                                data-retouching_date="{{ installation.formatted_retouching_date }}"
+                                                data-retouching_checked_by="{{ installation.retouching_checked_by }}"
+                                                data-list_of_items="{{ installation.list_of_items }}"
+                                                data-list_of_items_date="{{ installation.formatted_list_of_items_date }}"
+                                                data-list_of_items_checked_by="{{ installation.list_of_items_checked_by }}">
                                                 Edit
                                             </button>
                                             <button class="btn deleteModelBtn" data-id="{{ installation.id }}">
@@ -133,7 +154,7 @@ th.sorting, th.sorting_asc, th.sorting_desc {
 
 <!-- Add/Edit Modal -->
 <div id="modelModal" class="modal">
-    <div class="modal-content mx-auto p-4">
+    <div class="modal-content mx-auto p-4 installation_page">
         <div class="d-flex justify-content-between align-items-center">
             <h2 id="modelModalTitle">Add Installation</h2>
             <span class="close" id="closeModelModal">×</span>
@@ -146,43 +167,111 @@ th.sorting, th.sorting_asc, th.sorting_desc {
                 <label for="room">Room:</label>
                 <input type="number" id="room-no" name="room" class="form-control">
             </div>
-            <div class="form-group">
-                <label for="product_available">Product Available:</label>
-                <select id="product_available" name="product_available" class="form-control" required>
-                    <option value="YES">YES</option>
-                    <option value="NO">NO</option>
-                </select>
+
+            <!-- Product Available Section -->
+            <div class="form-group row align-items-center mb-3 border border-light rounded-top">
+                <div class="col-md-5 mt-3">
+                    <div class="form-check mb-2">
+                        <input type="hidden" name="product_available" value="NO">
+                        <input class="form-check-input " type="checkbox" name="product_available" id="product_available" value="YES">
+                        <label class="form-check-label" for="product_available">
+                            Product Available
+                        </label>
+                    </div>
+                </div>
+                <div class="col-md-3 mt-2 mb-2">
+                    <input type="date" class="form-control" name="product_arrival_date" id="product_arrival_date">
+                </div>
+                <div class="col-md-4 mt-2 mb-2">
+                    <input type="text" class="form-control" name="product_arrival_checked_by" id="product_arrival_checked_by" placeholder="Checked by">
+                </div>
             </div>
-            <div class="form-group">
-                <label for="prework">Prework:</label>
-                <select id="prework" name="prework" class="form-control" required>
-                    <option value="YES">YES</option>
-                    <option value="NO">NO</option>
-                </select>
+
+            <!-- Prework Section -->
+            <div class="form-group row align-items-center mb-3 border border-light rounded-top">
+                <div class="col-md-5 mt-3">
+                    <div class="form-check mb-2">
+                        <input type="hidden" name="prework" value="NO">
+                        <input class="form-check-input" type="checkbox" name="prework" id="prework" value="YES">
+                        <label class="form-check-label" for="prework">
+                            Prework
+                        </label>
+                    </div>
+                </div>
+                <div class="col-md-3 mt-2 mb-2">
+                    <input type="date" class="form-control" name="prework_date" id="prework_date">
+                </div>
+                <div class="col-md-4 mt-2 mb-2">
+                    <input type="text" class="form-control" name="prework_checked_by" id="prework_checked_by" placeholder="Checked by">
+                </div>
             </div>
-            <div class="form-group">
-                <label for="install">Install:</label>
-                <select id="install" name="install" class="form-control" required>
-                    <option value="YES">YES</option>
-                    <option value="NO">NO</option>
-                </select>
+
+            <!-- Install Section -->
+            <div class="form-group row align-items-center mb-3 border border-light rounded-top">
+                <div class="col-md-5 mt-3">
+                    <div class="form-check mb-2">
+                        <input type="hidden" name="install" value="NO">
+                        <input class="form-check-input" type="checkbox" name="install" id="install" value="YES">
+                        <label class="form-check-label" for="install">
+                            Install
+                        </label>
+                    </div>
+                </div>
+                <div class="col-md-3 mt-2 mb-2">
+                    <input type="date" class="form-control" name="install_date" id="install_date">
+                </div>
+                <div class="col-md-4 mt-2 mb-2">
+                    <input type="text" class="form-control" name="install_checked_by" id="install_checked_by" placeholder="Checked by">
+                </div>
             </div>
-            <div class="form-group">
-                <label for="post_work">Post Work:</label>
-                <select id="post_work" name="post_work" class="form-control" required>
-                    <option value="YES">YES</option>
-                    <option value="NO">NO</option>
-                </select>
+
+            <!-- Post Work Section -->
+            <div class="form-group row align-items-center mb-3 border border-light rounded-top">
+                <div class="col-md-5 mt-3">
+                    <div class="form-check mb-2">
+                        <input type="hidden" name="post_work" value="NO">
+                        <input class="form-check-input" type="checkbox" name="post_work" id="post_work" value="YES">
+                        <label class="form-check-label" for="post_work">
+                            Post Work
+                        </label>
+                    </div>
+                </div>
+                <div class="col-md-3 mt-2 mb-2">
+                    <input type="date" class="form-control" name="post_work_date" id="post_work_date">
+                </div>
+                <div class="col-md-4 mt-2 mb-2">
+                    <input type="text" class="form-control" name="post_work_checked_by" id="post_work_checked_by" placeholder="Checked by">
+                </div>
             </div>
-            <div class="form-group">
-                <label for="day_install_began">Install Start Date:</label>
-                <input type="date" id="day_install_began" name="day_install_began" class="form-control">
+
+            <!-- Retouching Section -->
+            <div class="form-group row align-items-center mb-3 border border-light rounded-top">
+                <div class="col-md-5 mt-3">
+                    <div class="form-check mb-2">
+                        <input type="hidden" name="retouching" value="NO">
+                        <input class="form-check-input" type="checkbox" name="retouching" id="retouching" value="YES">
+                        <label class="form-check-label" for="retouching">
+                            Retouching
+                        </label>
+                    </div>
+                </div>
+                <div class="col-md-3 mt-2 mb-2">
+                    <input type="date" class="form-control" name="retouching_date" id="retouching_date">
+                </div>
+                <div class="col-md-4 mt-2 mb-2">
+                    <input type="text" class="form-control" name="retouching_checked_by" id="retouching_checked_by" placeholder="Checked by">
+                </div>
             </div>
-            <div class="form-group">
-                <label for="day_install_complete">Install Complete Date:</label>
-                <input type="date" id="day_install_complete" name="day_install_complete" class="form-control">
+
+            <!-- Dynamic Products Section -->
+            <div id="dynamic-products-section">
+                <h4 class="mt-4 mb-3">Room Products</h4>
+                <div id="room-products-container">
+                    <!-- Products will be loaded dynamically here -->
+                </div>
             </div>
-            <button type="submit" class="btn float-right">Save Installation</button>
+
+            <button type="submit" class="btn float-right mt-4">Save Installation</button>
         </form>        
     </div>
 </div>
@@ -191,6 +280,7 @@ th.sorting, th.sorting_asc, th.sorting_desc {
     $(document).ready(function () {
         $('#modelLoader').hide();
         $('#roomModelTable').show();
+        let isProductsLoading = false;  // Flag to prevent multiple requests
     
         $('#roomModelTable').DataTable({
             paging: true,
@@ -208,12 +298,22 @@ th.sorting, th.sorting_asc, th.sorting_desc {
             $('#model-id').val(""); // clear ID
             $('#room-no').val("");
             $('#room-no').prop('readonly', false);
-            $('#product_available').val("");
-            $('#prework').val("");
-            $('#install').val("");
-            $('#post_work').val("");
-            $('#day_install_began').val("");
-            $('#day_install_complete').val("");
+            $('#product_available').prop('checked', false);
+            $('#product_arrival_date').val("");
+            $('#product_arrival_checked_by').val("");
+            $('#prework').prop('checked', false);
+            $('#prework_date').val("");
+            $('#prework_checked_by').val("");
+            $('#install').prop('checked', false);
+            $('#install_date').val("");
+            $('#install_checked_by').val("");
+            $('#post_work').prop('checked', false);
+            $('#post_work_date').val("");
+            $('#post_work_checked_by').val("");
+            $('#retouching').prop('checked', false);
+            $('#retouching_date').val("");
+            $('#retouching_checked_by').val("");
+            $('#room-products-container').empty();
             $('#modelModal').fadeIn();
             $('#modelModalOverlay').fadeIn();
         });
@@ -227,12 +327,31 @@ th.sorting, th.sorting_asc, th.sorting_desc {
             $('#model-id').val(id);
             $('#room-no').val($(this).data('room'));
             $('#room-no').prop('readonly', true);
-            $('#product_available').val($(this).data('product_available'));
-            $('#prework').val($(this).data('prework'));
-            $('#install').val($(this).data('install'));
-            $('#post_work').val($(this).data('post_work'));
-            $('#day_install_began').val($(this).data('day_install_began'));
-            $('#day_install_complete').val($(this).data('day_install_complete'));
+            
+            // Set checkbox states and related fields
+            $('#product_available').prop('checked', $(this).data('product_available') === 'YES');
+            $('#product_arrival_date').val($(this).data('product_arrival_date'));
+            $('#product_arrival_checked_by').val($(this).data('product_arrival_checked_by'));
+            
+            $('#prework').prop('checked', $(this).data('prework') === 'YES');
+            $('#prework_date').val($(this).data('prework_date'));
+            $('#prework_checked_by').val($(this).data('prework_checked_by'));
+            
+            $('#install').prop('checked', $(this).data('install') === 'YES');
+            $('#install_date').val($(this).data('install_date'));
+            $('#install_checked_by').val($(this).data('install_checked_by'));
+            
+            $('#post_work').prop('checked', $(this).data('post_work') === 'YES');
+            $('#post_work_date').val($(this).data('post_work_date'));
+            $('#post_work_checked_by').val($(this).data('post_work_checked_by'));
+            
+            $('#retouching').prop('checked', $(this).data('retouching') === 'YES');
+            $('#retouching_date').val($(this).data('retouching_date'));
+            $('#retouching_checked_by').val($(this).data('retouching_checked_by'));
+            
+            // Load room products with installation ID
+            loadRoomProducts($(this).data('room'), id);
+            
             $('#modelModal').fadeIn();
             $('#modelModalOverlay').fadeIn();
         });
@@ -263,19 +382,134 @@ th.sorting, th.sorting_asc, th.sorting_desc {
             }
         });
     
+        // Function to load room products
+        function loadRoomProducts(roomNumber, installationId = null) {
+            if (isProductsLoading) return;  // Prevent multiple requests
+            isProductsLoading = true;
+
+            $.ajax({
+                url: "{% url 'get_room_products' %}",
+                type: "GET",
+                data: { 
+                    room_number: roomNumber,
+                    installation_id: installationId
+                },
+                success: function(data) {
+                    const container = $('#room-products-container');
+                    container.empty();
+                    
+                    if (data.success && data.products) {
+                        data.products.forEach(product => {
+                            const html = `
+                                <div class="form-group row align-items-center mb-3 border border-light rounded-top">
+                                    <div class="col-md-5 mt-3">
+                                        <div class="form-check mb-2">
+                                            <input type="hidden" name="product_${product.id}" value="NO">
+                                            <input class="form-check-input" type="checkbox" 
+                                                name="product_${product.id}" 
+                                                id="product_${product.id}" 
+                                                value="YES"
+                                                ${product.status === 'YES' ? 'checked' : ''}>
+                                            <label class="form-check-label" for="product_${product.id}">
+                                                ${product.name}
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3 mt-2 mb-2">
+                                        <input type="date" class="form-control" 
+                                            name="product_${product.id}_date" 
+                                            id="product_${product.id}_date"
+                                            value="${product.installed_on || ''}"
+                                            ${product.status === 'YES' ? 'required' : ''}>
+                                    </div>
+                                    <div class="col-md-4 mt-2 mb-2">
+                                        <input type="text" class="form-control" 
+                                            name="product_${product.id}_checked_by" 
+                                            id="product_${product.id}_checked_by" 
+                                            placeholder="Checked by"
+                                            value="${product.installed_by || ''}"
+                                            ${product.status === 'YES' ? 'required' : ''}>
+                                    </div>
+                                </div>
+                            `;
+                            container.append(html);
+                        });
+                    }
+                },
+                error: function() {
+                    toastr.error("Error loading room products");
+                },
+                complete: function() {
+                    isProductsLoading = false;  // Reset flag
+                }
+            });
+        }
+
+        // Load products when room number is entered
+        $('#room-no').on('change', function() {
+            const roomNumber = $(this).val();
+            const installationId = $('#model-id').val();
+            if (roomNumber) {
+                loadRoomProducts(roomNumber, installationId);
+            }
+        });
+
+        // Handle checkbox changes for all checkboxes
+        $(document).on('change', '.form-check-input', function() {
+            const row = $(this).closest('.row');
+            const dateField = row.find('input[type="date"]');
+            const checkedByField = row.find('input[type="text"]');
+            
+            if ($(this).is(':checked')) {
+                // Set current date if not already set
+                if (!dateField.val()) {
+                    const today = new Date().toISOString().split('T')[0];
+                    dateField.val(today);
+                }
+                // Set current user if not already set
+                if (!checkedByField.val()) {
+                    checkedByField.val('{{ request.user.get_full_name|default:request.user.username }}');
+                }
+                // Make fields required
+                dateField.prop('required', true);
+                checkedByField.prop('required', true);
+            } else {
+                // Clear fields
+                dateField.val('');
+                checkedByField.val('');
+                // Remove required
+                dateField.prop('required', false);
+                checkedByField.prop('required', false);
+            }
+        });
+
         // Save (Add/Edit)
         $('#modelForm').submit(function (e) {
             e.preventDefault();
             const formData = $(this).serialize();
-            console.log("FormData being sent:", formData);
-    
+            
+            // Validate required fields
+            let isValid = true;
+            $(this).find('input[required]').each(function() {
+                if (!$(this).val()) {
+                    isValid = false;
+                    $(this).addClass('is-invalid');
+                } else {
+                    $(this).removeClass('is-invalid');
+                }
+            });
+            
+            if (!isValid) {
+                toastr.error('Please fill in all required fields');
+                return;
+            }
+
             $.ajax({
                 url: $(this).attr('action'),
                 type: 'POST',
                 data: formData,
                 headers: { 'X-CSRFToken': '{{ csrf_token }}' },
                 success: function (response) {
-                    console.log("Response:", response);
                     if (response.success) {
                         $('#modelModal, #modelModalOverlay').fadeOut();
                         toastr.success("Installation saved successfully!");
@@ -297,5 +531,5 @@ th.sorting, th.sorting_asc, th.sorting_desc {
             $('#modelModalOverlay').fadeOut();
         });
     });
-    </script>
+</script>
 {% endblock %}

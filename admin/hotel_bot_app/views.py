@@ -842,6 +842,24 @@ def get_room_type(request):
         saved_items = []
         check_items = []
 
+        if not installation_data:
+            installation_data = Installation.objects.create(
+                room=room_number,
+                prework="NO",
+                prework_check_on=None,
+                prework_checked_by=None,
+                product_arrived_at_floor="NO",
+                product_arrived_at_floor_check_on=None,
+                product_arrived_at_floor_checked_by=None,
+                retouching="NO",
+                retouching_check_on=None,
+                retouching_checked_by=None,
+                post_work="NO",
+                post_work_check_on=None,
+                post_work_checked_by=None
+            )
+        
+
         # Check if InstallDetail already exists
         existing_installs = InstallDetail.objects.filter(
             room_id=room_data
@@ -889,7 +907,7 @@ def get_room_type(request):
             install_details_to_create = []
             for prm in product_room_models:
                 install = InstallDetail(
-                    installation=installation_data,
+                    installation_id=installation_data.id,
                     product_id=prm.product_id,
                     room_id=room_data,
                     room_model_id=room_model,
@@ -902,7 +920,7 @@ def get_room_type(request):
 
             # Re-fetch created records with IDs
             created_installs = InstallDetail.objects.filter(
-                installation=installation_data, room_id=room_data
+                installation_id=installation_data.id, room_id=room_data
             ).select_related("product_id")
 
             for inst in created_installs:
@@ -975,6 +993,43 @@ def get_room_type(request):
                     "type": "installation"
                 },
             ])
+        else:
+            
+            check_items.extend([
+                {
+                    "id": 0,
+                    "label": "Pre-Work completed.",
+                    "checked_by": None,
+                    "check_on": None,
+                    "status": None,
+                    "type": "installation"
+                },
+                {
+                    "id": 1,
+                    "label": "The product arrived at the floor.",
+                    "checked_by": None,
+                    "check_on": None,
+                    "status": None,
+                    "type": "installation"
+                },
+                {
+                    "id": 12,
+                    "label": "Retouching.",
+                    "checked_by": None,
+                    "check_on": None,
+                    "status": None,
+                    "type": "installation"
+                },
+                {
+                    "id": 13,
+                    "label": "Post Work.",
+                    "checked_by": None,
+                    "check_on": None,
+                    "status": None,
+                    "type": "installation"
+                },
+            ])
+
 
         # Sort check_items by placing 0 and 1 at the beginning, and 12 and 13 at the end, while sorting the rest by ID
         check_items = sorted(
@@ -1173,53 +1228,6 @@ def inventory_received_item_num(request):
 
 
 @login_required
-def save_admin_installation(request):
-    if request.method == "POST":
-        installation_id = request.POST.get("installation_id")
-        print("[hello]", installation_id)
-        room = request.POST.get("room", "").strip()
-        product_available = request.POST.get("product_available", "").strip()
-        prework = request.POST.get("prework", "").strip()
-        install = request.POST.get("install", "").strip()
-        post_work = request.POST.get("post_work", "").strip()
-        day_install_began = request.POST.get("day_install_began", "").strip()
-        day_install_complete = request.POST.get("day_install_complete", "").strip()
-
-        if not room:
-            return JsonResponse({"error": "Room field is required."}, status=400)
-        try:
-            if installation_id:
-                print("inside")
-                installation = Installation.objects.get(id=installation_id)
-                installation.room = room
-                installation.product_available = product_available
-                installation.prework = prework
-                installation.install = install
-                installation.post_work = post_work
-                installation.day_install_began = parse_date(day_install_began)
-                installation.day_install_complete = parse_date(day_install_complete)
-                installation.save()
-            else:
-                print("Adding new row")
-                Installation.objects.create(
-                    room=room,
-                    product_available=product_available,
-                    prework=prework,
-                    install=install,
-                    post_work=post_work,
-                    day_install_began=parse_date(day_install_began),
-                    day_install_complete=parse_date(day_install_complete),
-                )
-
-            return JsonResponse({"success": True})
-
-        except Installation.DoesNotExist:
-            return JsonResponse({"error": "Installation not found."}, status=404)
-
-    return JsonResponse({"error": "Invalid request"}, status=400)
-
-
-@login_required
 def save_schedule(request):
     if request.method == "POST":
         post_data = request.POST
@@ -1410,8 +1418,8 @@ def installation_form(request):
         messages.warning(request, "You must be logged in to access the form.")
         return redirect("user_login")
 
-    invited_user = request.session.get("user_id")
-    invited_user_instance = get_object_or_404(InvitedUser, id=invited_user)
+    invited_user_id = request.session.get("user_id")
+    invited_user_instance = get_object_or_404(InvitedUser, id=invited_user_id)
 
     if request.method == "POST":
         room_number = request.POST.get("room_number")
@@ -1421,9 +1429,10 @@ def installation_form(request):
 
         for key in request.POST:
             if key.startswith("step_"):
-                parts = key.split("_")  # ['step', 'type', 'id']
+                parts = key.split("_")
                 if len(parts) != 3:
                     continue
+
                 _, step_type, step_id_str = parts
 
                 try:
@@ -1434,57 +1443,63 @@ def installation_form(request):
                 is_checked = request.POST.get(key) == "on"
                 date = request.POST.get(f"date_{step_type}_{step_id}") or now().date()
 
+                # ✅ Installation-level steps
                 if step_type == "installation":
-                    if step_id == 0:  # Pre-Work completed
+                    if step_id == 0:
                         installation.prework = "YES" if is_checked else "NO"
-                        installation.prework_check_on = date if is_checked else None
+                        installation.prework_check_on = now().date() if is_checked else None
                         installation.prework_checked_by = invited_user_instance if is_checked else None
-                        # Update day_install_began when pre-work is completed
-                        if is_checked:
-                            installation.day_install_began = date
                     elif step_id == 1:
                         installation.product_arrived_at_floor = "YES" if is_checked else "NO"
-                        installation.product_arrived_at_floor_check_on = date if is_checked else None
+                        installation.product_arrived_at_floor_check_on = now().date() if is_checked else None
                         installation.product_arrived_at_floor_checked_by = invited_user_instance if is_checked else None
                     elif step_id == 12:
                         installation.retouching = "YES" if is_checked else "NO"
-                        installation.retouching_check_on = date if is_checked else None
+                        installation.retouching_check_on = now().date() if is_checked else None
                         installation.retouching_checked_by = invited_user_instance if is_checked else None
-                    elif step_id == 13:  # Post Work
+                    elif step_id == 13:
                         installation.post_work = "YES" if is_checked else "NO"
-                        installation.post_work_check_on = date if is_checked else None
+                        installation.post_work_check_on = now().date() if is_checked else None
                         installation.post_work_checked_by = invited_user_instance if is_checked else None
-                        # Update day_install_complete and install when post-work is completed
-                        if is_checked:
-                            installation.day_install_complete = date
-                            installation.install = "YES"
 
+                # ✅ InstallDetail-level steps
                 elif step_type == "detail":
                     try:
-                        product_room_model = ProductRoomModel.objects.get(id=step_id)
+                        install_detail_item = get_object_or_404(InstallDetail, pk=step_id)
 
-                        install_detail, _ = InstallDetail.objects.get_or_create(
-                            install_id=step_id,
-                            defaults={
-                                "product_id": product_room_model.product_id,
-                                "room_model_id": product_room_model.room_model_id,
-                                "room_id": room_instance.id,
-                            }
-                        )
+                        if install_detail_item.installation_id != installation.id:
+                            messages.error(
+                                request,
+                                f"Data mismatch: InstallDetail {step_id} doesn't belong to current Installation."
+                            )
+                            continue
 
                         if is_checked:
-                            install_detail.status = "YES"
-                            install_detail.installed_on = date
-                            install_detail.installed_by = invited_user_instance
+                            install_detail_item.status = "YES"
+                            install_detail_item.installed_on = date
+                            install_detail_item.installed_by = invited_user_instance
+
                         else:
-                            install_detail.status = "NO"
-                            install_detail.installed_on = None
-                            install_detail.installed_by = None
+                            install_detail_item.status = "NO"
+                            install_detail_item.installed_on = None
+                            install_detail_item.installed_by = None
 
-                        install_detail.save()
-                    except ProductRoomModel.DoesNotExist:
-                        pass
+                        install_detail_item.save()
+                        messages.success(
+                            request,
+                            f"Detail item {install_detail_item.product_name or step_id} updated."
+                        )
 
+                    except InstallDetail.DoesNotExist:
+                        messages.error(
+                            request,
+                            f"InstallDetail with ID {step_id} not found."
+                        )
+                    except Exception as e:
+                        messages.error(
+                            request,
+                            f"Unexpected error on InstallDetail {step_id}: {str(e)}"
+                        )
 
         installation.save()
         messages.success(request, "Installation data saved successfully!")
@@ -1842,7 +1857,7 @@ def floor_products_list(request):
     return render(request, 'floor_products_list.html', context)
 
 
-@login_required
+@session_login_required
 def room_number_products_list(request):
     room_number = request.GET.get('room_number', '').strip()
     product_list = []
@@ -2166,3 +2181,205 @@ def invited_user_comment_create(request, issue_id):
     else:
         # GET request usually means the form is displayed on the issue_detail page
         return redirect('issue_detail', issue_id=issue.id)
+    
+@login_required
+def save_admin_installation(request):
+    print(f"save_admin_installation called with request: {request.user.id}")
+    LoggedinUser = get_object_or_404(InvitedUser, id=request.user.id)
+    if request.method == 'POST':
+        try:
+            installation_id = request.POST.get('installation_id')
+            room_number = request.POST.get('room')
+            
+            # Get or create installation
+            if installation_id:
+                installation = Installation.objects.get(id=installation_id)
+            else:
+                installation = Installation()
+            
+            installation.room = room_number
+
+            # Product Available
+            product_available_status = request.POST.get('product_available', 'NO')
+            installation.product_available = product_available_status
+            if product_available_status == 'YES':
+                installation.product_arrival_date = request.POST.get('product_arrival_date')
+                installation.product_arrival_checked_by = LoggedinUser
+            else:
+                installation.product_arrival_date = None
+                installation.product_arrival_checked_by = None
+
+            # Prework
+            prework_status = request.POST.get('prework', 'NO')
+            installation.prework = prework_status
+            if prework_status == 'YES':
+                installation.prework_date = request.POST.get('prework_date')
+                installation.prework_checked_by = LoggedinUser
+            else:
+                installation.prework_date = None
+                installation.prework_checked_by = None
+
+            # Install
+            install_status = request.POST.get('install', 'NO')
+            installation.install = install_status
+            if install_status == 'YES':
+                installation.install_date = request.POST.get('install_date')
+                installation.install_checked_by = LoggedinUser
+            else:
+                installation.install_date = None
+                installation.install_checked_by = None
+
+            # Post Work
+            post_work_status = request.POST.get('post_work', 'NO')
+            installation.post_work = post_work_status
+            if post_work_status == 'YES':
+                installation.post_work_date = request.POST.get('post_work_date')
+                installation.post_work_checked_by = LoggedinUser
+            else:
+                installation.post_work_date = None
+                installation.post_work_checked_by = None
+
+            # Retouching
+            retouching_status = request.POST.get('retouching', 'NO')
+            installation.retouching = retouching_status
+            if retouching_status == 'YES':
+                installation.retouching_date = request.POST.get('retouching_date')
+                installation.retouching_checked_by = LoggedinUser
+            else:
+                installation.retouching_date = None
+                installation.retouching_checked_by = None
+            
+            installation.save()
+
+            # Get room data
+            room_data = RoomData.objects.get(room=room_number)
+            
+            # Handle installation details for each product
+            for key, value in request.POST.items():
+                if key.startswith('product_') and not key.endswith('_date') and not key.endswith('_checked_by') and not key.startswith('product_available') and not key.startswith('product_arrival'): # Exclude main product_available fields
+                    product_id_str = key.split('_')[1]
+                    try:
+                        product_id = int(product_id_str)
+                        status = value
+                        date_key = f'product_{product_id}_date'
+                        # checked_by_key = f'product_{product_id}_checked_by' # Not needed as we use LoggedinUser
+                        
+                        product_instance = ProductData.objects.get(id=product_id) # Changed from Product to ProductData
+                        
+                        # Get or create installation detail
+                        detail, created = InstallDetail.objects.get_or_create(
+                            installation_id=installation,
+                            room_id=room_data,
+                            product_id=product_instance # Corrected field name
+                        )
+                        
+                        # Update detail
+                        detail.status = status
+                        if status == 'YES':
+                            detail.installed_on = request.POST.get(date_key)
+                            detail.installed_by = LoggedinUser
+                        else:
+                            detail.installed_on = None
+                            detail.installed_by = None
+                        detail.save()
+                    except (ValueError, ProductData.DoesNotExist) as e: # Catch if product_id is not int or product not found
+                        print(f"Skipping product detail for key {key} due to error: {e}")
+                        continue
+
+            return JsonResponse({'success': True})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    return JsonResponse({'success': False, 'error': 'Invalid request method'})
+
+@login_required
+def get_room_products(request):
+    room_number = request.GET.get('room_number')
+    installation_id = request.GET.get('installation_id')
+
+    if not room_number:
+        return JsonResponse({'error': 'Room number is required'}, status=400)
+
+    if not installation_id:
+        return JsonResponse({'error': 'Installation ID is required'}, status=400)
+
+    try:
+        with connection.cursor() as cursor:
+            # Step 1: Get room_id and room_model_id
+            cursor.execute("""
+                SELECT rd.id as room_id, rm.id as room_model_id
+                FROM room_data rd
+                LEFT JOIN room_model rm ON rd.room_model_id = rm.id
+                WHERE rd.room = %s
+            """, [room_number])
+
+            room_data = cursor.fetchone()
+            if not room_data:
+                return JsonResponse({'error': 'Room not found'}, status=404)
+
+            room_id, room_model_id = room_data
+
+            if not room_model_id:
+                return JsonResponse({'error': 'No room model found for this room'}, status=404)
+
+            # Step 2: Check if install_detail has entries
+            cursor.execute("""
+                SELECT 
+                    id.product_id as id,
+                    pd.item as name,
+                    pd.description,
+                    id.status,
+                    id.installed_on,
+                    u.name as installed_by
+                FROM install_detail id
+                JOIN product_data pd ON id.product_id = pd.id
+                LEFT JOIN invited_users u ON id.installed_by = u.id
+                WHERE id.room_id = %s AND id.installation_id = %s
+                ORDER BY pd.item
+            """, [room_id, installation_id])
+
+            install_entries = cursor.fetchall()
+            columns = [col[0] for col in cursor.description]
+
+            if install_entries:
+                products = []
+                for row in install_entries:
+                    product = dict(zip(columns, row))
+                    if product['installed_on']:
+                        product['installed_on'] = product['installed_on'].strftime('%Y-%m-%d')
+                    products.append(product)
+
+                return JsonResponse({'success': True, 'source': 'install_detail', 'products': products})
+
+            # Step 3: Fallback to dynamic room model-based product lookup
+            cursor.execute("""
+                SELECT 
+                    pd.id,
+                    pd.item as name,
+                    pd.description,
+                    prm.quantity,
+                    COALESCE(id.status, 'NO') as status,
+                    id.installed_on,
+                    u.name as installed_by
+                FROM product_room_model prm
+                JOIN product_data pd ON prm.product_id = pd.id
+                LEFT JOIN install_detail id ON pd.id = id.product_id
+                                           AND id.installation_id = %s
+                                           AND id.room_id = %s
+                LEFT JOIN invited_users u ON id.installed_by = u.id
+                WHERE prm.room_model_id = %s
+                ORDER BY pd.item
+            """, [installation_id, room_id, room_model_id])
+
+            dynamic_products = []
+            columns = [col[0] for col in cursor.description]
+
+            for row in cursor.fetchall():
+                product = dict(zip(columns, row))
+                if product['installed_on']:
+                    product['installed_on'] = product['installed_on'].strftime('%Y-%m-%d')
+                dynamic_products.append(product)
+
+            return JsonResponse({'success': True, 'source': 'room_model_fallback', 'products': dynamic_products})
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
