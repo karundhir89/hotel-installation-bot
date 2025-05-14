@@ -13,7 +13,7 @@ from django.core.files.storage import default_storage
 import json # For AJAX error responses if you re-add them later
 
 from hotel_bot_app.models import Issue, Comment, InvitedUser 
-from hotel_bot_app.forms import IssueUpdateForm, CommentForm 
+from hotel_bot_app.forms import IssueUpdateForm, CommentForm, IssueForm
 
 import logging
 logger = logging.getLogger(__name__)
@@ -85,22 +85,52 @@ def logout_view(request):
 		print("error in logout :::::::::::",e)
 
 @login_required
-@user_passes_test(is_staff_user) # Protects for staff users
+@user_passes_test(is_staff_user)
 def admin_issue_list(request):
-	issue_list_all = Issue.objects.all().order_by('-created_at').select_related('created_by', 'assignee')
-	paginator = Paginator(issue_list_all, 25) # Show 25 issues per page
+	issues = Issue.objects.all().order_by('-created_at').select_related('created_by', 'assignee')
+
+	# Filtering
+	status = request.GET.get('status')
+	issue_type = request.GET.get('type')
+	created_by = request.GET.get('created_by')
+	assignee = request.GET.get('assignee')
+	q = request.GET.get('q')
+
+	if q:
+		issues = issues.filter(title__icontains=q)
+	if status:
+		issues = issues.filter(status=status)
+	if issue_type:
+		issues = issues.filter(type=issue_type)
+	if created_by:
+		issues = issues.filter(created_by__id=created_by)
+	if assignee:
+		issues = issues.filter(assignee__id=assignee)
+
+	paginator = Paginator(issues, 25)
 	page_number = request.GET.get('page')
 	try:
 		issues_page = paginator.page(page_number)
 	except PageNotAnInteger:
-		# If page is not an integer, deliver first page.
 		issues_page = paginator.page(1)
 	except EmptyPage:
-		# If page is out of range (e.g. 9999), deliver last page of results.
 		issues_page = paginator.page(paginator.num_pages)
-	
+
+	# For filter dropdowns
+	all_users = InvitedUser.objects.all()
+	all_statuses = Issue._meta.get_field('status').choices
+	all_types = Issue._meta.get_field('type').choices
+
 	context = {
 		'issues_page': issues_page,
+		'all_users': all_users,
+		'all_statuses': all_statuses,
+		'all_types': all_types,
+		'selected_status': status,
+		'selected_type': issue_type,
+		'selected_created_by': created_by,
+		'selected_assignee': assignee,
+		'search_query': q,
 	}
 	return render(request, 'admin_dashboard/issues/admin_issue_list.html', context)
 
@@ -556,4 +586,31 @@ def dashboard(request):
 	except Exception as e:
 		print(f"Error in dashboard view: {e}") 
 		return redirect("admin/login")
+
+@login_required
+@user_passes_test(is_staff_user)
+def admin_issue_create(request):
+    if request.method == 'POST':
+        post_data = request.POST.copy()
+        post_data.setlist('related_rooms', request.POST.getlist('related_rooms'))
+        post_data.setlist('related_inventory_items', request.POST.getlist('related_inventory_items'))
+        form = IssueForm(post_data, request.FILES)
+        if form.is_valid():
+            issue = form.save(commit=False)
+            issue.created_by = request.user
+            issue.save()
+            form.save_m2m()
+            messages.success(request, f"Issue #{issue.id} created successfully.")
+            return redirect('admin_dashboard:admin_issue_detail', issue_id=issue.id)
+    else:
+        form = IssueForm()
+    return render(
+        request,
+        'admin_dashboard/issues/admin_issue_form.html',
+        {
+            'form': form,
+            'is_admin': True,
+            'form_action': reverse('admin_dashboard:admin_issue_create')
+        }
+    )
 
