@@ -1966,35 +1966,43 @@ def issue_list(request):
     return render(request, 'issues/issue_list.html', context)
 
 
-@session_login_required # Changed from @login_required
+@session_login_required  # or your login decorator
 def issue_detail(request, issue_id):
     issue = get_object_or_404(Issue, id=issue_id)
-    comments = issue.comments.all().select_related(
-        'content_type' 
-    ) 
-    for comment in comments:
-        _ = comment.commenter 
-
-    # Get the current invited user
+    comments = issue.comments.all().select_related('content_type')
     invited_user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
 
-    # Determine if the current user can comment
-    can_comment = False
-    if issue.created_by == invited_user or invited_user in issue.observers.all() or issue.assignee == invited_user:
-        can_comment = True
-    
+    # Build comment_data for the template
+    comment_data = []
+    for comment in comments:
+        commenter = comment.commenter
+        comment_data.append({
+            "comment_id": comment.id,
+            "text_content": comment.text_content,
+            "media": comment.media,
+            "commenter_id": getattr(commenter, "id", None),
+            "commenter_name": str(commenter),
+            "is_by_current_user": commenter == invited_user,
+            "created_at": comment.created_at,
+        })
+
+    can_comment = (
+        issue.created_by == invited_user or
+        invited_user in issue.observers.all() or
+        issue.assignee == invited_user
+    )
+
     comment_form = CommentForm()
 
     context = {
         'issue': issue,
-        'comments': comments,
+        'comment_data': comment_data,
         'comment_form': comment_form,
-        'user': invited_user,  # Pass the invited user instead of request.user
+        'user': invited_user,
         'can_comment': can_comment,
         'user_roles': request.session.get('user_roles', [])
     }
     return render(request, 'issues/issue_detail.html', context)
-
 # ... (keep issue_create, invited_user_comment_create, and other non-admin views) ...
 
 @session_login_required # Changed from @login_required
