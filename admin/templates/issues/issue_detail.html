@@ -48,27 +48,27 @@
                         </small></p>
                     {% endif %}
                 </div>
-                <div class="col-md-6 d-flex justify-content-end align-items-start">  <!-- Added text-end here -->
+                <div class="col-md-6 d-flex justify-content-end align-items-start">
                     <a href="{% url 'issue_list' %}" class="btn btn-secondary rounded-pill">Back to Issue List</a>
                     {% if 'admin' in user_roles %}
                         <a href="{% url 'admin_issue_edit' issue.id %}" class="btn btn-sm btn-outline-secondary">Edit Issue (Admin)</a>
                     {% endif %}
                 </div>
             </div>
-            
         </div>
     </div>
-    <div class="comments-section" style="max-height: 520px; overflow-y: auto; border-radius: 10px;">
+
+    <div class="comments-section">
         {% for comment in comment_data %}
             <div class="d-flex mb-3 {% if comment.is_by_current_user %}justify-content-end{% else %}justify-content-start{% endif %}">
                 {% if comment.is_by_current_user %}
                     <div class="d-flex align-items-start flex-row-reverse" style="max-width: 70%;">
-                        <div class="ms-2 ml-1">
-                            <div class="rounded-circle text-white d-flex align-items-center justify-content-center" style="width: 40px; height: 40px; font-size: 16px; background: #0f0f1e; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+                        <div class="ms-2">
+                            <div class="comment-avatar comment-avatar-current">
                                 {{ comment.commenter_name|slice:":2"|upper }}
                             </div>
                         </div>
-                        <div class="text-dark p-3 rounded-3" style="background: rgba(59, 130, 246, 0.2); backdrop-filter: blur(10px); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 20px 20px 5px 20px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1); transition: transform 0.2s;">
+                        <div class="comment-bubble-current text-dark p-3 rounded-3">
                             <small class="fw-bold">{{ comment.commenter_name|title }}</small>
                             <p class="mb-1">{{ comment.text_content|linebreaksbr }}</p>
                             {% if comment.media %}
@@ -95,12 +95,12 @@
                     </div>
                 {% else %}
                     <div class="d-flex align-items-start" style="max-width: 70%;">
-                        <div class="me-2 mr-1">
-                            <div class="rounded-circle text-white d-flex align-items-center justify-content-center" style="width: 40px; height: 40px; font-size: 16px; background: {{ comment.commenter_id|bubble_color }}; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+                        <div class="me-2">
+                            <div class="comment-avatar comment-avatar-other" data-color="{{ comment.commenter_id|bubble_color }}">
                                 {{ comment.commenter_name|slice:":2"|upper }}
                             </div>
                         </div>
-                        <div class="text-dark p-3 rounded-3" style="background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 20px 20px 20px 5px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1); transition: transform 0.2s;">
+                        <div class="comment-bubble-other text-dark p-3 rounded-3">
                             <small class="fw-bold">{{ comment.commenter_name|title }}</small>
                             <p class="mb-1">{{ comment.text_content|linebreaksbr }}</p>
                             {% if comment.media %}
@@ -149,7 +149,7 @@
                         <i class="bi bi-camera-reels fs-5"></i>
                     </label>
                     {{ comment_form.video|add_class:"d-none" }}
-                    <button type="submit" class="send-btn btn btn-primary rounded-circle d-flex align-items-center justify-content-center ms-2" title="Send Comment" style="width: 40px; height: 40px;">
+                    <button type="submit" class="send-btn btn-secondary rounded-circle d-flex align-items-center justify-content-center ms-2" title="Send Comment" style="width: 50px; height: 50px;">
                         <i class="bi bi-send-fill fs-5"></i>
                     </button>
                 </div>
@@ -161,10 +161,7 @@
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.min.css">
 
-
-</div>
-
-<style>
+    <style>
     .comment-input-container {
         border: 1.5px solid #e0e0e0;
         transition: box-shadow 0.2s, border-color 0.2s;
@@ -188,6 +185,39 @@
         outline: none;
         box-shadow: none;
     }
+    .comments-section {
+        background: #e9ecef;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        background-size: cover;
+        border-radius: 10px;
+        position: relative;
+        overflow: hidden;
+        padding: 0px 10px;
+        max-height: 520px;
+        overflow-y: auto;
+    }
+    .comments-section::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: #e9ecef;
+        opacity: 0.1;
+        z-index: -1;
+        padding: 0px 10px;
+    }
+    .rounded-pill {
+        border-radius: 50rem !important;
+    }
+    .comment-bubble {
+        transition: transform 0.2s ease;
+    }
+    .comment-bubble:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+    }
     .attachment-btn {
         cursor: pointer;
         border-radius: 8px;
@@ -201,67 +231,67 @@
         transition: background 0.2s, box-shadow 0.2s;
     }
     .send-btn:hover {
-        background: #1565c0;
+        background: #3C4858;
         box-shadow: 0 2px 8px rgba(25, 118, 210, 0.12);
     }
-
-    .comments-section {
-        background: #e9ecef;
+    .comment-avatar {
+        width: 40px;
+        height: 40px;
+        font-size: 16px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-weight: bold;
+    }
+    .comment-avatar-current {
+        background: #0f0f1e;
+    }
+    .comment-avatar-other {
+        background: var(--avatar-color);
+    }
+    .comment-bubble-current {
+        background: rgba(0, 0, 0, 0.2);
+        backdrop-filter: blur(10px);
+        border-radius: 20px 20px 5px 20px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        transition: transform 0.2s;
+    }
+    .comment-bubble-other {
+        background: rgba(255, 255, 255, 0.2);
+        backdrop-filter: blur(10px);
         border: 1px solid rgba(255, 255, 255, 0.3);
-        background-size: cover;
-        border-radius: 10px;
-        position: relative;
-        overflow: hidden;
-        padding: 0px 10px;
+        border-radius: 20px 20px 20px 5px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        transition: transform 0.2s;
     }
-
-    .comments-section::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: #e9ecef;
-        opacity: 0.1;
-        z-index: -1;
-        padding: 0px 10px;
-
-    }
-
-    .rounded-pill {
-        border-radius: 50rem !important;
-    }
-
-    .comment-bubble {
-        transition: transform 0.2s ease;
-    }
-
-    .comment-bubble:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
-    }
-
     @media (max-width: 576px) {
         .comments-section {
             max-height: 400px;
             padding: 10px;
         }
-
         .comment-textarea-custom {
             min-height: 40px;
             font-size: 14px;
         }
-
         .rounded-circle {
             width: 35px !important;
             height: 35px !important;
             font-size: 14px !important;
         }
-
         .comment-bubble {
             max-width: 85% !important;
         }
     }
-</style>
+    </style>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('.comment-avatar-other').forEach(function(avatar) {
+            avatar.style.setProperty('--avatar-color', avatar.dataset.color);
+        });
+    });
+    </script>
 {% endblock %}
