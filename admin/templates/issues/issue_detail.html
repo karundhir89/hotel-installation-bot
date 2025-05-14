@@ -16,41 +16,53 @@
         {% endfor %}
     {% endif %}
 
-    <div class="card mb-4 shadow-sm">
+    <div class="card shadow-sm">
         <div class="card-header d-flex justify-content-between align-items-center">
             <h4 class="mb-0">Issue: {{ issue.title }}</h4>
             <span class="badge bg-{% if issue.status == 'OPEN' %}primary{% elif issue.status == 'WORKING' %}warning{% elif issue.status == 'PENDING' %}info{% elif issue.status == 'CLOSE' %}success{% else %}secondary{% endif %}">{{ issue.get_status_display }}</span>
         </div>
         <div class="card-body">
-            <p><strong>Type:</strong> {{ issue.get_type_display }}</p>
-            {% if issue.description %}
-                <p><strong>Description:</strong> {{ issue.description|truncatechars:100 }}</p>
-            {% endif %}
+            <div class="row">
+                <div class="col-md-6">
+                    <p><strong>Type:</strong> {{ issue.get_type_display }}</p>
+                    {% if issue.description %}
+                        <p><strong>Description:</strong> {{ issue.description|truncatechars:100 }}</p>
+                    {% endif %}
+                </div>
+                <div class="col-md-6">
+                    <p class="text-muted"><strong class="text-muted">Reported by:</strong> {{ issue.created_by.name }} on {{ issue.created_at|date:"Y-m-d H:i" }}</p>
+                    {% if issue.assignee %}
+                        <p class="text-muted"><strong class="text-muted">Assigned to:</strong> {{ issue.assignee.name }}</p>
+                    {% endif %}
+                </div>
+            </div>
             <hr>
-            <p><small class="text-muted">Reported by: {{ issue.created_by.name }} on {{ issue.created_at|date:"Y-m-d H:i" }}</small></p>
-            {% if issue.assignee %}
-                <p><small class="text-muted">Assigned to: {{ issue.assignee.name }}</small></p>
-            {% endif %}
-            {% if issue.observers.count > 0 %}
-                <p><small class="text-muted">Observers:
-                    {% for observer in issue.observers.all %}
-                        {{ observer.name }}{% if not forloop.last %}, {% endif %}
-                    {% endfor %}
-                </small></p>
-            {% endif %}
-            {% if 'admin' in user_roles %}
-                <a href="{% url 'admin_issue_edit' issue.id %}" class="btn btn-sm btn-outline-secondary">Edit Issue (Admin)</a>
-            {% endif %}
+            <div class="row">
+                <div class="col-md-6">
+                    {% if issue.observers.count > 0 %}
+                        <p><small class="text-muted">Observers:
+                            {% for observer in issue.observers.all %}
+                                {{ observer.name }}{% if not forloop.last %}, {% endif %}
+                            {% endfor %}
+                        </small></p>
+                    {% endif %}
+                </div>
+                <div class="col-md-6 d-flex justify-content-end align-items-start">  <!-- Added text-end here -->
+                    <a href="{% url 'issue_list' %}" class="btn btn-secondary rounded-pill">Back to Issue List</a>
+                    {% if 'admin' in user_roles %}
+                        <a href="{% url 'admin_issue_edit' issue.id %}" class="btn btn-sm btn-outline-secondary">Edit Issue (Admin)</a>
+                    {% endif %}
+                </div>
+            </div>
+            
         </div>
     </div>
-
-    <h5 class="mb-3">Comments</h5>
-    <div class="comments-section mb-4" style="max-height: 500px; overflow-y: auto; padding: 15px; border-radius: 10px;">
+    <div class="comments-section" style="max-height: 500px; overflow-y: auto; padding: 15px; border-radius: 10px;">
         {% for comment in comments %}
             <div class="d-flex mb-3 {% if comment.commenter.id == user.id %}justify-content-end{% else %}justify-content-start{% endif %}">
                 {% if comment.commenter.id == user.id %}
                     <div class="d-flex align-items-start flex-row-reverse" style="max-width: 70%;">
-                        <div class="ms-2">
+                        <div class="ms-2 ml-1">
                             <div class="rounded-circle text-white d-flex align-items-center justify-content-center" style="width: 40px; height: 40px; font-size: 16px; background: #9C27B0; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
                                 {{ comment.commenter.name|slice:":1"|upper }}
                             </div>
@@ -81,7 +93,7 @@
                     </div>
                 {% else %}
                     <div class="d-flex align-items-start" style="max-width: 70%;">
-                        <div class="me-2">
+                        <div class="me-2 mr-1">
                             <div class="rounded-circle text-white d-flex align-items-center justify-content-center" style="width: 40px; height: 40px; font-size: 16px; background: {{ comment.commenter.id|stringformat:'i'|add:'0'|divisibleby:'2'|yesno:'#4CAF50,#2196F3' }}; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
                                 {{ comment.commenter.name|slice:":1"|upper }}
                             </div>
@@ -119,7 +131,7 @@
     </div>
 
     {% if can_comment %}
-        <form method="post" enctype="multipart/form-data" class="comment-form position-relative mt-3" action="{% url 'invited_user_comment_create' issue.id %}">
+        <form method="post" enctype="multipart/form-data" class="comment-form position-relative" action="{% url 'invited_user_comment_create' issue.id %}">
             {% csrf_token %}
             <div class="comment-input-container d-flex align-items-end bg-white rounded-4 shadow-sm p-3 gap-2 flex-wrap">
                 <div class="flex-grow-1">
@@ -141,19 +153,13 @@
                 </div>
             </div>
         </form>
-        <div class="form-text small text-muted mt-1">
-            {{ comment_form.images.label_tag }} {{ comment_form.images.help_text }}
-            {{ comment_form.video.label_tag }} {{ comment_form.video.help_text }}
-        </div>
     {% else %}
         <p class="text-muted">You do not have permission to comment on this issue.</p>
     {% endif %}
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.min.css">
 
-    <div class="mt-4">
-        <a href="{% url 'issue_list' %}" class="btn btn-secondary rounded-pill">Back to Issue List</a>
-    </div>
+
 </div>
 
 <style>
