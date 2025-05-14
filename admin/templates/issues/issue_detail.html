@@ -2,6 +2,7 @@
 {% load static %}
 {% load crispy_forms_tags %}
 {% load widget_tweaks %}
+{% load comment_colors %}
 
 {% block title %}Issue #{{ issue.id }}: {{ issue.title }}{% endblock %}
 
@@ -63,7 +64,7 @@
                 {% if comment.is_by_current_user %}
                     <div class="d-flex align-items-start flex-row-reverse" style="max-width: 70%;">
                         <div class="ms-2 ml-1">
-                            <div class="rounded-circle text-white d-flex align-items-center justify-content-center" style="width: 40px; height: 40px; font-size: 16px; background: #9C27B0; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+                            <div class="rounded-circle text-white d-flex align-items-center justify-content-center" style="width: 40px; height: 40px; font-size: 16px; background: #0f0f1e; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
                                 {{ comment.commenter_name|slice:":2"|upper }}
                             </div>
                         </div>
@@ -95,7 +96,7 @@
                 {% else %}
                     <div class="d-flex align-items-start" style="max-width: 70%;">
                         <div class="me-2 mr-1">
-                            <div class="rounded-circle text-white d-flex align-items-center justify-content-center" style="width: 40px; height: 40px; font-size: 16px; background: {{ comment.commenter_id|stringformat:'i'|add:'0'|divisibleby:'2'|yesno:'#4CAF50,#2196F3' }}; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+                            <div class="rounded-circle text-white d-flex align-items-center justify-content-center" style="width: 40px; height: 40px; font-size: 16px; background: {{ comment.commenter_id|bubble_color }}; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
                                 {{ comment.commenter_name|slice:":2"|upper }}
                             </div>
                         </div>

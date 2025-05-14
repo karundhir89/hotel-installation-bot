@@ -133,7 +133,7 @@
                         <p class="text-dark left">Created on: {{ issue.created_at|date:"F d, Y" }}</p>
                         {% include 'common/messages.html' %}
                         
-                        <form method="post" id="issueForm">
+                        <form id="issue-form" method="post" enctype="multipart/form-data" novalidate action="{{ form_action }}">
                             {% csrf_token %}
                             
                             {# Render all fields except observers #}
@@ -231,7 +231,7 @@ document.addEventListener('DOMContentLoaded', function() {
             input.type = 'hidden';
             input.name = 'observers';
             input.value = id;
-            document.getElementById('issueForm').appendChild(input);
+            document.getElementById('issue-form').appendChild(input);
         });
     }
 
