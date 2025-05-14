@@ -7,6 +7,13 @@
 {% block title %}Issue #{{ issue.id }}: {{ issue.title }}{% endblock %}
 
 {% block content %}
+
+<style>
+    .align-items-center{
+        gap:10px;
+        margin-left:10px
+    }
+</style>
 <div class="container mt-4">
     {% if messages %}
         {% for message in messages %}
@@ -137,7 +144,6 @@
             {% csrf_token %}
             <div class="comment-input-container d-flex align-items-end bg-white rounded-4 shadow-sm p-3 gap-2 flex-wrap">
                 <div class="flex-grow-1">
-                    <label for="{{ comment_form.text_content.id_for_label }}" class="visually-hidden">Your Comment</label>
                     {{ comment_form.text_content|add_class:"form-control comment-textarea-custom border-0"|attr:"placeholder:Write a comment..." }}
                 </div>
                 <div class="d-flex align-items-center gap-2">

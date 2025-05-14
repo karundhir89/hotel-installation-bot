@@ -304,7 +304,7 @@ class IssueForm(forms.ModelForm):
 
 class CommentForm(forms.ModelForm):
     text_content = forms.CharField(
-        widget=forms.Textarea(attrs={'rows': 3, 'placeholder': 'Add your comment...', 'class': 'form-control'}),
+        widget=forms.Textarea(attrs={'rows': 1, 'placeholder': 'Add your comment...', 'class': 'form-control'}),
         label='Your Comment',
         required=False
     )
