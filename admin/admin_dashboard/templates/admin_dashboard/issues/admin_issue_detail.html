@@ -71,16 +71,17 @@
         </div>
     </div>
     <div class="comments-section" style="max-height: 520px; overflow-y: auto; border-radius: 10px;">
-        {% for comment in comments %}
-            <div class="d-flex mb-3 {% if comment.commenter.id == user.id %}justify-content-end{% else %}justify-content-start{% endif %}">
-                {% if comment.commenter.id == user.id %}
+        {% for comment in comment_data %}
+            <div class="d-flex mb-3 {% if comment.is_by_current_user %}justify-content-end{% else %}justify-content-start{% endif %}">
+                {% if comment.is_by_current_user %}
                     <div class="d-flex align-items-start flex-row-reverse" style="max-width: 70%;">
                         <div class="ms-2">
                             <div class="rounded-circle text-white d-flex align-items-center justify-content-center" style="width: 40px; height: 40px; font-size: 16px; background: #9C27B0; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
-                                {{ comment.commenter.name|slice:":1"|upper }}
+                                {{ comment.commenter_name|slice:":2"|upper }}
                             </div>
                         </div>
                         <div class="text-dark p-3 rounded-3" style="background: rgba(59, 130, 246, 0.2); backdrop-filter: blur(10px); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 20px 20px 5px 20px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1); transition: transform 0.2s;">
+                            <small class="fw-bold">{{ comment.commenter_name|title }}</small>
                             <p class="mb-1">{{ comment.text_content|linebreaksbr }}</p>
                             {% if comment.media %}
                                 <div class="mt-2">
@@ -107,12 +108,12 @@
                 {% else %}
                     <div class="d-flex align-items-start" style="max-width: 70%;">
                         <div class="me-2">
-                            <div class="rounded-circle text-white d-flex align-items-center justify-content-center" style="width: 40px; height: 40px; font-size: 16px; background: {{ comment.commenter.id|stringformat:'i'|add:'0'|divisibleby:'2'|yesno:'#4CAF50,#2196F3' }}; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
-                                {{ comment.commenter.name|slice:":1"|upper }}
+                            <div class="rounded-circle text-white d-flex align-items-center justify-content-center" style="width: 40px; height: 40px; font-size: 16px; background: {{ comment.commenter_id|stringformat:'i'|add:'0'|divisibleby:'2'|yesno:'#4CAF50,#2196F3' }}; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+                                {{ comment.commenter_name|slice:":2"|upper }}
                             </div>
                         </div>
                         <div class="text-dark p-3 rounded-3" style="background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 20px 20px 20px 5px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1); transition: transform 0.2s;">
-                            <small class="fw-bold">{{ comment.commenter.name }}</small>
+                            <small class="fw-bold">{{ comment.commenter_name|title }}</small>
                             <p class="mb-1">{{ comment.text_content|linebreaksbr }}</p>
                             {% if comment.media %}
                                 <div class="mt-2">
@@ -217,6 +218,8 @@
         background: #c8cdd2;
         opacity: 0.1;
         z-index: -1;
+        padding: 0px 10px;
+
     }
     .rounded-pill {
         border-radius: 50rem !important;

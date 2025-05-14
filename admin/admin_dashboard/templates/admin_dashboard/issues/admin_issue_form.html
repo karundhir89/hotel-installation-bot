@@ -149,7 +149,7 @@
                                 <div style="display: flex; justify-content: space-between; align-items: center;">
                                     <div class="observer-list">
                                         {% for observer in observers %}
-                                            <div class="observer-item" data-user-id="{{ observer.id }}">
+                                            <div class="observer-item" data-user-id="{{ observer.id }}" data-user-name="{{ observer.name }}">
                                                 {{ observer.name }}
                                             </div>
                                         {% empty %}
@@ -277,11 +277,14 @@ document.addEventListener('DOMContentLoaded', function() {
         const selected = Array.from(document.querySelectorAll('.user-checkbox:checked'));
         const selectedIds = selected.map(checkbox => checkbox.value);
         createObserverInputs(selectedIds);
+        
+        // Update the observer list with selected users
         observerList.innerHTML = selected.map(checkbox => `
-            <div class="observer-item" data-user-id="${checkbox.value}">
+            <div class="observer-item" data-user-id="${checkbox.value}" data-user-name="${checkbox.dataset.userName}">
                 ${checkbox.dataset.userName}
             </div>
         `).join('') || '<p class="text-muted">No observers selected</p>';
+        
         const modal = bootstrap.Modal.getInstance(document.getElementById('observersModal'));
         modal.hide();
     });

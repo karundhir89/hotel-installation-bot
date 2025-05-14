@@ -141,24 +141,42 @@ def admin_issue_edit(request, issue_id):
 	}
 	return render(request, 'admin_dashboard/issues/admin_issue_form.html', context)
 
+
 @login_required
 @user_passes_test(is_staff_user)
 def admin_issue_detail(request, issue_id):
-	issue = get_object_or_404(Issue, id=issue_id)
-	comments = issue.comments.all().select_related('content_type') 
-	for comment in comments: 
-		_ = comment.commenter 
+    issue = get_object_or_404(Issue, id=issue_id)
+    comments = issue.comments.all().select_related('content_type')
+    
+    # Force evaluation of GenericForeignKey
+    for comment in comments:
+        _ = comment.commenter
 
-	comment_form = CommentForm() 
+    comment_form = CommentForm()
 
-	context = {
-		'issue': issue,
-		'comments': comments,
-		'comment_form': comment_form,
-		'user': request.user,
-		'can_comment': True  # Admins can always comment on this page
-	}
-	return render(request, 'admin_dashboard/issues/admin_issue_detail.html', context)
+    current_user_commenter = request.user  # Assuming User model is used as commenter
+
+    comment_data = []
+    for comment in comments:
+        commenter = comment.commenter
+        comment_data.append({
+            "comment_id": comment.id,
+            "text_content": comment.text_content,
+            "media": comment.media,
+            "commenter_id": getattr(commenter, "id", None),
+            "commenter_name": str(commenter),
+            "is_by_current_user": commenter == current_user_commenter
+        })
+
+    context = {
+        'issue': issue,
+        'comments': comments,
+        'comment_form': comment_form,
+        'user': request.user,
+        'can_comment': True,
+        'comment_data': comment_data,  # <-- Added this
+    }
+    return render(request, 'admin_dashboard/issues/admin_issue_detail.html', context)
 
 @login_required
 @user_passes_test(is_staff_user)
