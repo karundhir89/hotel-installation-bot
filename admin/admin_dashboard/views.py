@@ -13,7 +13,7 @@ from django.core.files.storage import default_storage
 import json # For AJAX error responses if you re-add them later
 
 from hotel_bot_app.models import Issue, Comment, InvitedUser 
-from hotel_bot_app.forms import IssueUpdateForm, CommentForm 
+from hotel_bot_app.forms import IssueUpdateForm, CommentForm, IssueForm
 
 import logging
 logger = logging.getLogger(__name__)
@@ -556,4 +556,20 @@ def dashboard(request):
 	except Exception as e:
 		print(f"Error in dashboard view: {e}") 
 		return redirect("admin/login")
+
+@login_required
+@user_passes_test(is_staff_user)
+def admin_issue_create(request):
+    if request.method == 'POST':
+        form = IssueForm(request.POST, request.FILES)
+        if form.is_valid():
+            issue = form.save(commit=False)
+            issue.created_by = request.user  # or assign an admin user object
+            issue.save()
+            form.save_m2m()
+            messages.success(request, f"Issue #{issue.id} created successfully.")
+            return redirect('admin_dashboard:admin_issue_detail', issue_id=issue.id)
+    else:
+        form = IssueForm()
+    return render(request, 'issues/issue_form.html', {'form': form, 'is_admin': True})
 

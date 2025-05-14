@@ -29,6 +29,7 @@
                         {# Optionally add a button here if needed, like in chat_history.html #}
                     </div>
                     <div class="card-body">
+                        <a href="{% url 'admin_dashboard:admin_issue_create' %}" class="btn btn-primary mb-3">Create New Issue</a>
                         {% if issues_page.object_list %}
                             <div class="table-responsive"> {# Added for consistency #}
                                 <table class="table table-striped table-hover"> {# Kept table-hover, chat_history uses table-striped #}
