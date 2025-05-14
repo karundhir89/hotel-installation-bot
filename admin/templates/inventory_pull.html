@@ -27,7 +27,7 @@
       <hr class="my-4">
 
       <!-- Dynamic Product List Render Here -->
-      <div id="products-wrapper "></div>
+      <div id="products-wrapper"></div>
 
       <hr class="my-4">
 
@@ -49,7 +49,6 @@
     function renderProducts(products) {
       const wrapper = $('#products-wrapper');
       wrapper.html('');
-
       products.forEach(product => {
         const html = `
           <div class="form-group row align-items-center mb-3">
@@ -66,7 +65,7 @@
                   (${product.client_id}) - ${product.description}
                   <br>
                   <small class="text-muted">
-                    Total Required: ${product.quantity}, 
+                    Required: ${product.quantity}, 
                     Available: ${product.available_qty},
                     Already Pulled: ${product.pulled_quantity}
                   </small>
