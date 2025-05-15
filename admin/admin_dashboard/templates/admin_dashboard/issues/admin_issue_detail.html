@@ -77,12 +77,11 @@
                 {% if comment.is_by_current_user %}
                     <div class="d-flex align-items-start flex-row-reverse" style="max-width: 70%;">
                         <div class="ms-2">
-                            <div class="rounded-circle text-white d-flex align-items-center justify-content-center"
-                                 style="width: 40px; height: 40px; font-size: 16px; background: #0f0f1e; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+                            <div class="comment-avatar comment-avatar-current">
                                 {{ comment.commenter_name|slice:":2"|upper }}
                             </div>
                         </div>
-                        <div class="text-dark p-3 rounded-3" style="background: rgba(59, 130, 246, 0.2); backdrop-filter: blur(10px); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 20px 20px 5px 20px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1); transition: transform 0.2s;">
+                        <div class="comment-bubble-current text-dark p-3 rounded-3">
                             <small class="fw-bold">{{ comment.commenter_name|title }}</small>
                             <p class="mb-1">{{ comment.text_content|linebreaksbr }}</p>
                             {% if comment.media %}
@@ -110,12 +109,11 @@
                 {% else %}
                     <div class="d-flex align-items-start" style="max-width: 70%;">
                         <div class="me-2">
-                            <div class="rounded-circle text-white d-flex align-items-center justify-content-center"
-                                 style="width: 40px; height: 40px; font-size: 16px; background: {{ comment.commenter_id|bubble_color }}; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+                            <div class="comment-avatar comment-avatar-other" style="background: {{ comment.commenter_id|bubble_color }};">
                                 {{ comment.commenter_name|slice:":2"|upper }}
                             </div>
                         </div>
-                        <div class="text-dark p-3 rounded-3" style="background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 20px 20px 20px 5px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1); transition: transform 0.2s;">
+                        <div class="comment-bubble-other text-dark p-3 rounded-3">
                             <small class="fw-bold">{{ comment.commenter_name|title }}</small>
                             <p class="mb-1">{{ comment.text_content|linebreaksbr }}</p>
                             {% if comment.media %}
@@ -272,6 +270,40 @@
         .comment-bubble {
             max-width: 85% !important;
         }
+    }
+    .comment-avatar {
+        width: 40px;
+        height: 40px;
+        font-size: 16px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-weight: bold;
+    }
+    .comment-avatar-current {
+        background: #0f0f1e;
+    }
+    .comment-avatar-other {
+        /* background set inline via bubble_color */
+    }
+    .comment-bubble-current {
+        background: rgba(0, 0, 0, 0.2);
+        backdrop-filter: blur(10px);
+        /* border: 1px solid rgba(59, 130, 246, 0.3); */
+        border-radius: 20px 20px 5px 20px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        transition: transform 0.2s;
+    }
+    .comment-bubble-other {
+        background: rgba(255, 255, 255, 0.2);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        border-radius: 20px 20px 20px 5px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        transition: transform 0.2s;
     }
     </style>
     {% endblock %}

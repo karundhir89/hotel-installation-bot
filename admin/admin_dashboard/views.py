@@ -597,7 +597,8 @@ def admin_issue_create(request):
         form = IssueForm(post_data, request.FILES)
         if form.is_valid():
             issue = form.save(commit=False)
-            issue.created_by = request.user
+            user = get_object_or_404(InvitedUser, id=request.user.id)
+            issue.created_by = user
             issue.save()
             form.save_m2m()
             messages.success(request, f"Issue #{issue.id} created successfully.")
