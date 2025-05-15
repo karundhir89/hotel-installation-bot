@@ -26,7 +26,7 @@
                 <div class="card">
                     <div class="card-header card-header-primary d-flex justify-content-between">
                         <h4 class="card-title pt-2 text-dark">Admin - All Issues</h4>
-                        {# Optionally add a button here if needed, like in chat_history.html #}
+                        <a href="{% url 'admin_dashboard:admin_issue_create' %}" class="btn btn-secondary mb-3 text-white" style="background-color: #5a6268; border-color: #5a6268;">Create New Issue</a>
                     </div>
                     <div class="card-body">
                         <form method="get" class="row g-2 mb-3 align-items-end" style="background: #f8f9fa; border-radius: 8px; padding: 12px 8px; box-shadow: 0 1px 4px rgba(90,98,104,0.04);">
@@ -34,42 +34,41 @@
                                 <input type="text" name="q" class="form-control border-secondary" placeholder="Search by title..." value="{{ search_query|default:'' }}">
                             </div>
                             <div class="col-6 col-md-2 mb-2 mb-md-0">
-                                <select name="status" class="form-select border-secondary">
-                                    <option value="">All Statuses</option>
+                                <select name="status" class="form-select">
+                                    <option value="" class="text-secondary">All Statuses</option>
                                     {% for value, label in all_statuses %}
                                         <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
                                     {% endfor %}
                                 </select>
                             </div>
-                            <div class="col-6 col-md-2 mb-2 mb-md-0">
-                                <select name="type" class="form-select border-secondary">
-                                    <option value="">All Types</option>
+                            <div class="col-6 col-md-2   mb-2 mb-md-0">
+                                <select name="type" class="form-select">
+                                    <option value="" class="text-secondary">All Types</option>
                                     {% for value, label in all_types %}
                                         <option value="{{ value }}" {% if selected_type == value %}selected{% endif %}>{{ label }}</option>
                                     {% endfor %}
                                 </select>
                             </div>
                             <div class="col-6 col-md-3 mb-2 mb-md-0">
-                                <select name="created_by" class="form-select border-secondary">
-                                    <option value="">All Creators</option>
+                                <select name="created_by" class="form-select">
+                                    <option value="" class="text-secondary">All Creators</option>
                                     {% for user in all_users %}
                                         <option value="{{ user.id }}" {% if selected_created_by == user.id|stringformat:"s" %}selected{% endif %}>{{ user.name }}</option>
                                     {% endfor %}
                                 </select>
                             </div>
                             <div class="col-6 col-md-3 mb-2 mb-md-0">
-                                <select name="assignee" class="form-select border-secondary">
-                                    <option value="">All Assignees</option>
+                                <select name="assignee" class="form-select">
+                                    <option value="" class="text-secondary">All Assignees</option>
                                     {% for user in all_users %}
                                         <option value="{{ user.id }}" {% if selected_assignee == user.id|stringformat:"s" %}selected{% endif %}>{{ user.name }}</option>
                                     {% endfor %}
                                 </select>
                             </div>
-                            <div class="col-12 col-md-2">
+                            <div class="col-6 col-md-3 col-md-2">
                                 <button type="submit" class="btn btn-secondary w-100">Filter</button>
                             </div>
                         </form>
-                        {% comment %} <a href="{% url 'admin_dashboard:admin_issue_create' %}" class="btn btn-primary mb-3">Create New Issue</a> {% endcomment %}
                         {% if issues_page.object_list %}
                             <div class="table-responsive"> {# Added for consistency #}
                                 <table class="table table-striped table-hover"> {# Kept table-hover, chat_history uses table-striped #}
