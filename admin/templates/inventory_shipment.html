@@ -37,8 +37,8 @@
             </div>
           </div>
           <div class="col-md-6 mb-3">
-            <label for="room_type" class="form-label">Product Item Number</label>
-            <input type="text" class="form-control" name="product_item" id="room_type" readonly required>
+            <label for="product_name" class="form-label">Product Name</label>
+            <input type="text" class="form-control" name="product_namme" id="product_name" readonly required>
           </div>
         </div>
 
@@ -46,37 +46,40 @@
 
         <!-- Shipping Info -->
         <div class="row mb-4">
-          <div class="col-md-4 mb-3">
+          <div class="col-md-6 mb-3">
             <label class="form-label">Ship Date</label>
             <input type="date" class="form-control" name="ship_date" required>
           </div>
-          <div class="col-md-4 mb-3">
+          <div class="col-md-6 mb-3">
             <label class="form-label">QTY Shipped</label>
             <input type="number" class="form-control" name="qty_shipped" min="0" required>
           </div>
-          <div class="col-md-4 mb-3">
-            <label class="form-label">Supplier</label>
-            <input type="text" class="form-control" id="supplier" name="supplier" required>
-          </div>
+          
         </div>
-
         <div class="row mb-4">
-          <div class="col-md-4">
+          <div class="col-md-6">
             <label class="form-label">Expected Arrival Date</label>
             <input type="date" class="form-control rounded-3" name="expected_arrival_date" required>
           </div>
-          <div class="col-md-4 mt-3">
-            <label class="form-label">Checked By</label>
-            <input type="text" class="form-control rounded-3" name="shipment_checked_by" placeholder="Name" required>
-          </div>
-        </div>
-
-        <div class="row mb-4 ">
-          <div class="col-md-12">
+          <div class="col-md-6">
             <label class="form-label">Tracking Information / BOL</label>
             <input type="text" class="form-control" name="tracking_info" placeholder="Tracking number or BOL" required>
           </div>
         </div>
+
+        <div class="row mb-4">
+          <div class="col-md-6 mb-3">
+            <label class="form-label">Supplier</label>
+            <input type="text" class="form-control" id="supplier" name="supplier" readonly required>
+          </div>
+          
+          <div class="col-md-6">
+            <label class="form-label">Checked By</label>
+            <input type="text" class="form-control rounded-3" disabled="disabled" name="shipment_checked_by" placeholder="Name" required>
+          </div>
+        </div>
+
+        
 
         <hr class="my-4">
 
@@ -120,19 +123,19 @@
         data: { room_number: roomNumber },
         success: function (data) {
           if (data.success) {
-            $('#room_type').val(data.room_type);
+            $('#product_name').val(data.product_name);
             $('#supplier').val(data.supplier);
             $('input[name="expected_arrival_date"]').val(isoDate);  // Set formatted date
             $('input[name="shipment_checked_by"]').val(userName);  // Set checked by
           } else {
             toastr.error("Room number does not exist");
-            $('#room_type').val('');
+            $('#product_name').val('');
             $('#supplier').val('');
           }
         },
         error: function () {
           toastr.error("Error Fetching Product Item");
-          $('#room_type').val('');
+          $('#product_name').val('');
           $('#supplier').val('');
         },
         complete: function() {

@@ -1110,7 +1110,8 @@ def get_product_item_num(request):
         client_data_fetched = ProductData.objects.get(client_id__iexact=clientId)
         get_item = client_data_fetched.item if client_data_fetched.item else ""
         supplier = client_data_fetched.supplier if client_data_fetched.supplier else "N.A."
-        return JsonResponse({"success": True, "room_type": get_item, "supplier": supplier})
+        product_name = ProductData.objects.filter(item=client_data_fetched.item).values_list('description', flat=True).first() or ""
+        return JsonResponse({"success": True, "room_type": get_item, "supplier": supplier, "product_name": product_name})
     except RoomData.DoesNotExist:
         return JsonResponse({"success": False})
 
@@ -1222,7 +1223,8 @@ def inventory_received_item_num(request):
     try:
         client_data_fetched = Inventory.objects.get(client_id__iexact=clientId)
         get_item = client_data_fetched.item if client_data_fetched.item else ""
-        return JsonResponse({"success": True, "product_item": get_item})
+        product_name = ProductData.objects.filter(item=client_data_fetched.item).values_list('description', flat=True).first() or ""
+        return JsonResponse({"success": True, "product_item": get_item, "product_name": product_name})
     except RoomData.DoesNotExist:
         return JsonResponse({"success": False})
 

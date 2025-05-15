@@ -54,8 +54,8 @@
           </div>
         </div>
         <div class="col-md-6 product_item_class">
-          <label class="form-label">Product Item Number</label>
-          <input type="text" class="form-control rounded-3" name="product_item" id="product_item" readonly required>
+          <label class="form-label">Product Name</label>
+          <input type="text" class="form-control rounded-3" name="product_name" id="product_name" readonly required>
         </div>
       </div>
 
@@ -68,28 +68,29 @@
             <label class="fw-bold">1. ARRIVAL DATE</label>
           </div>
         </div>
-
         <div class="row mb-3">
           <div class="col-md-6 mt-3">
-            <label class="form-label">Date</label>
-            <input type="date" class="form-control rounded-3" name="received_date" required>
-          </div>
-          <div class="col-md-6 mt-3">
-            <label class="form-label">Checked By</label>
-            <input type="text" class="form-control rounded-3"  name="checked_by" placeholder="Name" required>
-          </div>
-        </div>
-
-        <div class="row mb-3">
-          <div class="col-md-6 mb-3">
             <label class="form-label">QTY RECEIVED</label>
             <input type="number" class="form-control rounded-3" name="received_qty" min="0" required>
           </div>
-          <div class="col-md-6 ">
+          <div class="col-md-6 mt-3">
             <label class="form-label">QTY DAMAGED (if any)</label>
             <input type="number" class="form-control rounded-3" name="damaged_qty" min="0">
           </div>
         </div>
+
+        <div class="row mb-3">
+          <div class="col-md-6 ">
+            <label class="form-label">Date</label>
+            <input type="date" disabled="disabled" class="form-control rounded-3" name="received_date" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Checked By</label>
+            <input type="text" disabled="disabled" class="form-control rounded-3"  name="checked_by" placeholder="Name" required>
+          </div>
+        </div>
+
+        
 
         <!-- <div class="mb-3">
           <label class="form-label">Notes</label>
@@ -140,16 +141,16 @@
         success: function (data) {
           setLoading('search_client', false);
           if (data.success) {
-            $('#product_item').val(data.product_item);
+            $('#product_name').val(data.product_name);
           } else {
             toastr.error("Room number does not exist");
-            $('#product_item').val('');
+            $('#product_name').val('');
           }
         },
         error: function () {
           setLoading('search_client', false);
           toastr.error("Error fetching room type");
-          $('#product_item').val('');
+          $('#product_name').val('');
         }
       });
     });
