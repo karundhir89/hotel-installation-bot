@@ -56,6 +56,15 @@
             border-radius: 5px;
             padding: 10px;
         }
+        #related-product-checkboxes{
+            
+            max-height: 150px;
+            overflow: auto;
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+            padding: 10px;
+          
+        }
         /* File upload styling */
         .file-upload-container {
             border: 2px dashed #ced4da;
@@ -188,9 +197,9 @@
                             Related floor items
                         </label>
                         <div>
-                            {% for item_id, item_label in form.fields.related_inventory_items.choices %}
+                            {% for item_id, item_label in form.fields.related_floors.choices %}
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" value="{{ item_id }}" id="item_{{ item_id }}" name="related_inventory_items">
+                                    <input class="form-check-input" type="checkbox" value="{{ item_id }}" id="item_{{ item_id }}" name="related_floors">
                                     <label class="form-check-label" for="item_{{ item_id }}">
                                         {{ item_label }}
                                     </label>
@@ -199,10 +208,35 @@
                         </div>
                     </div>
                     <div id="related-floor-select" class="mb-3">
-                        {{ form.related_inventory_items|as_crispy_field }}
+                        {{ form.related_floors|as_crispy_field }}
                     </div>
                 </div>
-                
+                <div id="related-product-container" class="mb-3" style="display: none;">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" value="" id="allowMultipleProduct" checked>
+                        <label class="form-check-label" for="allowMultipleProduct">
+                            Allow selecting multiple product items
+                        </label>
+                    </div>
+                    <div id="related-product-checkboxes" style="display: none;">
+                        <label class="form-label">
+                            Related product items
+                        </label>
+                        <div>
+                            {% for item_id, item_label in form.fields.related_products.choices %}
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" value="{{ item_id }}" id="item_{{ item_id }}" name="related_products">
+                                    <label class="form-check-label" for="item_{{ item_id }}">
+                                        {{ item_label }}
+                                    </label>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div id="related-product-select" class="mb-3">
+                        {{ form.related_products|as_crispy_field }}
+                    </div>
+                </div>
                 <div class="mb-3">
                     {{ form.description|as_crispy_field }}
                 </div>
@@ -247,9 +281,12 @@
 <!-- Script for AJAX and conditional fields -->
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    const issueTypeRadioGroup = document.querySelectorAll('input[name="type"]'); 
+    // Support both radio and select for type field
+    const typeRadios = document.querySelectorAll('input[name="type"]');
+    const typeSelect = document.getElementById('id_type');
     const roomsContainer = document.getElementById('related-rooms-container');
     const floorContainer = document.getElementById('related-floor-container');
+    const productContainer = document.getElementById('related-product-container');
 
     const allowMultipleRoomsCheckbox = document.getElementById('allowMultipleRooms');
     const relatedRoomsCheckboxesDiv = document.getElementById('related-rooms-checkboxes');
@@ -258,6 +295,41 @@ document.addEventListener('DOMContentLoaded', function () {
     const allowMultipleFloorCheckbox = document.getElementById('allowMultipleFloor');
     const relatedFloorCheckboxesDiv = document.getElementById('related-floor-checkboxes');
     const relatedFloorSelectDiv = document.getElementById('related-floor-select');
+
+    const allowMultipleProductCheckbox = document.getElementById('allowMultipleProduct');
+    const relatedProductCheckboxesDiv = document.getElementById('related-product-checkboxes');
+    const relatedProductSelectDiv = document.getElementById('related-product-select');
+
+    function getSelectedType() {
+        if (typeRadios.length > 0) {
+            for (const radio of typeRadios) {
+                if (radio.checked) return radio.value;
+            }
+        }
+        if (typeSelect) {
+            return typeSelect.value;
+        }
+        return null;
+    }
+
+    function toggleRelatedSections() {
+        const selectedType = getSelectedType();
+        if (roomsContainer) roomsContainer.style.display = (selectedType === 'ROOM') ? 'block' : 'none';
+        if (floorContainer) floorContainer.style.display = (selectedType === 'FLOOR') ? 'block' : 'none';
+        if (productContainer) productContainer.style.display = (selectedType === 'PRODUCT') ? 'block' : 'none';
+    }
+
+    // Initial call
+    toggleRelatedSections();
+    // Listen for changes
+    if (typeRadios.length > 0) {
+        typeRadios.forEach(radio => {
+            radio.addEventListener('change', toggleRelatedSections);
+        });
+    }
+    if (typeSelect) {
+        typeSelect.addEventListener('change', toggleRelatedSections);
+    }
 
     // Toggle visibility for rooms
     allowMultipleRoomsCheckbox.addEventListener('change', function () {
@@ -281,6 +353,17 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
+    // Toggle visibility for product items
+    allowMultipleProductCheckbox.addEventListener('change', function () {
+        if (this.checked) {
+            relatedProductCheckboxesDiv.style.display = 'block';
+            relatedProductSelectDiv.style.display = 'none';
+        } else {
+            relatedProductCheckboxesDiv.style.display = 'none';
+            relatedProductSelectDiv.style.display = 'block';
+        }
+    });
+
     // Set initial visibility on page load
     if (allowMultipleRoomsCheckbox.checked) {
         relatedRoomsSelectDiv.style.display = 'none';
@@ -298,31 +381,12 @@ document.addEventListener('DOMContentLoaded', function () {
         relatedFloorCheckboxesDiv.style.display = 'none';
     }
 
-    // Radio type toggle (ROOM or FLOOR)
-    function getSelectedTypeValue() {
-        for (const radio of issueTypeRadioGroup) {
-            if (radio.checked) return radio.value;
-        }
-        return null;
-    }
-
-    function toggleConditionalFields() {
-        const selectedType = getSelectedTypeValue();
-        if (roomsContainer) {
-            roomsContainer.style.display = selectedType === 'ROOM' ? 'block' : 'none';
-        }
-        if (floorContainer) {
-            floorContainer.style.display = selectedType === 'FLOOR' ? 'block' : 'none';
-        }
-    }
-
-    if (issueTypeRadioGroup.length > 0) {
-        issueTypeRadioGroup.forEach(radio => {
-            radio.addEventListener('change', toggleConditionalFields);
-        });
-        toggleConditionalFields();
+    if (allowMultipleProductCheckbox.checked) {
+        relatedProductSelectDiv.style.display = 'none';
+        relatedProductCheckboxesDiv.style.display = 'block';
     } else {
-        console.warn('Issue type radio buttons (name="type") not found.');
+        relatedProductSelectDiv.style.display = 'block';
+        relatedProductCheckboxesDiv.style.display = 'none';
     }
 
     // AJAX form submission
@@ -363,7 +427,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 if (data.success) {
                     form.reset();
-                    toggleConditionalFields();
                     setTimeout(() => {
                         if (data.redirect_url) {
                             window.location.href = data.redirect_url;
@@ -376,7 +439,8 @@ document.addEventListener('DOMContentLoaded', function () {
                             let errorDisplayContainer = fieldElement ? fieldElement.closest('.mb-3') || fieldElement.parentNode : null;
 
                             if (field === 'related_rooms') errorDisplayContainer = roomsContainer;
-                            if (field === 'related_inventory_items') errorDisplayContainer = floorContainer;
+                            if (field === 'related_floors') errorDisplayContainer = floorContainer;
+                            if (field === 'related_products') errorDisplayContainer = productContainer;
 
                             if (errorDisplayContainer) {
                                 data.errors[field].forEach(error => {
@@ -388,8 +452,6 @@ document.addEventListener('DOMContentLoaded', function () {
                                 if (fieldElement && !fieldElement.classList.contains('is-invalid')) {
                                     fieldElement.classList.add('is-invalid');
                                 }
-                            } else {
-                                console.warn(`Could not find container for field errors: ${field}`);
                             }
                         });
                     }

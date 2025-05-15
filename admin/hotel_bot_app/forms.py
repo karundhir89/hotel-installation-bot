@@ -174,7 +174,7 @@
 
 from django import forms
 from django.core.exceptions import ValidationError
-from .models import Issue, Comment, InvitedUser, RoomData, Inventory
+from .models import Issue, Comment, InvitedUser, RoomData, Inventory, ProductData
 
 from django.forms.widgets import FileInput
 class MultipleFileField(forms.FileField):
@@ -204,7 +204,7 @@ class MultipleFileInput(forms.FileInput):
         return files.getlist(name)  # Always return a list
 
     def value_omitted_from_data(self, data, files, name):
-        return not files.getlist(name)  # True if no files
+        return not files.getlist(name)  # True if no files  
 class IssueForm(forms.ModelForm):
     # initial_comment = forms.CharField(widget=forms.Textarea, required=True)
     images = MultipleFileField(
@@ -220,85 +220,83 @@ class IssueForm(forms.ModelForm):
         queryset=RoomData.objects.all(),
         widget=forms.SelectMultiple(attrs={'class': 'form-control select2-multiple'}),
         required=False,
+        label="Related Rooms (if type is Room)"
     )
-    related_inventory_items = forms.ModelMultipleChoiceField(
-        queryset=Inventory.objects.all(),
+    related_floors = forms.MultipleChoiceField(
+        widget=forms.SelectMultiple(attrs={'class': 'form-control select2-multiple'}),
+        # queryset=RoomData.objects.values_list('floor', flat=True).distinct(),
+        required=False,
+        label="Related Floors (if type is Floor)",
+        choices=[(i, f'Floor {i}') for i in RoomData.objects.values_list('floor', flat=True).distinct()]  # Assuming max 20 floors
+    )
+    related_products = forms.ModelMultipleChoiceField(
+        queryset=ProductData.objects.all(),
         widget=forms.SelectMultiple(attrs={'class': 'form-control select2-multiple'}),
         required=False,
+        label="Related Products (if type is Product)"
+    )
+    other_type_details = forms.CharField(
+        widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
+        required=False,
+        label="Other Details (if type is Other)"
     )
 
     class Meta:
         model = Issue
-        fields = ['title', 'type', 'description', 'images', 'video', 'related_rooms', 'related_inventory_items']
+        fields = ['title', 'type', 'description', 'images', 'video', 'related_rooms', 'related_floors', 'related_products', 'other_type_details']
         widgets = {
-            'type': forms.RadioSelect
+            'type': forms.Select(attrs={'class': 'form-select'}),
+            'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
         }
-        # Note: initial_comment, images, video are not model fields but handled in the view. Here they are form fields.
-        # related_rooms and related_inventory_items are actual model fields.
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Ensure all fields that might be dynamically shown/hidden are present
-        if 'related_rooms' not in self.fields or not isinstance(self.fields['related_rooms'].widget, forms.SelectMultiple):
-            self.fields['related_rooms'] = forms.ModelMultipleChoiceField(
-                queryset=RoomData.objects.all(),
-                widget=forms.SelectMultiple(attrs={'class': 'form-check select2-multiple'}),
-                required=False,
-                label="Related Rooms (if type is Room)"
-            )
-        if 'related_inventory_items' not in self.fields or not isinstance(self.fields['related_inventory_items'].widget, forms.SelectMultiple):
-            self.fields['related_inventory_items'] = forms.ModelMultipleChoiceField(
-                queryset=Inventory.objects.all(),
-                widget=forms.SelectMultiple(attrs={'class': 'form-check select2-multiple'}),
-                required=False,
-                label="Related Floor Items (if type is Floor)"
-            )
-
+        
+        # Set type choices
         self.fields['type'].choices = [
+            ('', 'Select type'),
             ('ROOM', 'Room Issue'),
             ('FLOOR', 'Floor Issue'),
+            ('PRODUCT', 'Product Issue'),
+            ('OTHER', 'Other Issue'),
         ]
         
-        # Set default to ROOM if not already set
+        # Set default to empty if not already set
         if not self.initial.get('type'):
-            self.initial['type'] = 'ROOM'
-    def clean_images(self):
-        images = self.cleaned_data.get('images', [])
-        if images:
-            if len(images) > 4:
-                raise ValidationError("You can upload a maximum of 4 images.")
-            for image in images:
-                if not image.content_type.startswith('image/'):
-                    raise ValidationError(f"File '{image.name}' is not a valid image.")
-                if image.size > 4 * 1024 * 1024:
-                    raise ValidationError(f"Image '{image.name}' exceeds 4MB limit.")
-        return images
+            self.initial['type'] = ''
+    def clean_related_floors(self):
+        floors = self.cleaned_data.get('related_floors', [])
+        try:
+            return [int(f) for f in floors if f]
+        except ValueError:
+            raise forms.ValidationError("Invalid floor selection.")
 
-    def clean_video(self):
-        video = self.cleaned_data.get('video')
-        if video:
-            if not video.content_type.startswith('video/'):
-                raise ValidationError("Only video files are allowed.")
-            if video.size > 100 * 1024 * 1024:
-                raise ValidationError("Video file must be under 100MB.")
-        return video
-    
     def clean(self):
         cleaned_data = super().clean()
         issue_type = cleaned_data.get("type")
         related_rooms = cleaned_data.get("related_rooms")
-        related_inventory_items = cleaned_data.get("related_inventory_items")
+        related_floors = cleaned_data.get("related_floors")
+        related_products = cleaned_data.get("related_products")
+        other_details = cleaned_data.get("other_type_details")
 
         if issue_type == "ROOM" and not related_rooms:
             self.add_error('related_rooms', "Please select at least one room for issues of type 'Room'.")
-        elif issue_type == "FLOOR" and not related_inventory_items:
-            self.add_error('related_inventory_items', "Please select at least one floor item for issues of type 'Floor'.")
+        elif issue_type == "FLOOR" and not related_floors:
+            self.add_error('related_floors', "Please select at least one floor for issues of type 'Floor'.")
+        elif issue_type == "PRODUCT" and not related_products:
+            self.add_error('related_products', "Please select at least one product for issues of type 'Product'.")
+        elif issue_type == "OTHER" and not other_details:
+            self.add_error('other_type_details', "Please provide details for issues of type 'Other'.")
 
         # Clear irrelevant fields
         if issue_type != "ROOM":
             cleaned_data['related_rooms'] = RoomData.objects.none()
         if issue_type != "FLOOR":
-            cleaned_data['related_inventory_items'] = Inventory.objects.none()
+            cleaned_data['related_floors'] = []
+        if issue_type != "PRODUCT":
+            cleaned_data['related_products'] = ProductData.objects.none()
+        if issue_type != "OTHER":
+            cleaned_data['other_type_details'] = None
 
         return cleaned_data
 
@@ -368,12 +366,12 @@ class IssueUpdateForm(forms.ModelForm):
 
     class Meta:
         model = Issue
-        fields = ['title', 'description', 'status', 'type', 'is_for_hotel_admin', 'assignee', 'observers']
+        fields = ['title', 'description', 'status', 'type', 'is_for_hotel_owner', 'assignee', 'observers']
         widgets = {
             'description': forms.Textarea(attrs={'rows': 1}),
             'status': forms.Select(attrs={'class': 'form-select'}),
             'type': forms.Select(attrs={'class': 'form-select'}),
-            'is_for_hotel_admin': forms.Select(choices=[
+            'is_for_hotel_owner': forms.Select(choices=[
                 (False, 'Hidden from Hotel Admin'),
                 (True, 'Visible to Hotel Admin')
                 ], attrs={'class': 'form-select'}),

@@ -1,12 +1,12 @@
-from django.db import models
+# from django.db import models
 
-# Create your models here.
+# # Create your models here.
 
-class SectionPermissions(models.Model):
-	_id = models.CharField(max_length=100)
-	sectionDisplayName = models.CharField(max_length=100)
-	sectionType = models.CharField(max_length=100)
-	permissions = models.JSONField()
+# class SectionPermissions(models.Model):
+# 	_id = models.CharField(max_length=100)
+# 	sectionDisplayName = models.CharField(max_length=100)
+# 	sectionType = models.CharField(max_length=100)
+# 	permissions = models.JSONField()
 
-	class Meta:
-		db_table = 'sectionPermissions'
+# 	class Meta:
+# 		db_table = 'sectionPermissions'
