@@ -2007,76 +2007,94 @@ def issue_detail(request, issue_id):
     return render(request, 'issues/issue_detail.html', context)
 # ... (keep issue_create, invited_user_comment_create, and other non-admin views) ...
 
-@session_login_required # Changed from @login_required
+@session_login_required
 def issue_create(request):
     user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
     
     initial_data = {}
-    if request.method == 'GET': # Process GET params only on initial load
+    if request.method == 'GET':
         prefill_type = request.GET.get('type')
         prefill_room_id = request.GET.get('related_rooms')
-        prefill_inventory_id = request.GET.get('related_inventory_items')
+        prefill_floor = request.GET.get('related_floors')
+        prefill_product_id = request.GET.get('related_products')
 
-        # Validate type and check corresponding ID
-        if prefill_type == IssueType.ROOM and prefill_room_id:
-            try:
-                # Ensure room exists, pass its pk as a list for M2M initial
-                if RoomData.objects.filter(pk=int(prefill_room_id)).exists():
-                    initial_data['type'] = IssueType.ROOM
-                    initial_data['related_rooms'] = [int(prefill_room_id)]
-            except (ValueError, TypeError): 
-                pass # Ignore invalid ID format
-        elif prefill_type == IssueType.FLOOR and prefill_inventory_id:
-            try:
-                # Ensure inventory item exists, pass its pk as a list
-                if Inventory.objects.filter(pk=int(prefill_inventory_id)).exists():
-                    initial_data['type'] = IssueType.FLOOR
-                    initial_data['related_inventory_items'] = [int(prefill_inventory_id)]
-            except (ValueError, TypeError):
-                pass # Ignore invalid ID format
-        # Note: No pre-filling if type doesn't match ID or if IDs are invalid/missing
+        if prefill_type:
+            initial_data['type'] = prefill_type
+            
+            if prefill_type == IssueType.ROOM and prefill_room_id:
+                try:
+                    room_ids = [int(id) for id in prefill_room_id.split(',')]
+                    if RoomData.objects.filter(pk__in=room_ids).exists():
+                        initial_data['related_rooms'] = room_ids
+                except (ValueError, TypeError):
+                    pass
+            elif prefill_type == IssueType.FLOOR and prefill_floor:
+                try:
+                    floor_ids = [int(id) for id in prefill_floor.split(',')]
+                    initial_data['related_floors'] = floor_ids
+                except (ValueError, TypeError):
+                    pass
+            elif prefill_type == IssueType.PRODUCT and prefill_product_id:
+                try:
+                    product_ids = [int(id) for id in prefill_product_id.split(',')]
+                    if ProductData.objects.filter(pk__in=product_ids).exists():
+                        initial_data['related_products'] = product_ids
+                except (ValueError, TypeError):
+                    pass
 
     if request.method == 'POST':
         form = IssueForm(request.POST, request.FILES)
         if form.is_valid():
             issue = form.save(commit=False)
             issue.created_by = user
-            issue.save() # Save the main instance first
-            form.save_m2m() # Crucial for saving M2M data like related_rooms/inventory
             
-            # Add creator as observer (if not already handled elsewhere)
+            # Convert floor IDs to integers before saving
+            if issue.type == IssueType.FLOOR:
+                floor_ids = form.cleaned_data.get('related_floors', [])
+                issue.related_floors = [int(floor_id) for floor_id in floor_ids]
+            
+            issue.save()
+            form.save_m2m()  # Save M2M relationships
+            
+            # Add creator as observer
             issue.observers.add(user)
 
-            logger.info(f"Issue created by {user.name} with ID {issue.id}")
-
-            # Process and save media files for initial comment
+            # Process media files
             media_urls = []
             images = form.cleaned_data.get('images', [])
             video = form.cleaned_data.get('video')
 
             for image in images:
-                # ... (saving logic as before) ...
                 file_name = default_storage.save(f"issues/images/{uuid.uuid4()}_{image.name}", image)
                 file_url = default_storage.url(file_name)
-                media_urls.append({'type': 'image', 'url': file_url, 'size': image.size, 'name': image.name})
+                media_urls.append({
+                    'type': 'image',
+                    'url': file_url,
+                    'size': image.size,
+                    'name': image.name
+                })
+
             if video:
-                # ... (saving logic as before) ...
                 file_name = default_storage.save(f"issues/videos/{uuid.uuid4()}_{video.name}", video)
                 file_url = default_storage.url(file_name)
-                media_urls.append({'type': 'video', 'url': file_url, 'size': video.size, 'name':video.name})
+                media_urls.append({
+                    'type': 'video',
+                    'url': file_url,
+                    'size': video.size,
+                    'name': video.name
+                })
 
-            # Save initial comment if provided
-            initial_comment_text = form.cleaned_data.get('initial_comment')
-            if initial_comment_text or media_urls:
+            # Create initial comment if there's media
+            if media_urls:
                 Comment.objects.create(
                     issue=issue,
-                    commenter=user, # Changed back from user=user
-                    text_content=initial_comment_text,
+                    commenter=user,
+                    text_content=form.cleaned_data.get('description', ''),
                     media=media_urls
                 )
 
             success_message = f"Issue #{issue.id} created successfully."
-            # ... (AJAX/standard response logic as before) ...
+            
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return JsonResponse({
                     'success': True,
@@ -2089,20 +2107,17 @@ def issue_create(request):
         else:
             logger.error(f"Form errors: {form.errors.as_json()}")
             error_message = "Please correct the errors below."
-            # ... (AJAX/standard error response logic as before) ...
+            
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                 return JsonResponse({
+                return JsonResponse({
                     'success': False,
                     'message': error_message,
-                    'errors': json.loads(form.errors.as_json())  
+                    'errors': json.loads(form.errors.as_json())
                 }, status=400)
             else:
-                # Re-render with errors, preserving initial data if GET had it
                 messages.error(request, error_message)
-                # Important: If re-rendering on POST error, DO NOT pass initial_data again.
-                # The form instance already has the submitted (invalid) data.
                 return render(request, 'issues/issue_form.html', {'form': form})
-    else: # GET request
+    else:
         form = IssueForm(initial=initial_data)
 
     return render(request, 'issues/issue_form.html', {'form': form})

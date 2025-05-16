@@ -284,13 +284,16 @@ class IssueStatus(models.TextChoices):
 class IssueType(models.TextChoices):
     ROOM = 'ROOM', _('Room')
     FLOOR = 'FLOOR', _('Floor')
+    PRODUCT = 'PRODUCT', _('Product')
+    OTHER = 'OTHER', _('Other')
+
 
 class Issue(models.Model):
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(
-        'InvitedUser',
+        InvitedUser,
         on_delete=models.PROTECT,
         related_name='created_issues'
     )
@@ -304,33 +307,48 @@ class Issue(models.Model):
         choices=IssueType.choices
         # Default type might be better set in the view based on context
     )
-    is_for_hotel_admin = models.BooleanField(default=False)
+    is_for_hotel_owner = models.BooleanField(default=False)
     assignee = models.ForeignKey(
-        'InvitedUser',
+        InvitedUser,
         on_delete=models.SET_NULL,
         related_name='assigned_issues',
         blank=True,
         null=True
     )
     observers = models.ManyToManyField(
-        'InvitedUser',
+        InvitedUser,
         related_name='observed_issues',
         blank=True
     )
 
     # New fields for linking to Rooms or Inventory based on IssueType
     related_rooms = models.ManyToManyField(
-        'RoomData',
+        RoomData,
         related_name='issues',
         blank=True,
         verbose_name='Related Rooms'
     )
-    related_inventory_items = models.ManyToManyField(
-        'Inventory',
+    related_floors = ArrayField(
+        models.IntegerField(),
+        blank=True,
+        null=True,
+        help_text="List of floor numbers"
+    )
+    # related_floor = models.CharField(max_length=100)  # Example field
+    related_product = models.ManyToManyField(
+        ProductData,
         related_name='issues',
         blank=True,
-        verbose_name='Related Inventory Items'
+        verbose_name='Related Product Items'
     )
+    other_type_details = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name='Other Details'
+    )
+    # class Meta:
+    #     db_table = 'hotel_bot_app_issue'
+    #     ordering = ['-created_at']
 
     def __str__(self):
         return f"{self.id}: {self.title} ({self.status})"
