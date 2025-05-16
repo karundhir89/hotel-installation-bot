@@ -27,7 +27,7 @@
     <div class="card shadow-sm">
         <div class="card-header d-flex justify-content-between align-items-center">
             <h4 class="mb-0">Issue: {{ issue.title }}</h4>
-            <span class="badge bg-{% if issue.status == 'OPEN' %}primary{% elif issue.status == 'WORKING' %}warning{% elif issue.status == 'PENDING' %}info{% elif issue.status == 'CLOSE' %}success{% else %}secondary{% endif %}">{{ issue.get_status_display }}</span>
+            <span class="badge text-{% if issue.status == 'OPEN' %}primary{% elif issue.status == 'WORKING' %}warning{% elif issue.status == 'PENDING' %}info{% elif issue.status == 'CLOSE' %}success{% else %}secondary{% endif %}">{{ issue.get_status_display }}</span>
         </div>
         <div class="card-body">
             <div class="row">
@@ -76,7 +76,7 @@
                             </div>
                         </div>
                         <div class="comment-bubble-current text-dark p-3 rounded-3">
-                            <small class="fw-bold">{{ comment.commenter_name|title }}</small>
+                            <small class="fw-bold" style="width:20px">{{ comment.commenter_name|title }}</small>
                             <p class="mb-1">{{ comment.text_content|linebreaksbr }}</p>
                             {% if comment.media %}
                                 <div class="mt-2">
@@ -97,7 +97,7 @@
                                     {% endfor %}
                                 </div>
                             {% endif %}
-                            <small class="text-secondary" style="opacity: 0.8;">{{ comment.created_at|date:"Y-m-d H:i" }}</small>
+                            <p class="text-secondary text-time" style="opacity: 0.8; ">{{ comment.created_at|date:"Y-m-d H:i" }}</p>
                         </div>
                     </div>
                 {% else %}
@@ -140,27 +140,42 @@
     </div>
 
     {% if can_comment %}
-        <form method="post" enctype="multipart/form-data" class="comment-form position-relative" action="{% url 'invited_user_comment_create' issue.id %}">
-            {% csrf_token %}
-            <div class="comment-input-container d-flex align-items-end bg-white rounded-4 shadow-sm p-3 gap-2 flex-wrap">
-                <div class="flex-grow-1">
-                    {{ comment_form.text_content|add_class:"form-control comment-textarea-custom border-0"|attr:"placeholder:Write a comment..." }}
-                </div>
-                <div class="d-flex align-items-center gap-2">
-                    <label for="{{ comment_form.images.id_for_label }}" class="attachment-btn btn btn-light border shadow-sm px-2 py-1" title="Attach Images">
-                        <i class="bi bi-images fs-5"></i>
+    <form method="post" enctype="multipart/form-data" class="comment-form position-relative" action="{% url 'invited_user_comment_create' issue.id %}">
+        {% csrf_token %}
+        <div class="comment-input-container d-flex align-items-end bg-white rounded-4 shadow-sm p-3 gap-2 flex-wrap">
+            <div class="flex-grow-1">
+                {{ comment_form.text_content|add_class:"form-control comment-textarea-custom border-0"|attr:"placeholder:Write a comment..." }}
+            </div>
+    
+            <!-- Clip Icon Trigger -->
+            <div class="position-relative">
+                <button type="button" id="clipTrigger" title="Attach" style="background: none; border: none; padding: 0; margin: 0; cursor: pointer;">
+                    <i class="bi bi-paperclip text-muted " style="font-size: 30px;"></i>
+                </button>
+                
+                <!-- Popup menu -->
+                <div id="clipMenu" class="position-absolute border shadow-sm rounded p-2" style="display: none; bottom: 40px; right: 0; z-index: 10; background-color: rgb(233, 236, 240);">
+                    <!-- Attach Image -->
+                    <label for="{{ comment_form.images.id_for_label }}" class="d-block mb-2 " style="cursor: pointer;">
+                        <i class="bi bi-image me-1"></i> Upload Image
                     </label>
                     {{ comment_form.images|add_class:"d-none"|attr:"multiple:true"|attr:"accept:image/*" }}
-                    <label for="{{ comment_form.video.id_for_label }}" class="attachment-btn btn btn-light border shadow-sm px-2 py-1" title="Attach Video">
-                        <i class="bi bi-camera-reels fs-5"></i>
+    
+                    <!-- Attach Video -->
+                    <label for="{{ comment_form.video.id_for_label }}" class="d-block " style="cursor: pointer;">
+                        <i class="bi bi-camera-reels me-1"></i> Upload Video
                     </label>
                     {{ comment_form.video|add_class:"d-none" }}
-                    <button type="submit" class="send-btn btn-secondary rounded-circle d-flex align-items-center justify-content-center ms-2" title="Send Comment" style="width: 50px; height: 50px;">
-                        <i class="bi bi-send-fill fs-5"></i>
-                    </button>
                 </div>
             </div>
-        </form>
+    
+            <!-- Submit Button -->
+            <button type="submit" class="send-btn btn-secondary rounded-circle d-flex align-items-center justify-content-center ms-2" title="Send Comment" style="width: 40px; height: 40px;">
+                <i class="bi bi-send-fill fs-5"></i>
+            </button>
+        </div>
+    </form>
+    
     {% else %}
         <p class="text-muted">You do not have permission to comment on this issue.</p>
     {% endif %}
@@ -291,6 +306,12 @@
             max-width: 85% !important;
         }
     }
+    @media (max-width: 768px) {
+        .text-time {
+            font-size: 11px ;
+        }
+
+    }
     </style>
 
     <script>
@@ -299,5 +320,23 @@
             avatar.style.setProperty('--avatar-color', avatar.dataset.color);
         });
     });
+
+    document.addEventListener('DOMContentLoaded', function () {
+    const trigger = document.getElementById('clipTrigger');
+    const menu = document.getElementById('clipMenu');
+
+    // Toggle the menu on icon click
+    trigger.addEventListener('click', function (e) {
+        e.stopPropagation(); // Prevent this click from bubbling up to the document
+        menu.style.display = (menu.style.display === 'block') ? 'none' : 'block';
+    });
+
+    // Close menu if clicking outside of menu and trigger
+    document.addEventListener('click', function (e) {
+        if (!menu.contains(e.target) && !trigger.contains(e.target)) {
+            menu.style.display = 'none';
+        }
+    });
+});
     </script>
 {% endblock %}
