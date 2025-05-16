@@ -2016,7 +2016,7 @@ def issue_create(request):
         prefill_type = request.GET.get('type')
         prefill_room_id = request.GET.get('related_rooms')
         prefill_floor = request.GET.get('related_floors')
-        prefill_product_id = request.GET.get('related_products')
+        prefill_product_id = request.GET.get('related_product')
 
         if prefill_type:
             initial_data['type'] = prefill_type
@@ -2038,12 +2038,13 @@ def issue_create(request):
                 try:
                     product_ids = [int(id) for id in prefill_product_id.split(',')]
                     if ProductData.objects.filter(pk__in=product_ids).exists():
-                        initial_data['related_products'] = product_ids
+                        initial_data['related_product'] = product_ids
                 except (ValueError, TypeError):
                     pass
 
     if request.method == 'POST':
         form = IssueForm(request.POST, request.FILES)
+        
         if form.is_valid():
             issue = form.save(commit=False)
             issue.created_by = user

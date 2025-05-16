@@ -1,180 +1,8 @@
-# from django import forms
-# from django.core.exceptions import ValidationError
-# from .models import Issue, Comment, InvitedUser
-
-# # from django.forms.widgets import FileInput
-
-# # class MultipleFileInput(FileInput):
-# #     def __init__(self, attrs=None):
-# #         super().__init__(attrs)
-
-# #     def value_from_datadict(self, data, files, name):
-# #         if hasattr(files, 'getlist'):
-# #             return files.getlist(name)
-# #         return files.get(name)
-
-# # class IssueForm(forms.ModelForm):
-# #     initial_comment = forms.CharField(widget=forms.Textarea, required=True)
-
-# #     images = forms.FileField(
-# #         widget=MultipleFileInput(attrs={'class': 'form-control'}),
-# #         required=False
-# #     )
-# #     video = forms.FileField(required=False)
-
-# #     class Meta:
-# #         model = Issue
-# #         fields = ['title', 'type', 'description']
-
-# #     def clean_images(self):
-# #         images = self.files.getlist('images')
-# #         if len(images) > 4:
-# #             raise ValidationError("You can upload up to 4 images.")
-# #         for img in images:
-# #             if not img.content_type.startswith('image/'):
-# #                 raise ValidationError("Only image files are allowed.")
-# #         return images
-
-# #     def clean_video(self):
-# #         video = self.cleaned_data.get('video')
-# #         if video:
-# #             if not video.content_type.startswith('video/'):
-# #                 raise ValidationError("Only video files are allowed.")
-# #             if video.size > 100 * 1024 * 1024:
-# #                 raise ValidationError("Video file must be under 100MB.")
-# #         return video
-# from django import forms
-# class MultipleFileInput(forms.ClearableFileInput):
-#     allow_multiple_selected = True
-
-#     def __init__(self, attrs=None):
-#         if attrs is not None:
-#             attrs = attrs.copy()
-#         else:
-#             attrs = {}
-#         attrs.update({'multiple': 'multiple'})
-#         super().__init__(attrs)
-
-#     def value_from_datadict(self, data, files, name):
-#         if name in files:
-#             return files.getlist(name)
-#         return []
-
-# class IssueForm(forms.ModelForm):
-#     initial_comment = forms.CharField(widget=forms.Textarea, required=True)
-#     images = forms.FileField(
-#         widget=MultipleFileInput(attrs={'class': 'form-control', 'accept': 'image/*'}),
-#         required=False
-#     )
-#     video = forms.FileField(
-#         widget=forms.FileInput(attrs={'class': 'form-control', 'accept': 'video/*'}),
-#         required=False
-#     )
-
-#     class Meta:
-#         model = Issue
-#         fields = ['title', 'type', 'description']
-
-#     def clean_images(self):
-#         images = self.cleaned_data.get('images', [])  # Default to empty list
-#         if images:  # Only validate if files are provided
-#             if len(images) > 4:
-#                 raise ValidationError("You can upload up to 4 images.")
-#             for img in images:
-#                 if not img.content_type.startswith('image/'):
-#                     raise ValidationError("Only image files are allowed.")
-#         return images
-
-#     def clean_video(self):
-#         video = self.cleaned_data.get('video')
-#         if video:
-#             if not video.content_type.startswith('video/'):
-#                 raise ValidationError("Only video files are allowed.")
-#             if video.size > 100 * 1024 * 1024:
-#                 raise ValidationError("Video file must be under 100MB.")
-#         return video
-
-# # ---- ADD THIS DEBUG PRINT ----
-# print(f"DEBUG: forms.FileInput is: {forms.FileInput}")
-# print(f"DEBUG: forms.FileInput type is: {type(forms.FileInput)}")
-# # ------------------------------
-
-# class CommentForm(forms.ModelForm):
-#     images = forms.FileField(
-#         widget=forms.FileInput(attrs={'multiple': True, 'class': 'form-control'}), 
-#         required=False,
-#         label="Attach Images (Max 4)"
-#     )
-#     video = forms.FileField(
-#         widget=forms.FileInput(attrs={'class': 'form-control'}),
-#         required=False,
-#         label="Attach Video (Max 100MB)"
-#     )
-
-#     class Meta:
-#         model = Comment
-#         fields = ['text_content', 'images', 'video']
-#         widgets = {
-#             'text_content': forms.Textarea(attrs={'rows': 3, 'placeholder': 'Add your comment...', 'class': 'form-control'})
-#         }
-#         labels = {
-#             'text_content': 'Your Comment'
-#         }
-
-#     def clean_images(self):
-#         images = self.files.getlist('images')
-#         if len(images) > 4:
-#             raise ValidationError("You can upload a maximum of 4 images.")
-#         for image in images:
-#             if not image.content_type.startswith('image/'):
-#                 raise ValidationError(f"File '{image.name}' is not a valid image.")
-#         return images
-
-#     def clean_video(self):
-#         video = self.cleaned_data.get('video')
-#         if video:
-#             if not video.content_type.startswith('video/'):
-#                 raise ValidationError("The uploaded file is not a valid video.")
-#             if video.size > 100 * 1024 * 1024: # 100MB
-#                 raise ValidationError("Video file size cannot exceed 100MB.")
-#         return video
-
-#     def clean(self):
-#         cleaned_data = super().clean()
-#         text_content = cleaned_data.get("text_content")
-#         images = self.files.getlist('images') 
-#         video = cleaned_data.get("video")
-
-#         if not text_content and not images and not video:
-#             raise ValidationError("A comment must contain text or at least one media file.")
-#         return cleaned_data
-
-# # Optional form for Admins to edit issue details like assignee, status, etc.
-# class IssueUpdateForm(forms.ModelForm):
-#      assignee = forms.ModelChoiceField(
-#          queryset=InvitedUser.objects.all(), # Use InvitedUser here
-#          required=False,
-#          widget=forms.Select(attrs={'class': 'form-select'})
-#      )
-#      observers = forms.ModelMultipleChoiceField(
-#          queryset=InvitedUser.objects.all(), # Use InvitedUser here
-#          required=False,
-#          widget=forms.SelectMultiple(attrs={'class': 'form-select', 'size': '5'})
-#      )
-
-#      class Meta:
-#          model = Issue
-#          fields = ['title', 'description', 'status', 'type', 'is_for_hotel_admin', 'assignee', 'observers']
-#          widgets = {
-#              'description': forms.Textarea(attrs={'rows': 3}),
-#              'status': forms.Select(attrs={'class': 'form-select'}),
-#              'type': forms.Select(attrs={'class': 'form-select'}),
-#              'is_for_hotel_admin': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
-#          } 
-
 from django import forms
 from django.core.exceptions import ValidationError
 from .models import Issue, Comment, InvitedUser, RoomData, Inventory, ProductData
+from crispy_forms.helper import FormHelper
+from crispy_forms.layout import Layout, Field, Div
 
 from django.forms.widgets import FileInput
 class MultipleFileField(forms.FileField):
@@ -229,7 +57,7 @@ class IssueForm(forms.ModelForm):
         label="Related Floors (if type is Floor)",
         choices=[(i, f'Floor {i}') for i in RoomData.objects.values_list('floor', flat=True).distinct()]  # Assuming max 20 floors
     )
-    related_products = forms.ModelMultipleChoiceField(
+    related_product = forms.ModelMultipleChoiceField(
         queryset=ProductData.objects.all(),
         widget=forms.SelectMultiple(attrs={'class': 'form-control select2-multiple'}),
         required=False,
@@ -243,7 +71,7 @@ class IssueForm(forms.ModelForm):
 
     class Meta:
         model = Issue
-        fields = ['title', 'type', 'description', 'images', 'video', 'related_rooms', 'related_floors', 'related_products', 'other_type_details']
+        fields = ['title', 'type', 'description', 'images', 'video', 'related_rooms', 'related_floors', 'related_product', 'other_type_details']
         widgets = {
             'type': forms.Select(attrs={'class': 'form-select'}),
             'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
@@ -251,7 +79,6 @@ class IssueForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
         # Set type choices
         self.fields['type'].choices = [
             ('', 'Select type'),
@@ -260,10 +87,26 @@ class IssueForm(forms.ModelForm):
             ('PRODUCT', 'Product Issue'),
             ('OTHER', 'Other Issue'),
         ]
-        
         # Set default to empty if not already set
         if not self.initial.get('type'):
             self.initial['type'] = ''
+
+        self.helper = FormHelper()
+        self.helper.layout = Layout(
+            Div(
+                Field('type', css_class='form-select'),
+                css_class='mb-3 my-custom-class',
+                css_id='div_id_type',
+            ),
+            # other fields...
+        )
+
+        
+
+
+
+
+
     def clean_related_floors(self):
         floors = self.cleaned_data.get('related_floors', [])
         try:
@@ -276,15 +119,15 @@ class IssueForm(forms.ModelForm):
         issue_type = cleaned_data.get("type")
         related_rooms = cleaned_data.get("related_rooms")
         related_floors = cleaned_data.get("related_floors")
-        related_products = cleaned_data.get("related_products")
+        related_product = cleaned_data.get("related_product")
         other_details = cleaned_data.get("other_type_details")
 
         if issue_type == "ROOM" and not related_rooms:
             self.add_error('related_rooms', "Please select at least one room for issues of type 'Room'.")
         elif issue_type == "FLOOR" and not related_floors:
             self.add_error('related_floors', "Please select at least one floor for issues of type 'Floor'.")
-        elif issue_type == "PRODUCT" and not related_products:
-            self.add_error('related_products', "Please select at least one product for issues of type 'Product'.")
+        elif issue_type == "PRODUCT" and not related_product:
+            self.add_error('related_product', "Please select at least one product for issues of type 'Product'.")
         elif issue_type == "OTHER" and not other_details:
             self.add_error('other_type_details', "Please provide details for issues of type 'Other'.")
 
@@ -294,7 +137,7 @@ class IssueForm(forms.ModelForm):
         if issue_type != "FLOOR":
             cleaned_data['related_floors'] = []
         if issue_type != "PRODUCT":
-            cleaned_data['related_products'] = ProductData.objects.none()
+            cleaned_data['related_product'] = ProductData.objects.none()
         if issue_type != "OTHER":
             cleaned_data['other_type_details'] = None
 
