@@ -24,6 +24,7 @@ def is_staff_user(user):
 from hotel_bot_app.models import *
 from django.db.models import Count, Q # Q object can be useful for complex queries if needed
 from django.db import connection # Added for raw SQL
+from django.db.models import Min, Max
 
 
 # Create your views here.
@@ -415,22 +416,26 @@ def _prepare_efficiency_data():
     room_sql_query = """
         SELECT
             AVG(CASE
-                WHEN i.prework_check_on IS NOT NULL AND i.day_install_began IS NOT NULL AND i.prework_check_on >= i.day_install_began
-                THEN EXTRACT(EPOCH FROM (i.prework_check_on - i.day_install_began)) / 86400.0
+                WHEN i.prework_check_on IS NOT NULL AND s.floor_closes IS NOT NULL AND i.prework_check_on >= s.floor_closes
+                THEN EXTRACT(EPOCH FROM (i.prework_check_on - s.floor_closes)) / 86400.0
                 ELSE NULL
             END) AS avg_room_pre_work_duration,
+
             AVG(CASE
                 WHEN i.day_install_complete IS NOT NULL AND i.prework_check_on IS NOT NULL AND i.day_install_complete >= i.prework_check_on
                 THEN EXTRACT(EPOCH FROM (i.day_install_complete - i.prework_check_on)) / 86400.0
                 ELSE NULL
             END) AS avg_room_install_duration,
+
             AVG(CASE
                 WHEN i.post_work_check_on IS NOT NULL AND i.day_install_complete IS NOT NULL AND i.post_work_check_on >= i.day_install_complete
                 THEN EXTRACT(EPOCH FROM (i.post_work_check_on - i.day_install_complete)) / 86400.0
                 ELSE NULL
             END) AS avg_room_post_work_duration
-        FROM
-            install i;
+
+        FROM install i
+        JOIN room_data r ON r.room = i.room
+        JOIN schedule s ON s.floor = r.floor;
     """
     with connection.cursor() as cursor:
         cursor.execute(room_sql_query)
@@ -447,18 +452,20 @@ def _prepare_efficiency_data():
         WITH FloorPhaseActuals AS (
             SELECT
                 rd.floor,
-                MIN(i.day_install_began) as actual_floor_pre_work_start,
-                MAX(i.prework_check_on) as actual_floor_pre_work_end,
-                MAX(i.day_install_complete) as actual_floor_install_end,
-                MAX(i.post_work_check_on) as actual_floor_post_work_end
+                s.floor_closes AS actual_floor_pre_work_start,
+                MAX(i.prework_check_on) AS actual_floor_pre_work_end,
+                MAX(i.day_install_complete) AS actual_floor_install_end,
+                MAX(i.post_work_check_on) AS actual_floor_post_work_end
             FROM
                 install i
             JOIN
                 room_data rd ON i.room = rd.room
+            JOIN
+                schedule s ON rd.floor = s.floor
             WHERE 
                 rd.floor IS NOT NULL
             GROUP BY
-                rd.floor
+                rd.floor, s.floor_closes
         ),
         FloorPhaseDurations AS (
             SELECT
@@ -521,22 +528,27 @@ def _prepare_overall_project_time_data():
     room_sql_query = """
         SELECT
             AVG(CASE
-                WHEN i.prework_check_on IS NOT NULL AND i.day_install_began IS NOT NULL AND i.prework_check_on >= i.day_install_began
-                THEN EXTRACT(EPOCH FROM (i.prework_check_on - i.day_install_began)) / 86400.0
+                WHEN i.prework_check_on IS NOT NULL AND s.floor_closes IS NOT NULL AND i.prework_check_on >= s.floor_closes
+                THEN EXTRACT(EPOCH FROM (i.prework_check_on - s.floor_closes)) / 86400.0
                 ELSE NULL
             END) AS avg_room_pre_work_duration,
+
             AVG(CASE
                 WHEN i.day_install_complete IS NOT NULL AND i.prework_check_on IS NOT NULL AND i.day_install_complete >= i.prework_check_on
                 THEN EXTRACT(EPOCH FROM (i.day_install_complete - i.prework_check_on)) / 86400.0
                 ELSE NULL
             END) AS avg_room_install_duration,
+
             AVG(CASE
                 WHEN i.post_work_check_on IS NOT NULL AND i.day_install_complete IS NOT NULL AND i.post_work_check_on >= i.day_install_complete
                 THEN EXTRACT(EPOCH FROM (i.post_work_check_on - i.day_install_complete)) / 86400.0
                 ELSE NULL
             END) AS avg_room_post_work_duration
-        FROM
-            install i;
+
+        FROM install i
+        JOIN room_data r ON r.room = i.room
+        JOIN schedule s ON s.floor = r.floor;
+
     """
     with connection.cursor() as cursor:
         cursor.execute(room_sql_query)
@@ -559,33 +571,212 @@ def _prepare_overall_project_time_data():
         }
     return data
 
+def _calculate_date_details(schedule_date, actual_date, is_start_date_field=True):
+    """
+    Calculates difference, status, and CSS class for a pair of schedule/actual dates.
+    Difference is schedule_date - actual_date.
+    """
+    details = {
+        'schedule': schedule_date,
+        'actual': actual_date,
+        'difference': None,
+        'status': '',
+        'css_class': 'status-neutral'  # Default, e.g., for N/A values
+    }
+
+    if actual_date and schedule_date:
+        try:
+            # Ensure both are datetime.date objects if they are datetime.datetime
+            if hasattr(schedule_date, 'date'):
+                schedule_date = schedule_date.date()
+            if hasattr(actual_date, 'date'):
+                actual_date = actual_date.date()
+            difference_days = (schedule_date - actual_date).days
+        except TypeError: # Handle cases where one is date and other is datetime or other type issues
+             difference_days = (schedule_date - actual_date).days if hasattr(schedule_date, 'date') and hasattr(actual_date, 'date') else None
+
+
+        details['difference'] = difference_days
+        if difference_days is not None:
+            if is_start_date_field:
+                if difference_days >= 0: # actual_date <= schedule_start_date (on time or early)
+                    details['status'] = 'STARTED'
+                    details['css_class'] = 'status-ok'
+                else: # actual_date > schedule_start_date (delay)
+                    details['status'] = 'DELAY'
+                    details['css_class'] = 'status-delay'
+            else: # End date field
+                if difference_days >= 0: # actual_end_date <= schedule_end_date (on time or early)
+                    details['status'] = 'OK'
+                    details['css_class'] = 'status-ok'
+                else: # actual_end_date > schedule_end_date (delay)
+                    details['status'] = 'DELAY'
+                    details['css_class'] = 'status-delay'
+        else: # difference_days is None, implies a type issue before
+            details['status'] = 'DATE ERROR'
+
+    elif schedule_date: # Actual date is None, but schedule exists
+        if is_start_date_field:
+            details['status'] = 'NOT STARTED'
+        else:
+            details['status'] = 'NOT ENDED'
+    else: # Schedule date is None (and actual might be None or present)
+        details['status'] = 'N/A'
+        if actual_date and not is_start_date_field : # If actual end date exists but no schedule end
+             details['status'] = 'ENDED (NO SCHEDULE)'
+        elif actual_date and is_start_date_field : # If actual start date exists but no schedule start
+             details['status'] = 'STARTED (NO SCHEDULE)'
+
+
+    return details
+
+def _prepare_room_detail_report_context(request, room_number_query):
+    """
+    Prepares the context data for the Detail Report by Room section using direct SQL.
+    Fetches room, schedule, and install data, calculates phase details,
+    and handles messages for errors or warnings.
+    """
+    report_context = {
+        'room_report_data': None,
+        'queried_room_data': None, # For {{ queried_room_data.floor.floor_number }}
+    }
+
+    if not room_number_query:
+        return report_context
+
+    sql = """
+        SELECT
+            rd.room AS queried_room_value,
+            rd.floor AS queried_floor_number,
+            s.floor_closes AS s_prework_start,
+            s.install_starts AS s_prework_end_or_install_start, -- Corrected from install_start
+            s.install_ends AS s_install_end_or_postwork_start,   -- Corrected from install_end
+            s.floor_completed AS s_postwork_end,             -- Corrected from floor_complete
+            NULL AS a_prework_start,                          -- day_prework_began does not exist in Installation model
+            i.prework_check_on AS a_prework_end,
+            i.day_install_began AS a_install_start,
+            i.day_install_complete AS a_install_end_or_postwork_start,
+            i.post_work_check_on AS a_postwork_end
+        FROM
+            room_data rd
+        LEFT JOIN
+            schedule s ON s.floor = rd.floor
+        LEFT JOIN
+            install i ON i.room = rd.room
+        WHERE
+            rd.room = %s;
+    """
+
+    try:
+        # Initialize all date variables to None to prevent NameError if data fetching fails partially
+        s_prework_start, s_prework_end, a_prework_start, a_prework_end = None, None, None, None
+        s_install_start, s_install_end, a_install_start, a_install_end = None, None, None, None
+        s_postwork_start, s_postwork_end, a_postwork_start, a_postwork_end = None, None, None, None
+        s_overall_start, s_overall_end, a_overall_start, a_overall_end = None, None, None, None
+
+        with connection.cursor() as cursor:
+            cursor.execute(sql, [room_number_query])
+            result_row = _dictfetchall(cursor) # _dictfetchall returns a list
+
+        if not result_row:
+            messages.error(request, f"Room number {room_number_query} not found or no associated data.")
+            return report_context
+        
+        data = result_row[0] # We expect only one row for a unique room number
+
+        # Populate queried_room_data for template {{ queried_room_data.floor.floor_number }}
+        report_context['queried_room_data'] = {
+            'floor': {'floor_number': data.get('queried_floor_number')}
+        }
+
+        room_report_data = {}
+
+        # Extract dates from the SQL result, defaulting to None if key missing (though LEFT JOIN means key exists, value can be NULL)
+        s_prework_start = data.get('s_prework_start')
+        s_prework_end = data.get('s_prework_end_or_install_start')
+        a_prework_end = data.get('a_prework_end')
+        room_report_data['prework'] = {
+            'start': _calculate_date_details(s_prework_start, a_prework_start, is_start_date_field=True),
+            'end': _calculate_date_details(s_prework_end, a_prework_end, is_start_date_field=False),
+        }
+
+        s_install_start = data.get('s_prework_end_or_install_start') # Scheduled install starts when prework ends
+        s_install_end = data.get('s_install_end_or_postwork_start')
+        a_install_start = data.get('a_install_start')
+        a_install_end = data.get('a_install_end_or_postwork_start') # Actual install ends
+        room_report_data['install'] = {
+            'start': _calculate_date_details(s_install_start, a_install_start, is_start_date_field=True),
+            'end': _calculate_date_details(s_install_end, a_install_end, is_start_date_field=False),
+        }
+
+        s_postwork_start = data.get('s_install_end_or_postwork_start') # Scheduled post-work starts when install ends
+        s_postwork_end = data.get('s_postwork_end')
+        a_postwork_start = data.get('a_install_end_or_postwork_start') # Actual post-work starts when install is completed
+        a_postwork_end = data.get('a_postwork_end')
+        room_report_data['postwork'] = {
+            'start': _calculate_date_details(s_postwork_start, a_postwork_start, is_start_date_field=True),
+            'end': _calculate_date_details(s_postwork_end, a_postwork_end, is_start_date_field=False),
+        }
+        
+        # OVERALL Calculation (uses the individual phase dates extracted above)
+        all_schedule_starts = [d for d in [s_prework_start, s_install_start, s_postwork_start] if d]
+        all_schedule_ends = [d for d in [s_prework_end, s_install_end, s_postwork_end] if d]
+        all_actual_starts = [d for d in [a_prework_start, a_install_start, a_postwork_start] if d]
+        all_actual_ends = [d for d in [a_prework_end, a_install_end, a_postwork_end] if d]
+
+        s_overall_start = min(all_schedule_starts) if all_schedule_starts else None
+        s_overall_end = max(all_schedule_ends) if all_schedule_ends else None
+        a_overall_start = min(all_actual_starts) if all_actual_starts else None
+        a_overall_end = max(all_actual_ends) if all_actual_ends else None
+        
+        room_report_data['overall'] = {
+            'start': _calculate_date_details(s_overall_start, a_overall_start, is_start_date_field=True),
+            'end': _calculate_date_details(s_overall_end, a_overall_end, is_start_date_field=False),
+        }
+        report_context['room_report_data'] = room_report_data
+
+    except Exception as e_sql_report:
+        logger.error(f"SQL Error or data processing error in room detail report for {room_number_query}: {e_sql_report}")
+        messages.error(request, f"An error occurred while generating the detailed report for room {room_number_query}.")
+        # report_context already has None for data fields
+
+    return report_context
+
 @login_required
 def dashboard(request):
-	try:
-		floor_progress_list, total_rooms, completed_rooms, floor_summary = _prepare_floor_progress_data()
-		pie_chart_data = _prepare_pie_chart_data(total_rooms, completed_rooms)
-		efficiency_data = _prepare_efficiency_data()
-		overall_project_time_data = _prepare_overall_project_time_data()
-		
-		# print("pie_chart_data :::: ",pie_chart_data)
-		# print("Floor Summary::::", floor_summary)
-		# print("Efficiency Data::::", efficiency_data)
-		# print("Overall Project Time Data::::", overall_project_time_data)
-		context = {
-			'floor_progress_data': floor_progress_list,
-			'pie_chart_data': pie_chart_data,
-			'floor_status_summary': floor_summary,
-			'efficiency_data': efficiency_data,
-			'overall_project_time': overall_project_time_data,
-			'page_name': 'Dashboard'
-		}
+    try:
+        floor_progress_list, total_rooms, completed_rooms, floor_summary = _prepare_floor_progress_data()
+        pie_chart_data = _prepare_pie_chart_data(total_rooms, completed_rooms)
+        efficiency_data = _prepare_efficiency_data()
+        overall_project_time_data = _prepare_overall_project_time_data()
+        
+        context = {
+            'floor_progress_data': floor_progress_list,
+            'pie_chart_data': pie_chart_data,
+            'floor_status_summary': floor_summary,
+            'efficiency_data': efficiency_data,
+            'overall_project_time': overall_project_time_data,
+            'page_name': 'Dashboard',
+            'room_report_data': None, 
+            'queried_room_data': None,
+            'room_number_query': '' 
+        }
 
-		return render(
-			request, "dashboard.html", context
-		)
-	except Exception as e:
-		print(f"Error in dashboard view: {e}") 
-		return redirect("admin/login")
+        room_number_query = request.GET.get('room_number', '').strip()
+        context['room_number_query'] = room_number_query
+
+        if room_number_query:
+            room_report_specific_context = _prepare_room_detail_report_context(request, room_number_query)
+            print(f"Room report specific context: {room_report_specific_context}")
+            context.update(room_report_specific_context)
+
+        return render(
+            request, "dashboard.html", context
+        )
+    except Exception as e:
+        logger.error(f"Generic error in dashboard view: {e}")
+        messages.error(request, "An error occurred while loading the dashboard.")
+        return redirect("admin_dashboard:login") 
 
 @login_required
 @user_passes_test(is_staff_user)

@@ -138,7 +138,7 @@
                             
                             {# Render all fields except observers #}
                             {% for field in form %}
-                                {% if field.name != 'observers' %}
+                                {% if field.name != 'observers' %}                                
                                     {{ field|as_crispy_field }}
                                 {% endif %}
                             {% endfor %}
