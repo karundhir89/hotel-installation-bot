@@ -94,7 +94,7 @@ class IssueForm(forms.ModelForm):
         self.helper = FormHelper()
         self.helper.layout = Layout(
             Div(
-                Field('type', css_class='form-select'),
+                Field('type', css_class='form-control'),
                 css_class='mb-3 my-custom-class',
                 css_id='div_id_type',
             ),
