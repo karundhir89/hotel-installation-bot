@@ -648,15 +648,23 @@ def _prepare_room_detail_report_context(request, room_number_query):
         SELECT
             rd.room AS queried_room_value,
             rd.floor AS queried_floor_number,
-            s.floor_closes AS s_prework_start,
-            s.install_starts AS s_prework_end_or_install_start, -- Corrected from install_start
-            s.install_ends AS s_install_end_or_postwork_start,   -- Corrected from install_end
-            s.floor_completed AS s_postwork_end,             -- Corrected from floor_complete
-            NULL AS a_prework_start,                          -- day_prework_began does not exist in Installation model
-            i.prework_check_on AS a_prework_end,
-            i.day_install_began AS a_install_start,
-            i.day_install_complete AS a_install_end_or_postwork_start,
-            i.post_work_check_on AS a_postwork_end
+
+            -- Schedule Dates from 'schedule' table
+            s.pre_work_starts AS s_prework_start_date,
+            s.pre_work_ends AS s_prework_end_date,
+            s.install_starts AS s_install_start_date,
+            s.install_ends AS s_install_end_date,
+            s.post_work_starts AS s_postwork_start_date,
+            s.post_work_ends AS s_postwork_end_date,
+            s.floor_closes AS s_overall_start_date, -- Schedule overall start
+            s.floor_opens AS s_overall_end_date,   -- Schedule overall end
+
+            -- Actual Dates from 'install' table
+            s.pre_work_starts AS a_prework_start_date, -- Assuming 'day_prework_began' is not in 'install' or not used for actual prework start
+            i.prework_check_on AS a_prework_end_date,
+            i.day_install_began AS a_install_start_date,
+            i.day_install_complete AS a_install_end_or_postwork_start_date, -- Actual install end is also actual post-work start
+            i.post_work_check_on AS a_postwork_end_date
         FROM
             room_data rd
         LEFT JOIN
@@ -691,41 +699,45 @@ def _prepare_room_detail_report_context(request, room_number_query):
 
         room_report_data = {}
 
-        # Extract dates from the SQL result, defaulting to None if key missing (though LEFT JOIN means key exists, value can be NULL)
-        s_prework_start = data.get('s_prework_start')
-        s_prework_end = data.get('s_prework_end_or_install_start')
-        a_prework_end = data.get('a_prework_end')
+        # Extract schedule dates directly from the new SQL aliases
+        s_prework_start = data.get('s_prework_start_date')
+        s_prework_end = data.get('s_prework_end_date')
+        # Actual prework start is still assumed NULL or sourced differently if available
+        a_prework_start = data.get('a_prework_start_date') # Will be NULL from SQL
+        a_prework_end = data.get('a_prework_end_date')
         room_report_data['prework'] = {
             'start': _calculate_date_details(s_prework_start, a_prework_start, is_start_date_field=True),
             'end': _calculate_date_details(s_prework_end, a_prework_end, is_start_date_field=False),
         }
 
-        s_install_start = data.get('s_prework_end_or_install_start') # Scheduled install starts when prework ends
-        s_install_end = data.get('s_install_end_or_postwork_start')
-        a_install_start = data.get('a_install_start')
-        a_install_end = data.get('a_install_end_or_postwork_start') # Actual install ends
+        s_install_start = data.get('s_install_start_date')
+        s_install_end = data.get('s_install_end_date')
+        a_install_start = data.get('a_install_start_date')
+        a_install_end = data.get('a_install_end_or_postwork_start_date') # Actual install ends
         room_report_data['install'] = {
             'start': _calculate_date_details(s_install_start, a_install_start, is_start_date_field=True),
             'end': _calculate_date_details(s_install_end, a_install_end, is_start_date_field=False),
         }
 
-        s_postwork_start = data.get('s_install_end_or_postwork_start') # Scheduled post-work starts when install ends
-        s_postwork_end = data.get('s_postwork_end')
-        a_postwork_start = data.get('a_install_end_or_postwork_start') # Actual post-work starts when install is completed
-        a_postwork_end = data.get('a_postwork_end')
+        s_postwork_start = data.get('s_postwork_start_date')
+        s_postwork_end = data.get('s_postwork_end_date')
+        a_postwork_start = data.get('a_install_end_or_postwork_start_date') # Actual post-work starts when install is completed
+        a_postwork_end = data.get('a_postwork_end_date')
         room_report_data['postwork'] = {
             'start': _calculate_date_details(s_postwork_start, a_postwork_start, is_start_date_field=True),
             'end': _calculate_date_details(s_postwork_end, a_postwork_end, is_start_date_field=False),
         }
         
-        # OVERALL Calculation (uses the individual phase dates extracted above)
-        all_schedule_starts = [d for d in [s_prework_start, s_install_start, s_postwork_start] if d]
-        all_schedule_ends = [d for d in [s_prework_end, s_install_end, s_postwork_end] if d]
-        all_actual_starts = [d for d in [a_prework_start, a_install_start, a_postwork_start] if d]
+        # OVERALL Calculation
+        # Scheduled overall dates from new SQL aliases
+        s_overall_start = data.get('s_overall_start_date')
+        s_overall_end = data.get('s_overall_end_date')
+        
+        # Actual overall dates are derived from min/max of actual phase dates
+        all_actual_starts = [d for d in [a_prework_start, a_install_start, data.get('a_install_end_or_postwork_start_date') # using data.get for a_postwork_start
+                                        ] if d] #
         all_actual_ends = [d for d in [a_prework_end, a_install_end, a_postwork_end] if d]
 
-        s_overall_start = min(all_schedule_starts) if all_schedule_starts else None
-        s_overall_end = max(all_schedule_ends) if all_schedule_ends else None
         a_overall_start = min(all_actual_starts) if all_actual_starts else None
         a_overall_end = max(all_actual_ends) if all_actual_ends else None
         

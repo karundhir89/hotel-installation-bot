@@ -349,17 +349,13 @@
                                 </form>
 
                                 {% if room_number_query and room_report_data %}
-                                    <h4 class="mb-1">Report for Room: {{ room_number_query }}</h4>
-                                    {% if queried_room_data %}
-                                        <p class="mb-3 text-muted">Floor: {{ queried_room_data.floor.floor_number|default:"N/A" }}</p>
-                                    {% endif %}
+                                    <h4 class="mb-1">Report for Room: {{ room_number_query }}
 
-                                    <div class="mb-3">
-                                        <h5>COLOR REFERENCE</h5>
-                                        <span class="color-ref-ok">OK / STARTED</span>
-                                        <span class="color-ref-delay">DELAY</span>
-                                        <span class="color-ref-neutral">NOT STARTED / NOT ENDED / N/A</span>
-                                    </div>
+                                        {% if queried_room_data %}
+                                            <span class="mb-3 text-muted"> on Floor: {{ queried_room_data.floor.floor_number|default:"N/A" }}</span>
+                                        {% endif %}
+                                    </h4>
+                                    
 
                                     {% for phase_name, phase_data_items in room_report_data.items %}
                                     <h5 class="mt-4 text-uppercase font-weight-bold">{{ phase_name }}</h5>
@@ -406,7 +402,12 @@
                                         </table>
                                     </div>
                                     {% endfor %}
-
+                                    <div class="mb-3 mt-3 text-right">
+                                        <h5>COLOR REFERENCE</h5>
+                                        <span class="color-ref-ok">OK / STARTED</span>
+                                        <span class="color-ref-delay">DELAY</span>
+                                        <span class="color-ref-neutral mr-0">NOT STARTED / NOT ENDED / N/A</span>
+                                    </div>
                                 {% elif room_number_query %}
                                     <p>No data available to generate the report for room {{ room_number_query }}. This could be due to missing Room data, Schedule data for the floor, or Install data for the room.</p>
                                 {% endif %}
@@ -422,7 +423,7 @@
 </div>
 
 <div>
-    {% include "chat_widget.html" %}
+    <!-- {% include "chat_widget.html" %} -->
 </div>
 
 
