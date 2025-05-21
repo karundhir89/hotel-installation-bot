@@ -579,15 +579,35 @@ def room_model_list(request):
 @login_required
 def install_list(request):
     # Get all installation records, including related user data
-    install = Installation.objects.select_related(
+    install_query = Installation.objects.select_related(
         'prework_checked_by',
         'post_work_checked_by',
         'product_arrived_at_floor_checked_by',
         'retouching_checked_by'
     ).all()
-    
-    # Convert the dates to a proper format for use in the template
+
+    # Get all distinct floor numbers from RoomData for the filter dropdown
+    all_floors = RoomData.objects.order_by('floor').values_list('floor', flat=True).distinct()
+    selected_floor = request.GET.get('floor')
+
+    if selected_floor:
+        try:
+            selected_floor_int = int(selected_floor)
+            # Filter installations by room numbers that are on the selected floor
+            rooms_on_floor = RoomData.objects.filter(floor=selected_floor_int).values_list('room', flat=True)
+            install_query = install_query.filter(room__in=rooms_on_floor)
+        except ValueError:
+            # Handle cases where floor parameter is not a valid integer, maybe show a message or ignore
+            pass
+
+    install = list(install_query) # Execute the query
+
+    # Create a mapping of room numbers to their floors
+    room_to_floor_map = {rd.room: rd.floor for rd in RoomData.objects.filter(room__in=[i.room for i in install])}
+
+    # Convert the dates to a proper format and add floor information
     for installation in install:
+        installation.floor = room_to_floor_map.get(installation.room) # Add floor to installation object
         if installation.day_install_began:
             installation.formatted_day_install_began = installation.day_install_began.strftime('%Y-%m-%d')
             installation.day_install_began = installation.day_install_began.strftime('%m-%d-%Y')
@@ -607,8 +627,13 @@ def install_list(request):
             installation.formatted_product_arrived_at_floor_check_on = installation.product_arrived_at_floor_check_on.strftime('%Y-%m-%d')
             installation.product_arrived_at_floor_check_on = installation.product_arrived_at_floor_check_on.strftime('%m-%d-%Y')
     
-    # Pass the modified install data to the template
-    return render(request, "install.html", {"install": install})
+    # Pass the modified install data and floor filter data to the template
+    context = {
+        "install": install,
+        "all_floors": all_floors,
+        "selected_floor": selected_floor
+    }
+    return render(request, "install.html", context)
 
 
 @login_required
@@ -1233,6 +1258,70 @@ def _save_installation_data(request_post_data, user_instance, room_number_str, i
                         
                 except InstallDetail.DoesNotExist:
                     logger.error(f"InstallDetail with ID {step_id_str} not found...")
+
+        # --- Automatic setting of day_install_began, install status, and day_install_complete ---
+        installation_data_changed_by_automation = False
+
+        # 1. Automatic setting of day_install_began
+        # This relies on installation_instance.prework and installation_instance.prework_check_on
+        # having been updated earlier in this function from the form data.
+        if installation_instance.prework == "YES" and installation_instance.prework_check_on:
+            # prework_check_on is DateTimeField, day_install_began is DateTimeField
+            if installation_instance.day_install_began != installation_instance.prework_check_on:
+                installation_instance.day_install_began = installation_instance.prework_check_on
+                installation_data_changed_by_automation = True
+        elif installation_instance.prework == "NO": # If prework is not YES or becomes NO
+            if installation_instance.day_install_began is not None:
+                installation_instance.day_install_began = None
+                installation_data_changed_by_automation = True
+        
+        # 2. Automatic setting of install status and day_install_complete
+        all_details_for_install = InstallDetail.objects.filter(installation=installation_instance)
+        all_required_details_completed = False # Default to false
+        latest_detail_completion_date = None
+
+        if all_details_for_install.exists():
+            all_required_details_completed = True # Assume true until a non-completed item is found
+            for detail in all_details_for_install:
+                if detail.status != "YES":
+                    all_required_details_completed = False
+                    latest_detail_completion_date = None # Reset if any item is not complete
+                    break
+                if detail.installed_on: # This is DateTimeField
+                    if latest_detail_completion_date is None or detail.installed_on > latest_detail_completion_date:
+                        latest_detail_completion_date = detail.installed_on
+            if not all_required_details_completed: # if loop broke, ensure latest_date is None
+                 latest_detail_completion_date = None
+        else:
+            # No InstallDetail items found for this installation.
+            # "when all the dynamic products are marked done" - if no products, this condition is not met for "YES".
+            all_required_details_completed = False 
+            latest_detail_completion_date = None
+
+
+        current_install_status = installation_instance.install
+        current_install_complete_date = installation_instance.day_install_complete
+
+        if all_required_details_completed and latest_detail_completion_date:
+            # All details are completed and there's a valid completion date.
+            if current_install_status != "YES":
+                installation_instance.install = "YES"
+                installation_data_changed_by_automation = True
+            if current_install_complete_date != latest_detail_completion_date:
+                installation_instance.day_install_complete = latest_detail_completion_date
+                installation_data_changed_by_automation = True
+        else: 
+            # Not all details completed, or no details exist, or no latest completion date found (e.g. all products 'YES' but no dates)
+            if current_install_status == "YES": # Only change if it was "YES"
+                installation_instance.install = "NO" 
+                installation_data_changed_by_automation = True
+            if current_install_complete_date is not None:
+                installation_instance.day_install_complete = None
+                installation_data_changed_by_automation = True
+        
+        if installation_data_changed_by_automation:
+            installation_instance.save()
+            logger.info(f"Installation {installation_instance.id} updated by automation: day_install_began, install, day_install_complete.")
 
         return {"success": True, "message": "Installation data saved successfully!"}
 

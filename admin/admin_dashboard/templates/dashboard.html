@@ -69,6 +69,13 @@
         border-radius: 4px;
         font-size: 0.9em;
     }
+    .card .card-body+.card-footer .stats a, .card .card-footer .stats a{
+        color: #2e2bda;
+    }
+    .card .card-body+.card-footer .stats a:hover, .card .card-footer .stats a:hover{
+        font-weight: bold;
+        color: #2e2bda;
+    }
 </style>
 
 <!-- Loader -->
@@ -106,7 +113,14 @@
                                     </div>
                                     <div class="card-footer">
                                         <div class="stats">
-                                            Floor Numbers: {{ floor_status_summary.renovated.numbers|join:", "|default:"N/A" }}
+                                            Floor Numbers:
+                                            {% if floor_status_summary.renovated.numbers %}
+                                                {% for floor in floor_status_summary.renovated.numbers %}
+                                                    <a href="/install/?floor={{ floor }}">{{ floor }}</a>{% if not forloop.last %}, {% endif %}
+                                                {% endfor %}
+                                            {% else %}
+                                                N/A
+                                            {% endif %}
                                         </div>
                                     </div>
                                 </div>
@@ -122,7 +136,14 @@
                                     </div>
                                     <div class="card-footer">
                                         <div class="stats">
-                                            Floor Numbers: {{ floor_status_summary.closed.numbers|join:", "|default:"N/A" }}
+                                            Floor Numbers:
+                                            {% if floor_status_summary.closed.numbers %}
+                                                {% for floor in floor_status_summary.closed.numbers %}
+                                                    <a href="/install/?floor={{ floor }}">{{ floor }}</a>{% if not forloop.last %}, {% endif %}
+                                                {% endfor %}
+                                            {% else %}
+                                                N/A
+                                            {% endif %}
                                         </div>
                                     </div>
                                 </div>
@@ -138,8 +159,15 @@
                                     </div>
                                     <div class="card-footer">
                                         <div class="stats">
-                                            Floor Numbers: {{ floor_status_summary.pending.numbers|join:", "|default:"N/A" }}
-                                        </div>
+                                            Floor Numbers:
+                                            {% if floor_status_summary.pending.numbers %}
+                                                {% for floor in floor_status_summary.pending.numbers %}
+                                                    <a href="/install/?floor={{ floor }}">{{ floor }}</a>{% if not forloop.last %}, {% endif %}
+                                                {% endfor %}
+                                            {% else %}
+                                                N/A
+                                            {% endif %}
+                                        </div>                                        
                                     </div>
                                 </div>
                             </div>

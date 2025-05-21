@@ -54,12 +54,24 @@
                         </div>
                     </div>
                     <div class="card-body">
+                        <div class="row mb-3">
+                            <div class="col-md-3">
+                                <label for="floorFilter" class="form-label">Filter by Floor:</label>
+                                <select id="floorFilter" class="form-select form-select-sm">
+                                    <option value="">All Floors</option>
+                                    {% for floor_num in all_floors %}
+                                        <option value="{{ floor_num }}" {% if selected_floor == floor_num|stringformat:"s" %}selected{% endif %}>Floor {{ floor_num }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
                         <div class="table-responsive">
                             <table id="roomModelTable" class="table table-striped" style="width:100%;">
                                 <thead class="text-secondary">
                                     <tr>
                                         <th>ID</th>
                                         <th>Room</th>
+                                        <th>Floor</th>
                                         <th>Product Available</th>
                                         <th>Prework</th>
                                         <th>Install</th>
@@ -73,6 +85,7 @@
                                     <tr>
                                         <td>{{ installation.id }}</td>
                                         <td>{{ installation.room }}</td>
+                                        <td>{{ installation.floor|default:"N/A" }}</td>
                                         <td>{{ installation.product_arrived_at_floor }}</td>
                                         <td>{{ installation.prework }}</td>
                                         <td>{{ installation.install }}</td>
@@ -187,6 +200,18 @@
             order: [[0, 'asc']],
             pageLength: 10,
             lengthMenu: [5, 10, 15, 20],
+        });
+
+        // Handle Floor Filter change
+        $('#floorFilter').on('change', function(){
+            var selectedFloor = $(this).val();
+            var currentUrl = new URL(window.location.href);
+            if (selectedFloor) {
+                currentUrl.searchParams.set('floor', selectedFloor);
+            } else {
+                currentUrl.searchParams.delete('floor');
+            }
+            window.location.href = currentUrl.toString();
         });
 
         // Handle Edit button click
