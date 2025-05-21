@@ -34,6 +34,7 @@ from hotel_bot_app.utils.helper import (fetch_data_from_sql,
 from openai import OpenAI
 from html import escape
 import xlwt
+import pytz
 
 from django.db.models import Q
 from django.contrib.auth import get_user_model # Use this if settings.AUTH_USER_MODEL is Django's default
@@ -593,6 +594,18 @@ def install_list(request):
         if installation.day_install_complete:
             installation.formatted_day_install_complete = installation.day_install_complete.strftime('%Y-%m-%d')
             installation.day_install_complete = installation.day_install_complete.strftime('%m-%d-%Y')
+        if installation.prework_check_on:
+            installation.formatted_prework_check_on = installation.prework_check_on.strftime('%Y-%m-%d')
+            installation.prework_check_on = installation.prework_check_on.strftime('%m-%d-%Y')
+        if installation.post_work_check_on:
+            installation.formatted_post_work_check_on = installation.post_work_check_on.strftime('%Y-%m-%d')
+            installation.post_work_check_on = installation.post_work_check_on.strftime('%m-%d-%Y')
+        if installation.retouching_check_on:
+            installation.formatted_retouching_check_on = installation.retouching_check_on.strftime('%Y-%m-%d')
+            installation.retouching_check_on = installation.retouching_check_on.strftime('%m-%d-%Y')
+        if installation.product_arrived_at_floor_check_on:
+            installation.formatted_product_arrived_at_floor_check_on = installation.product_arrived_at_floor_check_on.strftime('%Y-%m-%d')
+            installation.product_arrived_at_floor_check_on = installation.product_arrived_at_floor_check_on.strftime('%m-%d-%Y')
     
     # Pass the modified install data to the template
     return render(request, "install.html", {"install": install})
@@ -825,235 +838,441 @@ def delete_products_data(request):
             return JsonResponse({"error": "Room Model not found."})
     return JsonResponse({"error": "Invalid request."})
 
-@session_login_required
-def get_room_type(request):
-    room_number = request.GET.get("room_number")
-
+def _get_installation_checklist_data(room_number, installation_id=None, user_for_prefill=None):
+    """
+    Helper function to get installation checklist items and saved data.
+    Can be used by both frontend and admin views.
+    If installation_id is provided, it fetches data for that specific installation.
+    Otherwise, it behaves like the original get_room_type for a given room_number.
+    """
     try:
-        room_data = RoomData.objects.get(room=room_number)
-        room_type = room_data.room_model or ""
-        room_model = RoomModel.objects.get(room_model=room_type)
-        room_model_id = room_model.id
-        product_room_models = ProductRoomModel.objects.filter(
-            room_model_id=room_model_id
-        )
-        # Get Installation model for the room
-        installation_data = Installation.objects.filter(room=room_number).first()
-        saved_items = []
-        check_items = []
+        room_data = RoomData.objects.select_related('room_model_id').get(room=room_number)
+        room_type = room_data.room_model_id.room_model if room_data.room_model_id else ""
+        room_model_instance = room_data.room_model_id
 
-        if not installation_data:
-            installation_data = Installation.objects.create(
-                room=room_number,
-                prework="NO",
-                prework_check_on=None,
-                prework_checked_by=None,
-                product_arrived_at_floor="NO",
-                product_arrived_at_floor_check_on=None,
-                product_arrived_at_floor_checked_by=None,
-                retouching="NO",
-                retouching_check_on=None,
-                retouching_checked_by=None,
-                post_work="NO",
-                post_work_check_on=None,
-                post_work_checked_by=None
+        if not room_model_instance:
+            return {"success": False, "message": "Room model not found for this room."}
+
+        # Determine the Installation instance
+        if installation_id:
+            installation_data = get_object_or_404(Installation, id=installation_id, room=room_number)
+        else: # Original behavior for frontend form if no specific installation_id
+            installation_data, _ = Installation.objects.get_or_create(
+                room=room_data.room, # Use room_data.room (integer)
+                defaults={ # Sensible defaults if creating
+                    'prework': "NO",
+                    'product_arrived_at_floor': "NO",
+                    'retouching': "NO",
+                    'post_work': "NO",
+                }
             )
-        
+            # If created, it won't have an ID until saved. If fetched, it has one.
+            # If it was just created, its ID might be None until a subsequent save by the form.
+            # This is fine, as InstallDetail items will be created linked to this potential new installation.
 
-        # Check if InstallDetail already exists
-        existing_installs = InstallDetail.objects.filter(
-            room_id=room_data
-        ).select_related("product_id", "room_id", "room_model_id", "installed_by")
-        print("existing_installs ::::::",existing_installs)
 
-        if existing_installs.exists():
-            for inst in existing_installs:
-                try:
-                    prm = ProductRoomModel.objects.get(product_id=inst.product_id, room_model_id=inst.room_model_id)
-                    prm_id = prm.id
-                except ProductRoomModel.DoesNotExist:
-                    prm_id = None
+        # Fetch products associated with the room model
+        product_room_models = ProductRoomModel.objects.filter(
+            room_model_id=room_model_instance.id
+        ).select_related('product_id')
 
-                saved_items.append({
-                    "install_id": inst.install_id,
-                    "product_id": inst.product_id.id if inst.product_id else None,
-                    "product_name": inst.product_name,
-                    "room_id": inst.room_id.id if inst.room_id else None,
-                    "room_model_id": inst.room_model_id.id if inst.room_model_id else None,
-                    "product_room_model_id": prm_id,
-                    "installed_by": inst.installed_by.name if inst.installed_by else None,
-                    "installed_on": inst.installed_on.isoformat() if inst.installed_on else None,
-                    "status": inst.status,
-                    "product_client_id": inst.product_id.client_id if inst.product_id else None,
-                })
-                try:
-                    # Add to check_items with install_id as ID
-                    check_items.append({
-                        "id": inst.install_id,
-                        "label": f"({inst.product_id.client_id}) - {inst.product_name} ",
-                        "type": "detail",
-                    })
-                except:
-                    print(inst.product_id)
-                    check_items.append({
-                        "id": inst.install_id,
-                        "label": f"({inst.product_name} ",
-                        "type": "detail",
-                    })
-                    
+        saved_items = []
+        check_items = [] # This will be the final list of all items (installation + details)
 
-        else:
-            # Only create InstallDetails if none exist yet
-            install_details_to_create = []
-            for prm in product_room_models:
-                install = InstallDetail(
-                    installation_id=installation_data.id,
-                    product_id=prm.product_id,
+        # Fetch existing InstallDetail items for this installation
+        # Ensure installation_data.id is valid before querying
+        existing_install_details = []
+        if installation_data and installation_data.id:
+            existing_install_details = InstallDetail.objects.filter(
+                installation_id=installation_data.id,
+                room_id=room_data.id
+            ).select_related("product_id", "installed_by")
+
+        # Create a map of existing install details for quick lookup
+        existing_details_map = {
+            detail.product_id_id: detail for detail in existing_install_details
+        }
+
+        install_details_to_create_or_update = []
+
+        for prm in product_room_models:
+            product = prm.product_id
+            install_detail_item = existing_details_map.get(product.id)
+
+            if not install_detail_item and installation_data and installation_data.id : # Only create if an installation record exists
+                # This product is in the room model but not yet in InstallDetail for this installation
+                install_detail_item = InstallDetail(
+                    installation_id=installation_data.id, # Link to existing/created Installation
+                    product_id=product,
                     room_id=room_data,
-                    room_model_id=room_model,
-                    product_name=prm.product_id.description
+                    room_model_id=room_model_instance,
+                    product_name=product.description or product.item, # Ensure product_name is set
+                    status="NO" # Default status
                 )
-                install_details_to_create.append(install)
+                # We can't bulk_create and then get IDs immediately if some items are new and installation_data was just created (no ID yet)
+                # Instead, we'll prepare them. If installation_data has an ID, we save.
+                # This part is tricky if installation_data was just created and doesn't have an ID.
+                # For admin edit, installation_data.id will always exist.
+                # For frontend, if InstallDetail items are crucial *before* first save, this needs care.
+                # Assuming for now that if InstallDetail are created, installation_data.id is valid.
+                if installation_data.id: # Ensure main installation record has an ID
+                    install_detail_item.save() # Save to get an install_id (PK)
+                    existing_details_map[product.id] = install_detail_item # Add to map
+                else:
+                    # If installation record is new (no ID), these won't be saved yet.
+                    # This scenario is more for the initial GET in the frontend form.
+                    # They will be properly created during the POST save.
+                    pass # Defer creation to the POST if main installation is new.
 
-            # Bulk create for efficiency
-            InstallDetail.objects.bulk_create(install_details_to_create)
-
-            # Re-fetch created records with IDs
-            created_installs = InstallDetail.objects.filter(
-                installation_id=installation_data.id, room_id=room_data
-            ).select_related("product_id")
-
-            for inst in created_installs:
-                try:
-                    prm = ProductRoomModel.objects.get(product_id=inst.product_id, room_model_id=inst.room_model_id)
-                    prm_id = prm.id
-                except ProductRoomModel.DoesNotExist:
-                    prm_id = None
-
+            # print(f"install_detail_item: {install_detail_item}")
+            # Prepare data for saved_items and check_items
+            if install_detail_item: # If it exists or was just saved
                 saved_items.append({
-                    "install_id": inst.install_id,
-                    "product_id": inst.product_id.id if inst.product_id else None,
-                    "product_name": inst.product_name,
-                    "room_id": inst.room_id.id if inst.room_id else None,
-                    "room_model_id": inst.room_model_id.id if inst.room_model_id else None,
-                    "product_room_model_id": prm_id,
-                    "installed_by": inst.installed_by.name if inst.installed_by else None,
-                    "installed_on": inst.installed_on.isoformat() if inst.installed_on else None,
-                    "status": inst.status,
-                    "product_client_id": inst.product_id.client_id if inst.product_id else None,
+                    "install_id": install_detail_item.install_id,
+                    "product_id": product.id,
+                    "product_name": install_detail_item.product_id.description,
+                    "room_id": room_data.id,
+                    "room_model_id": room_model_instance.id,
+                    "product_room_model_id": prm.id, # ID of the ProductRoomModel mapping
+                    "installed_by": install_detail_item.installed_by.name if install_detail_item.installed_by else None,
+                    "installed_on": install_detail_item.installed_on.isoformat() if install_detail_item.installed_on else None,
+                    "status": install_detail_item.status,
+                    "product_client_id": product.client_id,
                 })
-                try:
-                    check_items.append({
-                        "id": inst.install_id,
-                        "label": f"({inst.product_id.client_id}) -{inst.product_name}",
-                        "type": "detail",
-                    })
+                check_items.append({
+                    "id": install_detail_item.install_id, # This is InstallDetail PK
+                    "label": f"({product.client_id or 'N/A'}) - {install_detail_item.product_id.description}",
+                    "type": "detail",
+                    "status": install_detail_item.status,
+                    "checked_by": install_detail_item.installed_by.name if install_detail_item.installed_by else None,
+                    "check_on": localtime(install_detail_item.installed_on).isoformat() if install_detail_item.installed_on else None,
+                })
+            elif not installation_data.id : # Product from room model, but main installation record is new (no ID yet)
+                 # This is for the initial rendering of the frontend form for a NEW installation
+                 # Create temporary placeholder items
+                check_items.append({
+                    "id": f"newproduct_{product.id}", # Temporary ID for unsaved items
+                    "label": f"({product.client_id or 'N/A'}) - {install_detail_item.product_id.description}",
+                    "type": "detail",
+                    "status": "NO", # Default
+                    "checked_by": None,
+                    "check_on": None,
+                })
 
-                except:
-                    print(inst.product_id)
-                    check_items.append({
-                        "id": inst.install_id,
-                        "label": f"({inst.product_name} ",
-                        "type": "detail",
-                    })
 
-        # Process static Installation step items (IDs 0, 1, 12, 13)
-        if installation_data:
-            check_items.extend([
+        # Add Installation-level static checklist items
+        if installation_data: # This will always be true due to get_or_create or get_object_or_404
+            static_install_items = [
                 {
-                    "id": 0,
-                    "label": "Pre-Work completed.",
+                    "id": 0, "label": "Pre-Work completed.",
                     "checked_by": installation_data.prework_checked_by.name if installation_data.prework_checked_by else None,
                     "check_on": localtime(installation_data.prework_check_on).isoformat() if installation_data.prework_check_on else None,
-                    "status": installation_data.prework,
-                    "type": "installation"
+                    "status": installation_data.prework, "type": "installation"
                 },
                 {
-                    "id": 1,
-                    "label": "The product arrived at the floor.",
+                    "id": 1, "label": "The product arrived at the floor.",
                     "checked_by": installation_data.product_arrived_at_floor_checked_by.name if installation_data.product_arrived_at_floor_checked_by else None,
                     "check_on": localtime(installation_data.product_arrived_at_floor_check_on).isoformat() if installation_data.product_arrived_at_floor_check_on else None,
-                    "status": installation_data.product_arrived_at_floor,
-                    "type": "installation"
+                    "status": installation_data.product_arrived_at_floor, "type": "installation"
                 },
                 {
-                    "id": 12,
-                    "label": "Retouching.",
+                    "id": 12, "label": "Retouching.",
                     "checked_by": installation_data.retouching_checked_by.name if installation_data.retouching_checked_by else None,
                     "check_on": localtime(installation_data.retouching_check_on).isoformat() if installation_data.retouching_check_on else None,
-                    "status": installation_data.retouching,
-                    "type": "installation"
+                    "status": installation_data.retouching, "type": "installation"
                 },
                 {
-                    "id": 13,
-                    "label": "Post Work.",
+                    "id": 13, "label": "Post Work.",
                     "checked_by": installation_data.post_work_checked_by.name if installation_data.post_work_checked_by else None,
                     "check_on": localtime(installation_data.post_work_check_on).isoformat() if installation_data.post_work_check_on else None,
-                    "status": installation_data.post_work,
-                    "type": "installation"
+                    "status": installation_data.post_work, "type": "installation"
                 },
-            ])
-        else:
-            
-            check_items.extend([
-                {
-                    "id": 0,
-                    "label": "Pre-Work completed.",
-                    "checked_by": None,
-                    "check_on": None,
-                    "status": None,
-                    "type": "installation"
-                },
-                {
-                    "id": 1,
-                    "label": "The product arrived at the floor.",
-                    "checked_by": None,
-                    "check_on": None,
-                    "status": None,
-                    "type": "installation"
-                },
-                {
-                    "id": 12,
-                    "label": "Retouching.",
-                    "checked_by": None,
-                    "check_on": None,
-                    "status": None,
-                    "type": "installation"
-                },
-                {
-                    "id": 13,
-                    "label": "Post Work.",
-                    "checked_by": None,
-                    "check_on": None,
-                    "status": None,
-                    "type": "installation"
-                },
-            ])
+            ]
+            check_items.extend(static_install_items)
+        
+        # Sort check_items: installation steps first, then details.
+        # Within installation steps, sort by specific IDs (0,1 then 12,13)
+        # Within detail steps, sort by label perhaps, or product ID.
+        def sort_key(item):
+            if item['type'] == 'installation':
+                if item['id'] == 0: return (0, 0)
+                if item['id'] == 1: return (0, 1)
+                if item['id'] == 12: return (0, 12)
+                if item['id'] == 13: return (0, 13)
+                return (0, item['id']) # Should not happen with current static IDs
+            else: # type == 'detail'
+                # Ensure consistent sorting for details, e.g., by label
+                return (1, item['label'])
 
 
-        # Sort check_items by placing 0 and 1 at the beginning, and 12 and 13 at the end, while sorting the rest by ID
-        check_items = sorted(
-            check_items,
-            key=lambda x: (
-                x["id"] not in [0, 1],  # Ensure IDs 0 and 1 are first
-                x["id"] in [12, 13],  # Ensure IDs 12 and 13 are last
-                x["id"]  # Sort the rest of the IDs normally
-            )
-        )
+        check_items = sorted(check_items, key=sort_key)
 
-        return JsonResponse(
-            {
-                "success": True,
-                "room_type": room_type,
-                "check_items": check_items,
-                "saved_items": saved_items,
-            }
-        )
+        return {
+            "success": True,
+            "room_type": room_type,
+            "check_items": check_items, # This now contains both installation and detail types
+            "saved_items": saved_items, # This primarily contains formatted InstallDetail data
+            "installation_id": installation_data.id if installation_data else None,
+            "room_id_for_installation": room_data.id, # Pass room_data.id for clarity
+        }
 
     except RoomData.DoesNotExist:
-        return JsonResponse({"success": False, "message": "Room not found"})
+        return {"success": False, "message": "Room not found"}
     except RoomModel.DoesNotExist:
-        return JsonResponse({"success": False, "message": "Room model not found"})
+        return {"success": False, "message": "Room model not found for this room"}
+    except Installation.DoesNotExist:
+        return {"success": False, "message": "Installation record not found"}
+    except Exception as e:
+        logger.error(f"Error in _get_installation_checklist_data for room {room_number}, install_id {installation_id}: {e}", exc_info=True)
+        return {"success": False, "message": f"An unexpected error occurred: {str(e)}"}
+
+
+# Define parse_date at the module level
+def parse_date(date_str):
+    try:
+        return datetime.strptime(date_str.strip(), "%Y-%m-%d").date() if date_str and date_str.strip() else None
+    except ValueError:
+        try:
+            # Fallback for datetime strings if time is included
+            return datetime.strptime(date_str.strip(), "%Y-%m-%dT%H:%M:%S.%fZ").date() if date_str and date_str.strip() else None
+        except ValueError:
+            try:
+                return datetime.strptime(date_str.strip(), "%Y-%m-%d %H:%M:%S").date() if date_str and date_str.strip() else None
+            except ValueError:
+                logger.warning(f"Could not parse date string: {date_str}")
+                return None
+
+@session_login_required
+def get_room_type(request):
+    room_number_str = request.GET.get("room_number")
+    if not room_number_str:
+        return JsonResponse({"success": False, "message": "Room number not provided."}, status=400)
+    
+    try:
+        # Attempt to convert room_number to integer if your RoomData.room is an IntegerField
+        room_number = int(room_number_str)
+    except ValueError:
+        return JsonResponse({"success": False, "message": "Invalid room number format."}, status=400)
+
+    # Call the helper function
+    # For the frontend form, we don't pass a specific installation_id initially,
+    # the helper will do get_or_create for the Installation object.
+    data = _get_installation_checklist_data(room_number=room_number)
+    return JsonResponse(data)
+
+
+def _save_installation_data(request_post_data, user_instance, room_number_str, installation_id_str=None):
+    """
+    Helper function to save installation data.
+    Used by both frontend installation_form and admin_save_installation_details.
+    `room_number_str` is used to fetch RoomData if installation_id is not provided or to verify.
+    `installation_id_str` is explicitly passed for admin edits.
+    """
+    try:
+        if not room_number_str:
+            return {"success": False, "message": "Room number is required."}
+        
+        try:
+            room_number_int = int(room_number_str)
+            room_instance = get_object_or_404(RoomData, room=room_number_int)
+        except ValueError:
+            return {"success": False, "message": "Invalid room number format."}
+        except RoomData.DoesNotExist:
+            return {"success": False, "message": f"Room {room_number_str} not found."}
+
+        # Determine the Installation instance
+        if installation_id_str: # Admin edit or frontend if it was an existing installation
+            installation_id = int(installation_id_str)
+            installation_instance = get_object_or_404(Installation, id=installation_id, room=room_instance.room)
+        else: # Frontend creating a new one or updating based on room number only
+            installation_instance, created = Installation.objects.get_or_create(
+                room=room_instance.room, # Ensure this matches the field type (e.g. room number if integer)
+                defaults={'prework': "NO", 'product_arrived_at_floor':"NO", 'retouching':"NO", 'post_work':"NO"}
+            )
+            if created:
+                logger.info(f"Created new Installation record for room {room_instance.room}")
+        
+        # Process main installation steps
+        main_steps_map = {
+            0: ('prework', 'prework_check_on', 'prework_checked_by'),
+            1: ('product_arrived_at_floor', 'product_arrived_at_floor_check_on', 'product_arrived_at_floor_checked_by'),
+            12: ('retouching', 'retouching_check_on', 'retouching_checked_by'),
+            13: ('post_work', 'post_work_check_on', 'post_work_checked_by'),
+        }
+
+        for step_id_int, fields in main_steps_map.items():
+            status_attr, date_attr, user_attr = fields
+            checkbox_key = f"step_installation_{step_id_int}"
+            form_date_key = f"date_installation_{step_id_int}"
+            form_user_key = f"checked_by_installation_{step_id_int}"
+
+            old_status_val = getattr(installation_instance, status_attr) == "YES"
+            old_date_val = getattr(installation_instance, date_attr)
+            old_user_val = getattr(installation_instance, user_attr)
+
+            is_checked_in_form = request_post_data.get(checkbox_key) == "on"
+            form_date_str = request_post_data.get(form_date_key)
+            form_user_name = request_post_data.get(form_user_key, "").strip()
+
+            if is_checked_in_form:
+                setattr(installation_instance, status_attr, "YES")
+                
+                parsed_form_date = parse_date(form_date_str)
+                if parsed_form_date:
+                    setattr(installation_instance, date_attr, parsed_form_date)
+                elif not old_status_val: # Newly checked and no specific date in form
+                    setattr(installation_instance, date_attr, now().date())
+                else: # Was already checked, form date field empty/invalid, preserve old
+                    setattr(installation_instance, date_attr, old_date_val)
+
+                # User assignment for checked item
+                if not old_status_val: # Newly checked
+                    setattr(installation_instance, user_attr, user_instance)
+                else: # Was already checked
+                    if form_user_name == user_instance.name: # JS set to current user, or admin typed their name
+                        setattr(installation_instance, user_attr, user_instance)
+                    elif not form_user_name and old_user_val: # User field cleared for already checked item
+                        setattr(installation_instance, user_attr, old_user_val) # Preserve old user
+                    elif old_user_val and form_user_name == old_user_val.name: # Name in form matches old user
+                        setattr(installation_instance, user_attr, old_user_val) # Preserve old user
+                    elif form_user_name: # Admin typed some other name or JS populated it (and it's not old user)
+                        # Default to current user if form has a name not matching old user, 
+                        # implying interaction or JS update.
+                        setattr(installation_instance, user_attr, user_instance)
+                    else: # Fallback, preserve old user if form name is empty and didn't match current user above
+                         setattr(installation_instance, user_attr, old_user_val)
+            else: # Not checked in form
+                setattr(installation_instance, status_attr, "NO")
+                setattr(installation_instance, date_attr, None)
+                setattr(installation_instance, user_attr, None)
+        
+        installation_instance.save() # Save main installation steps
+
+        # Process InstallDetail items
+        for key in request_post_data:
+            if key.startswith("step_detail_"):
+                try:
+                    step_id_str = key.split("_")[2]
+                    form_date_key = f"date_detail_{step_id_str}"
+                    form_user_key = f"checked_by_detail_{step_id_str}"
+
+                    is_checked_in_form = request_post_data.get(key) == "on"
+                    form_date_str = request_post_data.get(form_date_key)
+                    form_user_name = request_post_data.get(form_user_key, "").strip()
+                    
+                    install_detail_item = None
+                    created_new_detail = False
+
+                    if step_id_str.startswith("newproduct_"):
+                        if not is_checked_in_form: continue
+
+                        product_id_for_new = int(step_id_str.split("_")[1])
+                        product_instance = get_object_or_404(ProductData, id=product_id_for_new)
+                        room_model_instance = room_instance.room_model_id
+                        
+                        install_detail_item, created = InstallDetail.objects.get_or_create(
+                            installation=installation_instance,
+                            product_id=product_instance,
+                            room_id=room_instance,
+                            defaults={
+                                'room_model_id': room_model_instance,
+                                'product_name': product_instance.description or product_instance.item,
+                                'status': "YES",
+                                'installed_on': parse_date(form_date_str) or now().date(),
+                                'installed_by': user_instance
+                            }
+                        )
+                        created_new_detail = created
+                        if not created: # Already existed, treat as normal update path below
+                            pass 
+                        else: # Newly created and defaults set, skip further processing for this item in this loop iteration
+                            continue # Already saved with correct initial values
+
+                    else: # Existing InstallDetail item
+                        detail_pk = int(step_id_str)
+                        install_detail_item = get_object_or_404(InstallDetail, pk=detail_pk)
+                        if install_detail_item.installation_id != installation_instance.id:
+                            logger.warning(f"Data mismatch: InstallDetail {detail_pk}...")
+                            continue
+                    
+                    # Common logic for existing or just-fetched-not-newly-created items
+                    old_status_val = install_detail_item.status == "YES"
+                    old_date_val = install_detail_item.installed_on
+                    old_user_val = install_detail_item.installed_by
+
+                    if is_checked_in_form:
+                        install_detail_item.status = "YES"
+                        parsed_form_date = parse_date(form_date_str)
+                        if parsed_form_date:
+                            install_detail_item.installed_on = parsed_form_date
+                        elif not old_status_val: # Newly checked and no date in form
+                            install_detail_item.installed_on = now().date()
+                        else: # Was already checked, form date field empty/invalid
+                            install_detail_item.installed_on = old_date_val
+                        
+                        # User assignment for checked detail item
+                        if not old_status_val: # Newly checked
+                            install_detail_item.installed_by = user_instance
+                        else: # Was already checked
+                            if form_user_name == user_instance.name:
+                                install_detail_item.installed_by = user_instance
+                            elif not form_user_name and old_user_val:
+                                install_detail_item.installed_by = old_user_val
+                            elif old_user_val and form_user_name == old_user_val.name:
+                                install_detail_item.installed_by = old_user_val
+                            elif form_user_name: # Admin typed some other name or JS populated it
+                                install_detail_item.installed_by = user_instance # Default to current saver
+                            else:
+                                install_detail_item.installed_by = old_user_val
+                    else: # Not checked in form
+                        install_detail_item.status = "NO"
+                        install_detail_item.installed_on = None
+                        install_detail_item.installed_by = None
+                    
+                    install_detail_item.save()
+                        
+                except InstallDetail.DoesNotExist:
+                    logger.error(f"InstallDetail with ID {step_id_str} not found...")
+
+        return {"success": True, "message": "Installation data saved successfully!"}
+
+    except Installation.DoesNotExist:
+        return {"success": False, "message": "Installation record not found."}
+    except RoomData.DoesNotExist:
+         return {"success": False, "message": f"Room {room_number_str} not found."}
+    except Exception as e:
+        logger.error(f"Error in _save_installation_data for room {room_number_str}, install_id {installation_id_str}: {e}", exc_info=True)
+        return {"success": False, "message": f"An unexpected error occurred: {str(e)}"}
+
+
+@session_login_required
+def installation_form(request):
+    if not request.session.get("user_id"): # Redundant due to decorator, but good practice
+        messages.warning(request, "You must be logged in to access the form.")
+        return redirect("user_login")
+
+    invited_user_id = request.session.get("user_id")
+    invited_user_instance = get_object_or_404(InvitedUser, id=invited_user_id)
+
+    if request.method == "POST":
+        room_number_str = request.POST.get("room_number")
+        # For frontend, installation_id might not be explicitly in POST if it's a new installation.
+        # The _save_installation_data helper will handle get_or_create for Installation.
+        # If the form *does* pass an installation_id (e.g., from a hidden field after initial GET), it could be used.
+        # For now, relying on room_number for get_or_create logic in the helper for frontend.
+        
+        result = _save_installation_data(request.POST, invited_user_instance, room_number_str)
+
+        if result["success"]:
+            messages.success(request, result["message"])
+        else:
+            messages.error(request, result["message"])
+        return redirect("installation_form") # Redirect back to the form page
+
+    # For GET request, the existing JS will call get_room_type to populate the form.
+    return render(request, "installation_form.html", {
+        "invited_user": invited_user_instance, # Used by JS to prefill user name
+    })
 
 @session_login_required
 def inventory_shipment(request):
@@ -1413,109 +1632,6 @@ def home(request):
         # Clear potentially invalid session data if user doesn't exist
         request.session.flush()
         return redirect("user_login")
-
-@session_login_required
-def installation_form(request):
-    if not request.session.get("user_id"):
-        messages.warning(request, "You must be logged in to access the form.")
-        return redirect("user_login")
-
-    invited_user_id = request.session.get("user_id")
-    invited_user_instance = get_object_or_404(InvitedUser, id=invited_user_id)
-
-    if request.method == "POST":
-        room_number = request.POST.get("room_number")
-
-        room_instance = get_object_or_404(RoomData, room=room_number)
-        installation, _ = Installation.objects.get_or_create(room=room_instance.room)
-
-        for key in request.POST:
-            if key.startswith("step_"):
-                parts = key.split("_")
-                if len(parts) != 3:
-                    continue
-
-                _, step_type, step_id_str = parts
-
-                try:
-                    step_id = int(step_id_str)
-                except ValueError:
-                    continue
-
-                is_checked = request.POST.get(key) == "on"
-                date = request.POST.get(f"date_{step_type}_{step_id}") or now().date()
-
-                # ✅ Installation-level steps
-                if step_type == "installation":
-                    if step_id == 0:
-                        installation.prework = "YES" if is_checked else "NO"
-                        installation.prework_check_on = now().date() if is_checked else None
-                        installation.prework_checked_by = invited_user_instance if is_checked else None
-                    elif step_id == 1:
-                        installation.product_arrived_at_floor = "YES" if is_checked else "NO"
-                        installation.product_arrived_at_floor_check_on = now().date() if is_checked else None
-                        installation.product_arrived_at_floor_checked_by = invited_user_instance if is_checked else None
-                    elif step_id == 12:
-                        installation.retouching = "YES" if is_checked else "NO"
-                        installation.retouching_check_on = now().date() if is_checked else None
-                        installation.retouching_checked_by = invited_user_instance if is_checked else None
-                    elif step_id == 13:
-                        installation.post_work = "YES" if is_checked else "NO"
-                        installation.post_work_check_on = now().date() if is_checked else None
-                        installation.post_work_checked_by = invited_user_instance if is_checked else None
-
-                # ✅ InstallDetail-level steps
-                elif step_type == "detail":
-                    try:
-                        install_detail_item = get_object_or_404(InstallDetail, pk=step_id)
-
-                        if install_detail_item.installation_id != installation.id:
-                            messages.error(
-                                request,
-                                f"Data mismatch: InstallDetail {step_id} doesn't belong to current Installation."
-                            )
-                            continue
-
-                        if is_checked:
-                            install_detail_item.status = "YES"
-                            install_detail_item.installed_on = date
-                            install_detail_item.installed_by = invited_user_instance
-
-                        else:
-                            install_detail_item.status = "NO"
-                            install_detail_item.installed_on = None
-                            install_detail_item.installed_by = None
-
-                        install_detail_item.save()
-                        messages.success(
-                            request,
-                            f"Detail item {install_detail_item.product_name or step_id} updated."
-                        )
-
-                    except InstallDetail.DoesNotExist:
-                        messages.error(
-                            request,
-                            f"InstallDetail with ID {step_id} not found."
-                        )
-                    except Exception as e:
-                        messages.error(
-                            request,
-                            f"Unexpected error on InstallDetail {step_id}: {str(e)}"
-                        )
-
-        installation.save()
-        messages.success(request, "Installation data saved successfully!")
-        return redirect("installation_form")
-
-    return render(request, "installation_form.html", {
-        "invited_user": invited_user_instance,
-    })
-
-def parse_date(date_str):
-    try:
-        return datetime.strptime(date_str.strip(), "%Y-%m-%d") if date_str and date_str.strip() else None
-    except ValueError:
-        return None
 
 @login_required
 def chat_history(request):
@@ -2184,115 +2300,6 @@ def invited_user_comment_create(request, issue_id):
     else:
         # GET request usually means the form is displayed on the issue_detail page
         return redirect('issue_detail', issue_id=issue.id)
-    
-@login_required
-def save_admin_installation(request):
-    print(f"save_admin_installation called with request: {request.user.id}")
-    LoggedinUser = get_object_or_404(InvitedUser, id=request.user.id)
-    if request.method == 'POST':
-        try:
-            installation_id = request.POST.get('installation_id')
-            room_number = request.POST.get('room')
-            
-            # Get or create installation
-            if installation_id:
-                installation = Installation.objects.get(id=installation_id)
-            else:
-                installation = Installation()
-            
-            installation.room = room_number
-
-            # Product Available
-            product_available_status = request.POST.get('product_available', 'NO')
-            installation.product_available = product_available_status
-            if product_available_status == 'YES':
-                installation.product_arrival_date = request.POST.get('product_arrival_date')
-                installation.product_arrival_checked_by = LoggedinUser
-            else:
-                installation.product_arrival_date = None
-                installation.product_arrival_checked_by = None
-
-            # Prework
-            prework_status = request.POST.get('prework', 'NO')
-            installation.prework = prework_status
-            if prework_status == 'YES':
-                installation.prework_date = request.POST.get('prework_date')
-                installation.prework_checked_by = LoggedinUser
-            else:
-                installation.prework_date = None
-                installation.prework_checked_by = None
-
-            # Install
-            install_status = request.POST.get('install', 'NO')
-            installation.install = install_status
-            if install_status == 'YES':
-                installation.install_date = request.POST.get('install_date')
-                installation.install_checked_by = LoggedinUser
-            else:
-                installation.install_date = None
-                installation.install_checked_by = None
-
-            # Post Work
-            post_work_status = request.POST.get('post_work', 'NO')
-            installation.post_work = post_work_status
-            if post_work_status == 'YES':
-                installation.post_work_date = request.POST.get('post_work_date')
-                installation.post_work_checked_by = LoggedinUser
-            else:
-                installation.post_work_date = None
-                installation.post_work_checked_by = None
-
-            # Retouching
-            retouching_status = request.POST.get('retouching', 'NO')
-            installation.retouching = retouching_status
-            if retouching_status == 'YES':
-                installation.retouching_date = request.POST.get('retouching_date')
-                installation.retouching_checked_by = LoggedinUser
-            else:
-                installation.retouching_date = None
-                installation.retouching_checked_by = None
-            
-            installation.save()
-
-            # Get room data
-            room_data = RoomData.objects.get(room=room_number)
-            
-            # Handle installation details for each product
-            for key, value in request.POST.items():
-                if key.startswith('product_') and not key.endswith('_date') and not key.endswith('_checked_by') and not key.startswith('product_available') and not key.startswith('product_arrival'): # Exclude main product_available fields
-                    product_id_str = key.split('_')[1]
-                    try:
-                        product_id = int(product_id_str)
-                        status = value
-                        date_key = f'product_{product_id}_date'
-                        # checked_by_key = f'product_{product_id}_checked_by' # Not needed as we use LoggedinUser
-                        
-                        product_instance = ProductData.objects.get(id=product_id) # Changed from Product to ProductData
-                        
-                        # Get or create installation detail
-                        detail, created = InstallDetail.objects.get_or_create(
-                            installation_id=installation,
-                            room_id=room_data,
-                            product_id=product_instance # Corrected field name
-                        )
-                        
-                        # Update detail
-                        detail.status = status
-                        if status == 'YES':
-                            detail.installed_on = request.POST.get(date_key)
-                            detail.installed_by = LoggedinUser
-                        else:
-                            detail.installed_on = None
-                            detail.installed_by = None
-                        detail.save()
-                    except (ValueError, ProductData.DoesNotExist) as e: # Catch if product_id is not int or product not found
-                        print(f"Skipping product detail for key {key} due to error: {e}")
-                        continue
-
-            return JsonResponse({'success': True})
-        except Exception as e:
-            return JsonResponse({'success': False, 'error': str(e)})
-    return JsonResponse({'success': False, 'error': 'Invalid request method'})
 
 @login_required
 def get_room_products(request):
@@ -2386,3 +2393,146 @@ def get_room_products(request):
 
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+@login_required # Standard Django login for admin views
+def admin_get_installation_details(request):
+    if not request.user.is_authenticated or not request.user.is_staff: # Basic permission check
+        return JsonResponse({"success": False, "message": "Unauthorized"}, status=403)
+
+    installation_id_str = request.GET.get("installation_id")
+    room_number_str = request.GET.get("room_number")
+
+    # Determine current user's name for JS prefill
+    current_user_name = request.user.username # Default to username
+    # Check if the logged-in user is an instance of InvitedUser and has a 'name' attribute
+    # This depends on your authentication setup for admins.
+    # If admins are Django users, request.user.name might not exist unless custom user model.
+    # If admins are InvitedUser and session is set up, request.user could be InvitedUser.
+    if hasattr(request.user, 'name') and request.user.name and isinstance(request.user, InvitedUser):
+        current_user_name = request.user.name
+    elif hasattr(request.user, 'get_full_name') and request.user.get_full_name():
+        current_user_name = request.user.get_full_name()
+
+
+    if installation_id_str: #优先处理编辑模式 (Prioritize edit mode if installation_id is present)
+        try:
+            installation_id = int(installation_id_str)
+            # Fetch the specific installation
+            installation = get_object_or_404(Installation, id=installation_id)
+            # Get room number from the installation record
+            room_num_for_helper = str(installation.room)
+
+            data = _get_installation_checklist_data(room_number=room_num_for_helper, installation_id=installation_id)
+            if data["success"]:
+                data["current_user_name"] = current_user_name
+            return JsonResponse(data)
+        except ValueError:
+            return JsonResponse({"success": False, "message": "Invalid Installation ID format."}, status=400)
+        # Installation.DoesNotExist is already handled by get_object_or_404
+        except Exception as e:
+            logger.error(f"Error in admin_get_installation_details (edit mode) for install_id {installation_id_str}: {e}", exc_info=True)
+            return JsonResponse({"success": False, "message": f"An unexpected server error occurred: {str(e)}"}, status=500)
+
+    elif room_number_str: # 如果没有 installation_id，但有 room_number，则为创建模式加载 (If no installation_id, but room_number is present, load for create mode)
+        try:
+            # Validate room_number can be converted to int for RoomData query if necessary,
+            # _get_installation_checklist_data expects room_number as string but might do internal conversion.
+            # For create mode, installation_id is None.
+            data = _get_installation_checklist_data(room_number=room_number_str, installation_id=None)
+            if data["success"]:
+                data["current_user_name"] = current_user_name
+            else:
+                # If _get_installation_checklist_data itself returns success:False, pass its message
+                return JsonResponse(data, status=400 if data.get("message") else 500)
+            return JsonResponse(data)
+        except RoomData.DoesNotExist: # Explicitly catch if _get_installation_checklist_data can't find room
+             return JsonResponse({"success": False, "message": f"Room {room_number_str} not found. Cannot create installation checklist."}, status=404)
+        except ValueError: # e.g. if room_number_str is not a valid int and RoomData.room is int
+            return JsonResponse({"success": False, "message": "Invalid Room Number format provided."}, status=400)
+        except Exception as e:
+            logger.error(f"Error in admin_get_installation_details (create mode) for room {room_number_str}: {e}", exc_info=True)
+            return JsonResponse({"success": False, "message": f"An unexpected server error occurred: {str(e)}"}, status=500)
+    else:
+        return JsonResponse({"success": False, "message": "Either Installation ID (for edit) or Room Number (for create) is required."}, status=400)
+
+@login_required # Standard Django login for admin views
+@csrf_exempt # If using AJAX POST from admin template that might not embed CSRF token in form data easily initially
+def admin_save_installation_details(request):
+    if not request.user.is_authenticated or not request.user.is_staff:
+        return JsonResponse({"success": False, "message": "Unauthorized"}, status=403)
+
+    if request.method == "POST":
+        installation_id_str = request.POST.get("installation_id")
+        
+        if not installation_id_str:
+            return JsonResponse({"success": False, "message": "Installation ID is required in POST data."}, status=400)
+
+        try:
+            installation_id = int(installation_id_str)
+            # Fetch the installation to get the room number for the helper
+            installation_instance = get_object_or_404(Installation, id=installation_id)
+            room_number_str = str(installation_instance.room) # Get room number from the instance
+
+            # Determine the user instance for 'checked_by' fields.
+            # If your admins are regular Django Users:
+            # admin_user_instance = request.user
+            # If your admins are also InvitedUser instances and logged in via session:
+            # For simplicity, let's assume if an admin is doing this, they are the 'user_instance'
+            # This might need refinement based on how admin identity is passed or if it should be logged differently.
+            
+            # For now, let's try to find an InvitedUser that matches the logged-in Django admin user's email.
+            # This is a common pattern if you have two user systems.
+            # Or, if admins are *always* also InvitedUsers and logged in through the custom session:
+            admin_user_as_invited_user = None
+            if hasattr(request.user, 'email'): # Check if the Django user has an email
+                 admin_user_as_invited_user = InvitedUser.objects.filter(email=request.user.email).first()
+
+            if not admin_user_as_invited_user:
+                 # Fallback or error if no matching InvitedUser.
+                 # For now, as a simple approach, create a placeholder or use a default admin InvitedUser if one exists.
+                 # This part depends on your user management strategy for admins.
+                 # Let's assume for now the logged-in Django user *is* the one making changes.
+                 # The _save_installation_data expects an InvitedUser instance.
+                 # If your request.user *is* an InvitedUser due to middleware, this is simpler.
+                 # Given the mix of @login_required and @session_login_required, this needs clarity.
+                 # Assuming @login_required means a Django user.
+                 # We need an InvitedUser to pass to the helper.
+                 
+                 # If session_login_required was used for admins, then:
+                 # invited_user_id = request.session.get("user_id")
+                 # user_instance_for_saving = get_object_or_404(InvitedUser, id=invited_user_id)
+
+                 # If @login_required (Django auth) is used for admins:
+                 # We need a way to map Django User to InvitedUser for the save helper.
+                 # Simplest for now: if a field 'name' on Django User matches an InvitedUser.name or email.
+                 # This is a placeholder for robust user mapping.
+                # Default to first admin if any, or handle error
+                # This is a TEMPORARY HACK - replace with proper admin user (InvitedUser) retrieval
+                user_instance_for_saving = InvitedUser.objects.filter(role__contains=['admin']).first()
+                if not user_instance_for_saving and InvitedUser.objects.exists(): # fallback to any user if no admin
+                    user_instance_for_saving = InvitedUser.objects.first()
+                elif not InvitedUser.objects.exists():
+                     return JsonResponse({"success": False, "message": "Configuration error: No InvitedUser available to attribute changes."}, status=500)
+
+                logger.warning(f"Admin save: Using fallback InvitedUser '{user_instance_for_saving.name}' for changes by Django user '{request.user.username}'. Review user mapping.")
+
+            else: # Found a matching InvitedUser for the Django admin
+                user_instance_for_saving = admin_user_as_invited_user
+
+
+            result = _save_installation_data(request.POST, user_instance_for_saving, room_number_str, installation_id_str)
+            
+            if result["success"]:
+                return JsonResponse(result)
+            else:
+                return JsonResponse(result, status=400) # Or 500 if server-side issue in helper
+
+        except ValueError:
+            return JsonResponse({"success": False, "message": "Invalid Installation ID format."}, status=400)
+        except Installation.DoesNotExist:
+            return JsonResponse({"success": False, "message": "Installation record not found to save against."}, status=404)
+        except Exception as e:
+            logger.error(f"Critical error in admin_save_installation_details for install_id {installation_id_str}: {e}", exc_info=True)
+            return JsonResponse({"success": False, "message": f"An server error occurred: {str(e)}"}, status=500)
+
+    return JsonResponse({"error": "Invalid request method. Only POST is allowed."}, status=405)

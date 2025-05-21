@@ -38,13 +38,12 @@
 
 body, html {
 	height: 100%;
-	 font-family: "Gill Sans", sans-serif;
+	 font-family: Roboto, Helvetica, Arial, sans-serif;
 }
 
 /*---------------------------------------------*/
 a {
-	font-family: Poppins-Regular;
-  font-family: "Gill Sans", sans-serif;
+	font-family: Roboto, Helvetica, Arial, sans-serif;
 	font-size: 14px;
 	line-height: 1.7;
 	color: #666666;
@@ -70,7 +69,7 @@ h1,h2,h3,h4,h5,h6 {
 }
 
 p {
-	font-family: Poppins-Regular;
+	font-family: Roboto, Helvetica, Arial, sans-serif;
 	font-size: 14px;
 	line-height: 1.7;
 	color: #666666;

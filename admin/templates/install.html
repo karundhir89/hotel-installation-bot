@@ -3,90 +3,59 @@
 {% block content %}
 
 <style>
-#roomModelTable tbody tr {
-    height: 60px;
-}
-#roomModelTable th, #roomModelTable td {
-    white-space: nowrap;
-    padding: 15px;
-}
-th.sorting::after {
-    content: "\2195";
-    margin-left: 5px;
-}
-th.sorting_asc::after {
-    content: "\2191";
-}
-th.sorting_desc::after {
-    content: "\2193";
-}
-th.sorting, th.sorting_asc, th.sorting_desc {
-    cursor: pointer;
-}
-.modal-overlay {
-    display: none;
-    position: fixed;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    background: rgba(0,0,0,0.5);
-    z-index: 1000;
-}
-.modal {
-    display: none;
-    position: fixed;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    z-index: 1001;
-    padding: 20px;
-    border-radius: 5px;
-}
-.modal-content {
-    width: 60%;
-    max-height: 80vh;
-    overflow: auto;
-}
-.form-group {
-    padding: 10px;
-    position: relative;
-    margin: 20px 0 0;
-}
-.installation_page .form-check-input {
-    width: 18px;
-    height: 18px;
-    margin-top: 0;
-    opacity: 1;
-    z-index: 1;
-}
-.border.border-light {
-    border-radius: 11px !important;
-    box-shadow: rgba(50, 50, 93, 0.25) 0px 6px 12px -2px, rgba(0, 0, 0, 0.3) 0px 3px 7px -3px;
-}
+    #roomModelTable tbody tr {
+        height: 60px;
+    }
+    #roomModelTable th, #roomModelTable td {
+        white-space: nowrap;
+        padding: 15px;
+    }
+    th.sorting::after {
+        content: "\2195";
+        margin-left: 5px;
+    }
+    th.sorting_asc::after {
+        content: "\2191";
+    }
+    th.sorting_desc::after {
+        content: "\2193";
+    }
+    th.sorting, th.sorting_asc, th.sorting_desc {
+        cursor: pointer;
+    }
+    /* Custom styles for modal form elements */
+    #editInstallModal .form-check-input, #createInstallModal .form-check-input {
+        width: 1.25rem;
+        height: 1.25rem;
+        opacity: 1;
+        z-index: 1;
+    }
+    #editInstallModal .form-control-sm, #createInstallModal .form-control-sm {
+        font-size: 0.875rem; /* Smaller font for modal inputs */
+    }
+    .install-modal .form-check, .install-modal label {
+        color: #6b6b6b;
+    }
+
 </style>
 
-<!-- Loader -->
-<div class="ajax-loader" id="modelLoader">
-    <div class="spinner"></div>
-</div>
-
-<div class="content" id="modal-content">
+<div class="content">
     <div class="container-fluid">
         <div class="row">
             <div class="col-md-12">
                 {% include 'common/messages.html' %}
                 <div class="card">
                     <div class="card-header card-header-primary">
-                        <div class="row">
-                            <div class="col-md-6">
-                                <h4 class="card-title pt-2 text-dark">Installation Records</h4>
-                            </div>
-                            <div class="col-md-6 text-right">
-                                <button id="addModelBtn" class="btn">Add Installation</button>
-                            </div>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h4 class="card-title pt-2 text-dark mb-0">Installation Records</h4>
+                            <button class="btn btn-success btn-sm" id="createNewInstallBtn">
+                                <i class="material-icons">add</i> Create New Installation
+                            </button>
                         </div>
                     </div>
                     <div class="card-body">
                         <div class="table-responsive">
-                            <table id="roomModelTable" class="table table-striped" style="width:100%; display: none;">
+                            <table id="roomModelTable" class="table table-striped" style="width:100%;">
                                 <thead class="text-secondary">
                                     <tr>
                                         <th>ID</th>
@@ -104,37 +73,16 @@ th.sorting, th.sorting_asc, th.sorting_desc {
                                     <tr>
                                         <td>{{ installation.id }}</td>
                                         <td>{{ installation.room }}</td>
-                                        <td>{{ installation.product_available }}</td>
+                                        <td>{{ installation.product_arrived_at_floor }}</td>
                                         <td>{{ installation.prework }}</td>
                                         <td>{{ installation.install }}</td>
                                         <td>{{ installation.post_work }}</td>
                                         <td>{{ installation.retouching }}</td>
                                         <td>
-                                            <button class="btn editModelBtn"
-                                                data-id="{{ installation.id }}"
-                                                data-room="{{ installation.room }}"
-                                                data-product_available="{{ installation.product_available }}"
-                                                data-product_arrival_date="{{ installation.formatted_product_arrival_date }}"
-                                                data-product_arrival_checked_by="{{ installation.product_arrival_checked_by }}"
-                                                data-prework="{{ installation.prework }}"
-                                                data-prework_date="{{ installation.formatted_prework_date }}"
-                                                data-prework_checked_by="{{ installation.prework_checked_by }}"
-                                                data-install="{{ installation.install }}"
-                                                data-install_date="{{ installation.formatted_install_date }}"
-                                                data-install_checked_by="{{ installation.install_checked_by }}"
-                                                data-post_work="{{ installation.post_work }}"
-                                                data-post_work_date="{{ installation.formatted_post_work_date }}"
-                                                data-post_work_checked_by="{{ installation.post_work_checked_by }}"
-                                                data-retouching="{{ installation.retouching }}"
-                                                data-retouching_date="{{ installation.formatted_retouching_date }}"
-                                                data-retouching_checked_by="{{ installation.retouching_checked_by }}"
-                                                data-list_of_items="{{ installation.list_of_items }}"
-                                                data-list_of_items_date="{{ installation.formatted_list_of_items_date }}"
-                                                data-list_of_items_checked_by="{{ installation.list_of_items_checked_by }}">
+                                            <button class="btn btn-sm btn-info edit-install-btn"
+                                                    data-install-id="{{ installation.id }}"
+                                                    data-room-number="{{ installation.room }}">
                                                 Edit
-                                            </button>
-                                            <button class="btn deleteModelBtn" data-id="{{ installation.id }}">
-                                                Delete
                                             </button>
                                         </td>
                                     </tr>
@@ -149,140 +97,89 @@ th.sorting, th.sorting_asc, th.sorting_desc {
     </div>  
 </div>
 
-<!-- Modal Overlay -->
-<div class="modal-overlay" id="modelModalOverlay"></div>
-
-<!-- Add/Edit Modal -->
-<div id="modelModal" class="modal">
-    <div class="modal-content mx-auto p-4 installation_page">
-        <div class="d-flex justify-content-between align-items-center">
-            <h2 id="modelModalTitle">Add Installation</h2>
-            <span class="close" id="closeModelModal">×</span>
+<div class="modal fade install-modal" id="editInstallModal" tabindex="-1" aria-labelledby="editInstallModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editInstallModalLabel">Edit Installation for Room <span id="modal_room_number"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editInstallForm">
+                    {% csrf_token %} 
+                    <input type="hidden" name="installation_id" id="modal_installation_id">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Room #:</label>
+                            <input type="text" class="form-control form-control-sm pl-2" id="modal_display_room_number" readonly>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Room Type:</label>
+                            <input type="text" class="form-control form-control-sm pl-2" id="modal_room_type" readonly>
+                        </div>
+                    </div>
+                    <div id="modal-check-items-wrapper">
+                        {/* Dynamic checklist items will be rendered here */}
+                        <div class="text-center p-3">
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                            Loading checklist...
+                        </div>
+                    </div>
+                    <hr class="my-3">
+                    <div class="text-end">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                    </div>
+                </form>
+            </div>
         </div>
-        <form id="modelForm" method="POST" action="{% url 'save_admin_installation' %}">
-            {% csrf_token %}
-            <input type="hidden" id="model-id" name="installation_id">
+    </div>
+</div>
 
-            <div class="form-group">
-                <label for="room">Room:</label>
-                <input type="number" id="room-no" name="room" class="form-control">
+<div class="modal fade install-modal" id="createInstallModal" tabindex="-1" aria-labelledby="createInstallModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="createInstallModalLabel">Create New Installation</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-
-            <!-- Product Available Section -->
-            <div class="form-group row align-items-center mb-3 border border-light rounded-top">
-                <div class="col-md-5 mt-3">
-                    <div class="form-check mb-2">
-                        <input type="hidden" name="product_available" value="NO">
-                        <input class="form-check-input " type="checkbox" name="product_available" id="product_available" value="YES">
-                        <label class="form-check-label" for="product_available">
-                            Product Available
-                        </label>
+            <div class="modal-body">
+                <form id="createInstallForm">
+                    {% csrf_token %}
+                    <input type="hidden" name="installation_id" id="create_modal_installation_id">
+                    <div class="row mb-3">
+                        <div class="col-md-5">
+                            <label for="create_modal_room_number_input" class="form-label">Room # <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control form-control-sm pl-2" name="room_number" id="create_modal_room_number_input" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="create_modal_room_type" class="form-label">Room Type</label>
+                            <input type="text" class="form-control form-control-sm  pl-2" id="create_modal_room_type" readonly>
+                        </div>
+                        <div class="col-md-3 align-self-end">
+                            <button type="button" class="btn btn-success btn-sm w-100" id="loadRoomDetailsBtn_create">
+                                <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true" id="loadRoomDetailsSpinner_create"></span>
+                                Load Details
+                            </button>
+                        </div>
                     </div>
-                </div>
-                <div class="col-md-3 mt-2 mb-2">
-                    <input type="date" class="form-control" name="product_arrival_date" id="product_arrival_date">
-                </div>
-                <div class="col-md-4 mt-2 mb-2">
-                    <input type="text" class="form-control" name="product_arrival_checked_by" id="product_arrival_checked_by" placeholder="Checked by">
-                </div>
-            </div>
-
-            <!-- Prework Section -->
-            <div class="form-group row align-items-center mb-3 border border-light rounded-top">
-                <div class="col-md-5 mt-3">
-                    <div class="form-check mb-2">
-                        <input type="hidden" name="prework" value="NO">
-                        <input class="form-check-input" type="checkbox" name="prework" id="prework" value="YES">
-                        <label class="form-check-label" for="prework">
-                            Prework
-                        </label>
+                    <div id="create-modal-check-items-wrapper">
+                        <p class="text-muted text-center">Enter a room number and click "Load Details".</p>
                     </div>
-                </div>
-                <div class="col-md-3 mt-2 mb-2">
-                    <input type="date" class="form-control" name="prework_date" id="prework_date">
-                </div>
-                <div class="col-md-4 mt-2 mb-2">
-                    <input type="text" class="form-control" name="prework_checked_by" id="prework_checked_by" placeholder="Checked by">
-                </div>
-            </div>
-
-            <!-- Install Section -->
-            <div class="form-group row align-items-center mb-3 border border-light rounded-top">
-                <div class="col-md-5 mt-3">
-                    <div class="form-check mb-2">
-                        <input type="hidden" name="install" value="NO">
-                        <input class="form-check-input" type="checkbox" name="install" id="install" value="YES">
-                        <label class="form-check-label" for="install">
-                            Install
-                        </label>
+                    <hr class="my-3">
+                    <div class="text-end">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        <button type="submit" class="btn btn-primary" id="saveCreateInstallBtn" disabled>Save Installation</button>
                     </div>
-                </div>
-                <div class="col-md-3 mt-2 mb-2">
-                    <input type="date" class="form-control" name="install_date" id="install_date">
-                </div>
-                <div class="col-md-4 mt-2 mb-2">
-                    <input type="text" class="form-control" name="install_checked_by" id="install_checked_by" placeholder="Checked by">
-                </div>
+                </form>
             </div>
-
-            <!-- Post Work Section -->
-            <div class="form-group row align-items-center mb-3 border border-light rounded-top">
-                <div class="col-md-5 mt-3">
-                    <div class="form-check mb-2">
-                        <input type="hidden" name="post_work" value="NO">
-                        <input class="form-check-input" type="checkbox" name="post_work" id="post_work" value="YES">
-                        <label class="form-check-label" for="post_work">
-                            Post Work
-                        </label>
-                    </div>
-                </div>
-                <div class="col-md-3 mt-2 mb-2">
-                    <input type="date" class="form-control" name="post_work_date" id="post_work_date">
-                </div>
-                <div class="col-md-4 mt-2 mb-2">
-                    <input type="text" class="form-control" name="post_work_checked_by" id="post_work_checked_by" placeholder="Checked by">
-                </div>
-            </div>
-
-            <!-- Retouching Section -->
-            <div class="form-group row align-items-center mb-3 border border-light rounded-top">
-                <div class="col-md-5 mt-3">
-                    <div class="form-check mb-2">
-                        <input type="hidden" name="retouching" value="NO">
-                        <input class="form-check-input" type="checkbox" name="retouching" id="retouching" value="YES">
-                        <label class="form-check-label" for="retouching">
-                            Retouching
-                        </label>
-                    </div>
-                </div>
-                <div class="col-md-3 mt-2 mb-2">
-                    <input type="date" class="form-control" name="retouching_date" id="retouching_date">
-                </div>
-                <div class="col-md-4 mt-2 mb-2">
-                    <input type="text" class="form-control" name="retouching_checked_by" id="retouching_checked_by" placeholder="Checked by">
-                </div>
-            </div>
-
-            <!-- Dynamic Products Section -->
-            <div id="dynamic-products-section">
-                <h4 class="mt-4 mb-3">Room Products</h4>
-                <div id="room-products-container">
-                    <!-- Products will be loaded dynamically here -->
-                </div>
-            </div>
-
-            <button type="submit" class="btn float-right mt-4">Save Installation</button>
-        </form>        
+        </div>
     </div>
 </div>
 
 <script>
     $(document).ready(function () {
-        $('#modelLoader').hide();
-        $('#roomModelTable').show();
-        let isProductsLoading = false;  // Flag to prevent multiple requests
-    
-        $('#roomModelTable').DataTable({
+        var table = $('#roomModelTable').DataTable({
             paging: true,
             searching: true,
             ordering: true,
@@ -291,245 +188,283 @@ th.sorting, th.sorting_asc, th.sorting_desc {
             pageLength: 10,
             lengthMenu: [5, 10, 15, 20],
         });
-    
-        // Add Installation
-        $('#addModelBtn').click(function () {
-            $('#modelModalTitle').text("Add Installation");
-            $('#model-id').val(""); // clear ID
-            $('#room-no').val("");
-            $('#room-no').prop('readonly', false);
-            $('#product_available').prop('checked', false);
-            $('#product_arrival_date').val("");
-            $('#product_arrival_checked_by').val("");
-            $('#prework').prop('checked', false);
-            $('#prework_date').val("");
-            $('#prework_checked_by').val("");
-            $('#install').prop('checked', false);
-            $('#install_date').val("");
-            $('#install_checked_by').val("");
-            $('#post_work').prop('checked', false);
-            $('#post_work_date').val("");
-            $('#post_work_checked_by').val("");
-            $('#retouching').prop('checked', false);
-            $('#retouching_date').val("");
-            $('#retouching_checked_by').val("");
-            $('#room-products-container').empty();
-            $('#modelModal').fadeIn();
-            $('#modelModalOverlay').fadeIn();
+
+        // Handle Edit button click
+        $('#roomModelTable tbody').on('click', '.edit-install-btn', function () {
+            const installId = $(this).data('install-id');
+            const roomNumber = $(this).data('room-number');
+
+            $('#modal_installation_id').val(installId);
+            $('#modal_room_number').text(roomNumber); // For modal title
+            $('#modal_display_room_number').val(roomNumber); // For readonly input in modal
+
+            // Show loading spinner in modal body
+            $('#modal-check-items-wrapper').html('<div class="text-center p-3"><span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Loading checklist...</div>');
+            $('#editInstallModal').modal('show');
+
+            // AJAX call to get installation details
+            $.ajax({
+                url: "{% url 'admin_get_installation_details' %}", // Placeholder for actual URL
+                type: "GET",
+                data: { installation_id: installId },
+                success: function (data) {
+                    if (data.success) {
+                        $('#modal_room_type').val(data.room_type);
+                        adminRenderCheckItems(data.check_items, data.saved_items, data.current_user_name);
+                    } else {
+                        toastr.error(data.message || "Failed to load installation details.");
+                        $('#modal-check-items-wrapper').html('<p class="text-danger">Error loading details.</p>');
+                    }
+                },
+                error: function (xhr, status, error) {
+                    toastr.error("Error fetching installation details: " + error);
+                    $('#modal-check-items-wrapper').html('<p class="text-danger">Error loading details.</p>');
+                }
+            });
         });
-    
-        // Edit Installation
-        $(document).on('click', '.editModelBtn', function () {
-            const id = $(this).data('id');
-            console.log("Editing ID:", id);
-    
-            $('#modelModalTitle').text("Edit Installation");
-            $('#model-id').val(id);
-            $('#room-no').val($(this).data('room'));
-            $('#room-no').prop('readonly', true);
+
+        // Modified adminRenderCheckItems to accept a target wrapper selector
+        function adminRenderCheckItems(items, savedItems = [], currentUserName = "superadmin", targetWrapperSelector = '#modal-check-items-wrapper') {
+            const wrapper = $(targetWrapperSelector);
+            wrapper.html(''); // Clear previous content
+            console.log(`Rendering items for: ${targetWrapperSelector}`, items, savedItems);
+
+            if (!items || items.length === 0) {
+                wrapper.html('<p class="text-center text-muted">No checklist items found for this room type or category.</p>');
+                return;
+            }
             
-            // Set checkbox states and related fields
-            $('#product_available').prop('checked', $(this).data('product_available') === 'YES');
-            $('#product_arrival_date').val($(this).data('product_arrival_date'));
-            $('#product_arrival_checked_by').val($(this).data('product_arrival_checked_by'));
+            const isCreateMode = targetWrapperSelector === '#create-modal-check-items-wrapper';
+            const savedItemsMap = {};
             
-            $('#prework').prop('checked', $(this).data('prework') === 'YES');
-            $('#prework_date').val($(this).data('prework_date'));
-            $('#prework_checked_by').val($(this).data('prework_checked_by'));
-            
-            $('#install').prop('checked', $(this).data('install') === 'YES');
-            $('#install_date').val($(this).data('install_date'));
-            $('#install_checked_by').val($(this).data('install_checked_by'));
-            
-            $('#post_work').prop('checked', $(this).data('post_work') === 'YES');
-            $('#post_work_date').val($(this).data('post_work_date'));
-            $('#post_work_checked_by').val($(this).data('post_work_checked_by'));
-            
-            $('#retouching').prop('checked', $(this).data('retouching') === 'YES');
-            $('#retouching_date').val($(this).data('retouching_date'));
-            $('#retouching_checked_by').val($(this).data('retouching_checked_by'));
-            
-            // Load room products with installation ID
-            loadRoomProducts($(this).data('room'), id);
-            
-            $('#modelModal').fadeIn();
-            $('#modelModalOverlay').fadeIn();
-        });
-    
-        // Delete Installation
-        $(document).on('click', '.deleteModelBtn', function () {
-            const modelId = $(this).data('id');
-            if (confirm("Are you sure you want to delete this item?")) {
-                $.ajax({
-                    url: '{% url "delete_installation" %}',
-                    type: 'POST',
-                    data: {
-                        model_id: modelId,
-                        csrfmiddlewaretoken: '{{ csrf_token }}'
-                    },
-                    success: function (response) {
-                        if (response.success) {
-                            toastr.success("Installation deleted successfully!");
-                            setTimeout(() => {
-                                location.reload();
-                            }, 1000);
-                        }
-                    },
-                    error: function (xhr) {
-                        toastr.error('Error: ' + xhr.responseText);
+            if (!isCreateMode) { // Only populate savedItemsMap if not in create mode
+                (savedItems || []).forEach(item => {
+                    if (item.install_id !== undefined) { // Assuming 'detail' items have install_id
+                        savedItemsMap[`detail-${item.install_id}`] = item;
                     }
                 });
             }
-        });
-    
-        // Function to load room products
-        function loadRoomProducts(roomNumber, installationId = null) {
-            if (isProductsLoading) return;  // Prevent multiple requests
-            isProductsLoading = true;
 
-            $.ajax({
-                url: "{% url 'get_room_products' %}",
-                type: "GET",
-                data: { 
-                    room_number: roomNumber,
-                    installation_id: installationId
-                },
-                success: function(data) {
-                    const container = $('#room-products-container');
-                    container.empty();
-                    
-                    if (data.success && data.products) {
-                        data.products.forEach(product => {
-                            const html = `
-                                <div class="form-group row align-items-center mb-3 border border-light rounded-top">
-                                    <div class="col-md-5 mt-3">
-                                        <div class="form-check mb-2">
-                                            <input type="hidden" name="product_${product.id}" value="NO">
-                                            <input class="form-check-input" type="checkbox" 
-                                                name="product_${product.id}" 
-                                                id="product_${product.id}" 
-                                                value="YES"
-                                                ${product.status === 'YES' ? 'checked' : ''}>
-                                            <label class="form-check-label" for="product_${product.id}">
-                                                ${product.name}
-                                            </label>
-                                        </div>
-                                    </div>
-                                    <div class="col-md-3 mt-2 mb-2">
-                                        <input type="date" class="form-control" 
-                                            name="product_${product.id}_date" 
-                                            id="product_${product.id}_date"
-                                            value="${product.installed_on || ''}"
-                                            ${product.status === 'YES' ? 'required' : ''}>
-                                    </div>
-                                    <div class="col-md-4 mt-2 mb-2">
-                                        <input type="text" class="form-control" 
-                                            name="product_${product.id}_checked_by" 
-                                            id="product_${product.id}_checked_by" 
-                                            placeholder="Checked by"
-                                            value="${product.installed_by || ''}"
-                                            ${product.status === 'YES' ? 'required' : ''}>
-                                    </div>
-                                </div>
-                            `;
-                            container.append(html);
-                        });
+            items.forEach(item => {
+                const key = `${item.type}-${item.id}`; 
+                let isChecked = false;
+                let installedBy = "";
+                let installedOn = "";
+
+                if (isCreateMode) {
+                    // For create mode, all items start unchecked
+                    isChecked = false;
+                    installedBy = ""; // Will be filled by JS if checked
+                    installedOn = ""; // Will be filled by JS if checked
+                } else { // This is edit mode (targetWrapperSelector is #modal-check-items-wrapper)
+                    if (item.type === "installation") { 
+                        isChecked = item.status === "YES";
+                        installedBy = item.checked_by || "";
+                        installedOn = item.check_on ? item.check_on.split("T")[0] : "";
+                    } else if (item.type === "detail") { 
+                        const savedDetail = savedItemsMap[key];
+                        if (savedDetail) {
+                            isChecked = savedDetail.status === "YES";
+                            installedBy = savedDetail.installed_by || "";
+                            installedOn = savedDetail.installed_on ? savedDetail.installed_on.split("T")[0] : "";
+                        }
+                        // If no savedDetail for an item in edit mode, it implies it's a product
+                        // from the room model that doesn't have an InstallDetail entry yet. Render unchecked.
                     }
-                },
-                error: function() {
-                    toastr.error("Error loading room products");
-                },
-                complete: function() {
-                    isProductsLoading = false;  // Reset flag
                 }
+                
+                const id_prefix = isCreateMode ? 'create_' : 'modal_';
+                const uniqueId = `${id_prefix}step_${item.type}_${item.id}`;
+                const stepName = `step_${item.type}_${item.id}`; // Ensure this is consistent
+                const dateName = `date_${item.type}_${item.id}`;
+                const checkedByName = `checked_by_${item.type}_${item.id}`;
+
+                const html = `
+                    <div class="form-group row align-items-center mb-2 border border-light rounded p-2">
+                        <div class="col-md-5">
+                            <div class="form-check">
+                                <input type="hidden" name="${stepName}" value="off"> 
+                                <input class="form-check-input modal-check-item" type="checkbox"
+                                       name="${stepName}" id="${uniqueId}"
+                                       value="on" ${isChecked ? 'checked' : ''}
+                                       data-type="${item.type}" data-id="${item.id}">
+                                <label class="form-check-label" for="${uniqueId}">
+                                    ${item.label  || 'Unnamed Item'}
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <input type="date" class="form-control form-control-sm"
+                                   name="${dateName}"
+                                   value="${installedOn}">
+                        </div>
+                        <div class="col-md-4">
+                            <input type="text" class="form-control form-control-sm"
+                                   name="${checkedByName}"
+                                   value="${installedBy}" placeholder="Checked by">
+                        </div>
+                    </div>
+                `;
+                wrapper.append(html);
             });
         }
 
-        // Load products when room number is entered
-        $('#room-no').on('change', function() {
-            const roomNumber = $(this).val();
-            const installationId = $('#model-id').val();
-            if (roomNumber) {
-                loadRoomProducts(roomNumber, installationId);
-            }
-        });
-
-        // Handle checkbox changes for all checkboxes
-        $(document).on('change', '.form-check-input', function() {
-            const row = $(this).closest('.row');
-            const dateField = row.find('input[type="date"]');
-            const checkedByField = row.find('input[type="text"]');
+        // Handle checkbox change in modal
+        $(document).on("change", ".modal-check-item", function () {
+            const checkbox = $(this);
+            const type = checkbox.data("type");
+            const id = checkbox.data("id");
+            const isChecked = checkbox.is(":checked");
+            const currentDate = new Date().toISOString().split("T")[0];
             
-            if ($(this).is(':checked')) {
-                // Set current date if not already set
-                if (!dateField.val()) {
-                    const today = new Date().toISOString().split('T')[0];
-                    dateField.val(today);
-                }
-                // Set current user if not already set
-                if (!checkedByField.val()) {
-                    checkedByField.val('{{ request.user.get_full_name|default:request.user.username }}');
-                }
-                // Make fields required
-                dateField.prop('required', true);
-                checkedByField.prop('required', true);
+            // Get current admin user name - this should be passed from the view ideally or use a global JS var if set
+            const currentAdminName = "{{ request.user.name|escapejs }}"; // Assuming InvitedUser is request.user or similar
+
+
+            if (isChecked) {
+                $(`input[name="date_${type}_${id}"]`).val(currentDate);
+                $(`input[name="checked_by_${type}_${id}"]`).val(currentAdminName || "superadmin"); // Fallback if user name not found
             } else {
-                // Clear fields
-                dateField.val('');
-                checkedByField.val('');
-                // Remove required
-                dateField.prop('required', false);
-                checkedByField.prop('required', false);
+                // Optionally clear if unchecked, or leave as is for manual override.
+                // For now, let's clear them similar to frontend form.
+                $(`input[name="date_${type}_${id}"]`).val("");
+                $(`input[name="checked_by_${type}_${id}"]`).val("");
             }
         });
 
-        // Save (Add/Edit)
-        $('#modelForm').submit(function (e) {
+        // Handle Modal Form Submission
+        $('#editInstallForm').on('submit', function (e) {
             e.preventDefault();
-            const formData = $(this).serialize();
-            
-            // Validate required fields
-            let isValid = true;
-            $(this).find('input[required]').each(function() {
-                if (!$(this).val()) {
-                    isValid = false;
-                    $(this).addClass('is-invalid');
-                } else {
-                    $(this).removeClass('is-invalid');
-                }
-            });
-            
-            if (!isValid) {
-                toastr.error('Please fill in all required fields');
-                return;
-            }
+            const formData = $(this).serialize(); // Includes CSRF token and installation_id
+            const installId = $('#modal_installation_id').val();
 
+            // Add installation_id to formData if not already captured by serialize (e.g. if it's not a form field)
+            // let params = new URLSearchParams(formData);
+            // if (!params.has('installation_id')) {
+            //     formData += `&installation_id=${installId}`;
+            // }
+            
             $.ajax({
-                url: $(this).attr('action'),
-                type: 'POST',
+                url: "{% url 'admin_save_installation_details' %}", // Placeholder for actual URL
+                type: "POST",
                 data: formData,
-                headers: { 'X-CSRFToken': '{{ csrf_token }}' },
-                success: function (response) {
-                    if (response.success) {
-                        $('#modelModal, #modelModalOverlay').fadeOut();
-                        toastr.success("Installation saved successfully!");
-                        setTimeout(() => {
-                            location.reload();
-                        }, 1000);
+                success: function (data) {
+                    if (data.success) {
+                        toastr.success(data.message || "Installation updated successfully!");
+                        $('#editInstallModal').modal('hide');
+                        // Option 1: Reload the whole page to see changes
+                        // window.location.reload(); 
+                        // Option 2: More sophisticated - update DataTable row if possible, or just re-draw
+                        table.draw(false); // Re-draw current page
                     } else {
-                        toastr.error(response.error || 'Something went wrong!');
+                        toastr.error(data.message || "Failed to update installation.");
                     }
                 },
                 error: function (xhr) {
-                    toastr.error('Server Error: ' + xhr.statusText);
+                    let errorMsg = "An error occurred.";
+                    if (xhr.responseJSON && xhr.responseJSON.message) {
+                        errorMsg = xhr.responseJSON.message;
+                    } else if (xhr.responseJSON && xhr.responseJSON.errors) {
+                        errorMsg = "Please correct the following errors: ";
+                        let errors = xhr.responseJSON.errors;
+                        for (const field in errors) {
+                            errorMsg += `${field}: ${errors[field].join(', ')} `;
+                        }
+                    }
+                    toastr.error(errorMsg);
                 }
             });
         });
-    
-        $('#closeModelModal, #modelModalOverlay').click(function () {
-            $('#modelModal').fadeOut();
-            $('#modelModalOverlay').fadeOut();
+
+        // Handle Create New Installation button click
+        $('#createNewInstallBtn').on('click', function() {
+            $('#createInstallForm')[0].reset(); // Reset form fields
+            $('#create-modal-check-items-wrapper').html('<p class="text-muted text-center">Enter a room number and click \"Load Details\".</p>');
+            $('#saveCreateInstallBtn').prop('disabled', true); // Disable save until details are loaded
+            $('#createInstallModal').modal('show');
         });
+
+        // Handle Load Room Details for Create Modal
+        $('#loadRoomDetailsBtn_create').on('click', function() {
+            const roomNumber = $('#create_modal_room_number_input').val();
+            if (!roomNumber) {
+                toastr.error("Please enter a Room Number.");
+                return;
+            }
+
+            $(this).find('#loadRoomDetailsSpinner_create').removeClass('d-none');
+            $(this).prop('disabled', true);
+
+            $.ajax({
+                url: "{% url 'admin_get_installation_details' %}", // Reusing the same endpoint
+                type: "GET",
+                data: { room_number: roomNumber }, // No installation_id for create
+                success: function (data) {
+                    if (data.success) {
+                        $('#create_modal_room_type').val(data.room_type);
+                        $('#create_modal_installation_id').val(data.installation_id);
+                        // Use the same adminRenderCheckItems function, but target the create modal wrapper
+                        adminRenderCheckItems(data.check_items, [], data.current_user_name, '#create-modal-check-items-wrapper');
+                        $('#saveCreateInstallBtn').prop('disabled', false); // Enable save button
+                    } else {
+                        toastr.error(data.message || "Failed to load room details.");
+                        $('#create-modal-check-items-wrapper').html('<p class="text-danger text-center">Error: ' + (data.message || "Could not load details.") + '</p>');
+                        $('#saveCreateInstallBtn').prop('disabled', true);
+                    }
+                },
+                error: function (xhr, status, error) {
+                    toastr.error("Error fetching room details: " + error);
+                    $('#create-modal-check-items-wrapper').html('<p class="text-danger text-center">Error loading details.</p>');
+                    $('#saveCreateInstallBtn').prop('disabled', true);
+                },
+                complete: function () {
+                    $('#loadRoomDetailsBtn_create').find('#loadRoomDetailsSpinner_create').addClass('d-none');
+                    $('#loadRoomDetailsBtn_create').prop('disabled', false);
+                }
+            });
+        });
+
+        // Handle Create Modal Form Submission
+        $('#createInstallForm').on('submit', function(e) {
+            e.preventDefault();
+            const formData = $(this).serialize(); // Includes CSRF, and room_number. No installation_id.
+            
+            // Ensure room_number is included (it should be from the input field)
+            // let params = new URLSearchParams(formData);
+            // if (!params.has('room_number') || !params.get('room_number')) {
+            //     toastr.error("Room number is missing in submission.");
+            //     return;
+            // }
+
+            $.ajax({
+                url: "{% url 'admin_save_installation_details' %}", // Same save endpoint
+                type: "POST",
+                data: formData,
+                success: function (data) {
+                    if (data.success) {
+                        toastr.success(data.message || "Installation created successfully!");
+                        $('#createInstallModal').modal('hide');
+                        table.draw(false); // Refresh DataTable
+                    } else {
+                        toastr.error(data.message || "Failed to create installation.");
+                    }
+                },
+                error: function (xhr) {
+                    let errorMsg = "An error occurred during creation.";
+                    if (xhr.responseJSON && xhr.responseJSON.message) {
+                        errorMsg = xhr.responseJSON.message;
+                    } else if (xhr.responseJSON && xhr.responseJSON.errors) {
+                        errorMsg = "Please correct the following errors: ";
+                        let errors = xhr.responseJSON.errors;
+                        for (const field in errors) {
+                            errorMsg += `${field}: ${errors[field].join(', ')} `;
+                        }
+                    }
+                    toastr.error(errorMsg);
+                }
+            });
+        });
+
     });
 </script>
 {% endblock %}

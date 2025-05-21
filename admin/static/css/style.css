@@ -375,7 +375,7 @@ input:checked + .slider:before {
 }
 body { 
     overflow-x: hidden;
-    font-family: "Gill Sans", sans-serif;
+    font-family: Roboto, Helvetica, Arial, sans-serif;
 }
 
 @media only screen and (max-width: 600px) {
