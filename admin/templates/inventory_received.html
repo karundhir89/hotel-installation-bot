@@ -62,7 +62,7 @@
       <div class="border rounded-3 p-3 mb-4 bg-light">
         <div class="row mb-3 align-items-center">
           <div class="col-md-1 ">
-            <input type="checkbox" name="arrival_checked" id="arrival_checked" required>
+            <input type="checkbox" name="arrival_checked" id="arrival_checked" required >
           </div>
           <div class="col-md-11 mt-3 check">
             <label class="fw-bold">1. ARRIVAL DATE</label>
@@ -82,11 +82,11 @@
         <div class="row mb-3">
           <div class="col-md-6 ">
             <label class="form-label">Date</label>
-            <input type="date" disabled="disabled" class="form-control rounded-3" name="received_date" required>
+            <input type="date" class="form-control rounded-3" name="received_date" required readonly>
           </div>
           <div class="col-md-6">
             <label class="form-label">Checked By</label>
-            <input type="text" disabled="disabled" class="form-control rounded-3"  name="checked_by" placeholder="Name" required>
+            <input type="text" class="form-control rounded-3"  name="checked_by" placeholder="Name" required readonly>
           </div>
         </div>
 
@@ -116,9 +116,11 @@
 
     $('#arrival_checked').on('change', function () {
       if ($(this).is(':checked')) {
+        console.log("checked", isoDate, typeof isoDate);
         $('input[name="received_date"]').val(isoDate);
         $('input[name="checked_by"]').val(userName);
       } else {
+        console.log("null date");
         $('input[name="received_date"]').val('');
         $('input[name="checked_by"]').val('');
       }

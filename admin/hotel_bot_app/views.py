@@ -1452,7 +1452,7 @@ def inventory_received(request):
             received_date = request.POST.get("received_date")
             received_qty = int(request.POST.get("received_qty") or 0)
             damaged_qty = int(request.POST.get("damaged_qty") or 0)
-
+            
             InventoryReceived.objects.create(
                 client_id=client_item,
                 item=client_item,
