@@ -1378,17 +1378,23 @@ def inventory_shipment(request):
     if request.method == "POST":
         try:
             client_item = request.POST.get("client_item")
-            product_item = request.POST.get("product_item")
+            
             ship_date = request.POST.get("ship_date")
             qty_shipped = int(request.POST.get("qty_shipped") or 0)
             supplier = request.POST.get("supplier")
             tracking_info = request.POST.get("tracking_info")
             expected_arrival_date = request.POST.get('expected_arrival_date')
-
+            print("expected_arrival_date ::", expected_arrival_date )
+            print("ship_date ::", ship_date)
+            print("qty_shipped ::", qty_shipped)
+            print("supplier ::", supplier)
+            print("tracking_info ::", tracking_info)
+            print("user ::", user)
+            print("client_item ::", client_item)
             # Save the shipping entry
             Shipping.objects.create(
                 client_id=client_item,
-                item=product_item,
+                item=client_item,
                 ship_date=ship_date,
                 ship_qty=qty_shipped,
                 supplier=supplier,
@@ -1396,9 +1402,11 @@ def inventory_shipment(request):
                 checked_by=user,
                 expected_arrival_date = expected_arrival_date
             )
+            print("Shipping ::", Shipping.objects.all())
 
             # Update Inventory
-            inventory = Inventory.objects.filter(client_id=client_item, item=product_item).first()
+            inventory = Inventory.objects.filter(client_id=client_item, item=client_item).first()
+            print("inventory ::", inventory)
             if inventory:
                 inventory.qty_ordered = (inventory.qty_ordered or 0) + qty_shipped
                 inventory.save()
@@ -1407,6 +1415,7 @@ def inventory_shipment(request):
             return redirect("inventory_shipment")
 
         except Exception as e:
+            print("error ::", e)
             messages.error(request, f"Error submitting shipment: {str(e)}")
 
     return render(request, "inventory_shipment.html", {"user_name": user_name})
