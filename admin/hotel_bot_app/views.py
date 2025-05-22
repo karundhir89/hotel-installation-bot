@@ -1449,14 +1449,13 @@ def inventory_received(request):
     if request.method == "POST":
         try:
             client_item = request.POST.get("client_item")
-            product_item = request.POST.get("product_item")
             received_date = request.POST.get("received_date")
             received_qty = int(request.POST.get("received_qty") or 0)
             damaged_qty = int(request.POST.get("damaged_qty") or 0)
 
             InventoryReceived.objects.create(
                 client_id=client_item,
-                item=product_item,
+                item=client_item,
                 received_date=received_date,
                 received_qty=received_qty,
                 damaged_qty=damaged_qty,
@@ -1464,7 +1463,7 @@ def inventory_received(request):
             )
 
             # Update Inventory
-            inventory = Inventory.objects.filter(client_id=client_item, item=product_item).first()
+            inventory = Inventory.objects.filter(client_id=client_item, item=client_item).first()
             if inventory:
                 inventory.qty_received = (inventory.qty_received or 0) + (received_qty - damaged_qty)
                 inventory.quantity_available = (inventory.quantity_available or 0) + (received_qty - damaged_qty)
@@ -1474,6 +1473,7 @@ def inventory_received(request):
             return redirect("inventory_received")
 
         except Exception as e:
+            print("error ::", e)
             messages.error(request, f"Error saving received inventory: {str(e)}")
 
     return render(request, "inventory_received.html", {"user_name": user_name})
