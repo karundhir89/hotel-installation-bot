@@ -163,6 +163,38 @@
         padding: 10px;
         
     }
+    .file-preview-item {
+        position: relative; /* Required for positioning the remove button */
+        padding-top: 20px;
+        width: 100px;
+        margin-right: 20px;
+        display: inline-block;
+    }
+
+    .file-preview-item img {
+        width: 100px;
+        display: block;
+        border-radius: 4px;
+    }
+
+    .file-preview-item .remove-file {
+        position: absolute;
+        top: 9px;
+        right: -10px;
+        font-size: 16px;
+        background-color: #ccc;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        color: #333;
+        line-height: 1;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+
 </style>
 <div class="content">
     <div class="container-fluid">
@@ -187,6 +219,24 @@
                             </div>
 
                             <div class="row">
+                                <div class="col-md-12 mb-3">
+                                    {{ form.description|as_crispy_field }}
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-4 mb-3">
+                                    {{ form.status|as_crispy_field }}
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    {{ form.assignee|as_crispy_field }}
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    {{ form.is_for_hotel_owner|as_crispy_field }}
+                                </div>
+                            </div>
+
+                            <div class="row">
                                 <div class="col-md-6 mb-3">
                                     {{ form.type|as_crispy_field }}
                                 </div>
@@ -199,22 +249,24 @@
                                             </label>
                                         </div>
                                         <div id="related-rooms-checkboxes" style="display: none;">
+                                            {% if 'related_rooms' in form.fields %}
                                             <label class="form-label">
                                                 Related rooms
                                             </label>
                                             <div>
                                                 {% for room_id, room_label in form.fields.related_rooms.choices %}
                                                     <div class="form-check">
-                                                        <input class="form-check-input1" type="checkbox" value="{{ room_id }}" id="room_{{ room_id }}" name="related_rooms">
+                                                        <input class="form-check-input1" type="checkbox" value="{{ room_id }}" id="room_{{ room_id }}" name="related_rooms" {% if form.related_rooms.value and room_id in form.related_rooms.value %}checked{% endif %}>
                                                         <label class="form-check-label" for="room_{{ room_id }}">
                                                             {{ room_label }}
                                                         </label>
                                                     </div>
                                                 {% endfor %}
                                             </div>
+                                            {% endif %}
                                         </div>
                                         <div id="related-rooms-select" class="mb-3">
-                                            {{ form.related_rooms|as_crispy_field }}
+                                            {% if 'related_rooms' in form.fields %}{{ form.related_rooms|as_crispy_field }}{% endif %}
                                         </div>
                                     </div>
                                     
@@ -226,22 +278,24 @@
                                             </label>
                                         </div>
                                         <div id="related-floor-checkboxes" style="display: none;">
+                                            {% if 'related_floors' in form.fields %}
                                             <label class="form-label">
                                                 Related floor items
                                             </label>
                                             <div>
                                                 {% for item_id, item_label in form.fields.related_floors.choices %}
                                                     <div class="form-check">
-                                                        <input class="form-check-input1" type="checkbox" value="{{ item_id }}" id="item_{{ item_id }}" name="related_floors">
+                                                        <input class="form-check-input1" type="checkbox" value="{{ item_id }}" id="item_{{ item_id }}" name="related_floors" {% if form.related_floors.value and item_id in form.related_floors.value %}checked{% endif %}>
                                                         <label class="form-check-label" for="item_{{ item_id }}">
                                                             {{ item_label }}
                                                         </label>
                                                     </div>
                                                 {% endfor %}
                                             </div>
+                                            {% endif %}
                                         </div>
                                         <div id="related-floor-select" class="mb-3">
-                                            {{ form.related_floors|as_crispy_field }}
+                                            {% if 'related_floors' in form.fields %}{{ form.related_floors|as_crispy_field }}{% endif %}
                                         </div>
                                     </div>
                                     <div id="related-product-container" class="mb-3" style="display: none;">
@@ -252,22 +306,24 @@
                                             </label>
                                         </div>
                                         <div id="related-product-checkboxes" style="display: none;">
+                                            {% if 'related_product' in form.fields %}
                                             <label class="form-label">
                                                 Related product items
                                             </label>
                                             <div>
                                                 {% for item_id, item_label in form.fields.related_product.choices %}
                                                     <div class="form-check">
-                                                        <input class="form-check-input1" type="checkbox" value="{{ item_id }}" id="item_{{ item_id }}" name="related_product">
+                                                        <input class="form-check-input1" type="checkbox" value="{{ item_id }}" id="item_{{ item_id }}" name="related_product" {% if form.related_product.value and item_id in form.related_product.value %}checked{% endif %}>
                                                         <label class="form-check-label" for="item_{{ item_id }}">
                                                             {{ item_label }}
                                                         </label>
                                                     </div>
                                                 {% endfor %}
                                             </div>
+                                            {% endif %}
                                         </div>
                                         <div id="related-product-select" class="mb-3">
-                                            {{ form.related_product|as_crispy_field }}
+                                            {% if 'related_product' in form.fields %}{{ form.related_product|as_crispy_field }}{% endif %}
                                         </div>
                                     </div>
                                     <div id="other-type-details-container" class="mb-3" style="display: none;">
@@ -275,89 +331,6 @@
                                     </div>
                                 </div>
                             </div>
-                            <!-- <div id="related-rooms-container" class="mb-3" style="display: none;">
-                                <div class="form-check">
-                                    <input class="form-check-input1" type="checkbox" value="" id="allowMultipleRooms" checked>
-                                    <label class="form-check-label" for="allowMultipleRooms">
-                                        Allow selecting multiple rooms
-                                    </label>
-                                </div>
-                                <div id="related-rooms-checkboxes" style="display: none;">
-                                    <label class="form-label">
-                                        Related rooms
-                                    </label>
-                                    <div>
-                                        {% for room_id, room_label in form.fields.related_rooms.choices %}
-                                            <div class="form-check">
-                                                <input class="form-check-input1" type="checkbox" value="{{ room_id }}" id="room_{{ room_id }}" name="related_rooms">
-                                                <label class="form-check-label" for="room_{{ room_id }}">
-                                                    {{ room_label }}
-                                                </label>
-                                            </div>
-                                        {% endfor %}
-                                    </div>
-                                </div>
-                                <div id="related-rooms-select" class="mb-3">
-                                    {{ form.related_rooms|as_crispy_field }}
-                                </div>
-                            </div>
-                            
-                            <div id="related-floor-container" class="mb-3" style="display: none;">
-                                <div class="form-check">
-                                    <input class="form-check-input1" type="checkbox" value="" id="allowMultipleFloor" checked>
-                                    <label class="form-check-label" for="allowMultipleFloor">
-                                        Allow selecting multiple floor items
-                                    </label>
-                                </div>
-                                <div id="related-floor-checkboxes" style="display: none;">
-                                    <label class="form-label">
-                                        Related floor items
-                                    </label>
-                                    <div>
-                                        {% for item_id, item_label in form.fields.related_floors.choices %}
-                                            <div class="form-check">
-                                                <input class="form-check-input1" type="checkbox" value="{{ item_id }}" id="item_{{ item_id }}" name="related_floors">
-                                                <label class="form-check-label" for="item_{{ item_id }}">
-                                                    {{ item_label }}
-                                                </label>
-                                            </div>
-                                        {% endfor %}
-                                    </div>
-                                </div>
-                                <div id="related-floor-select" class="mb-3">
-                                    {{ form.related_floors|as_crispy_field }}
-                                </div>
-                            </div>
-                            <div id="related-product-container" class="mb-3" style="display: none;">
-                                <div class="form-check">
-                                    <input class="form-check-input1" type="checkbox" value="" id="allowMultipleProduct" checked>
-                                    <label class="form-check-label" for="allowMultipleProduct">
-                                        Allow selecting multiple product items
-                                    </label>
-                                </div>
-                                <div id="related-product-checkboxes" style="display: none;">
-                                    <label class="form-label">
-                                        Related product items
-                                    </label>
-                                    <div>
-                                        {% for item_id, item_label in form.fields.related_product.choices %}
-                                            <div class="form-check">
-                                                <input class="form-check-input1" type="checkbox" value="{{ item_id }}" id="item_{{ item_id }}" name="related_product">
-                                                <label class="form-check-label" for="item_{{ item_id }}">
-                                                    {{ item_label }}
-                                                </label>
-                                            </div>
-                                        {% endfor %}
-                                    </div>
-                                </div>
-                                <div id="related-product-select" class="mb-3">
-                                    {{ form.related_product|as_crispy_field }}
-                                </div>
-                            </div>
-                            <div id="other-type-details-container" class="mb-3" style="display: none;">
-                                {{ form.other_type_details|as_crispy_field }}
-                            </div> -->
-
                             <div class="row">
                                 <div class="col-md-6 mb-3">
                                     <div class="mb-4">
@@ -416,8 +389,10 @@
                                 </div>
                             </div>
 
+                            <div id="message-container"></div>
+
                             <div class="button-container">
-                                <button type="submit" class="btn primary">Save Changes</button>
+                                <button type="submit" class="btn primary" id="submit-btn">Save Changes</button>
                                 <a href="{% url 'admin_dashboard:admin_issue_list' %}" class="btn btn-secondary">Cancel</a>
                                 {% if issue.id %}
                                     <a href="{% url 'admin_dashboard:admin_issue_detail' issue.id %}" class="btn primary">View</a>

@@ -57,7 +57,6 @@ class Installation(models.Model):
     def __str__(self):
         return f"Room {self.room} - Installation Status"
 
-
 class Inventory(models.Model):
     id = models.AutoField(primary_key=True)  # Serial (Auto-increment)
     item = models.TextField(null=True, blank=True)
@@ -83,7 +82,6 @@ class RoomModel(models.Model):
 
     def __str__(self):
         return f"Room Model: {self.room_model} - Total: {self.total}"
-
 
 class RoomData(models.Model):
     id = models.AutoField(primary_key=True)  # Serial (Auto-increment)
@@ -219,7 +217,6 @@ class Shipping(models.Model):
     class Meta:
         db_table = "shipping"
 
-
 class PullInventory(models.Model):
     client_id =  models.CharField(max_length=255)
     item = models.CharField(max_length=255)
@@ -250,7 +247,6 @@ class InstallDetail(models.Model):
         return f"Install {self.install_id} - {self.product_name} in Room {self.room_id}"
     class Meta:
         db_table = "install_detail"
-
 
 class ProductRoomModel(models.Model):
     id=models.AutoField(primary_key=True)

@@ -206,19 +206,52 @@ class IssueUpdateForm(forms.ModelForm):
         required=False,
         widget=forms.SelectMultiple(attrs={'class': 'form-select', 'size': '5'})
     )
+    # Add fields from IssueForm
+    images = MultipleFileField(
+        widget=MultipleFileInput(attrs={'class': 'form-control d-none', 'accept': 'image/*'}),
+        required=False,
+        label="Attach Images (Max 4)"
+    )
+    video = forms.FileField(
+        widget=forms.FileInput(attrs={'class': 'form-control d-none', 'accept': 'video/*'}),
+        required=False
+    )
+    related_rooms = forms.ModelMultipleChoiceField(
+        queryset=RoomData.objects.all(),
+        widget=forms.SelectMultiple(attrs={'class': 'form-control select2-multiple'}),
+        required=False,
+        label="Related Rooms (if type is Room)"
+    )
+    related_floors = forms.MultipleChoiceField(
+        widget=forms.SelectMultiple(attrs={'class': 'form-control select2-multiple'}),
+        required=False,
+        label="Related Floors (if type is Floor)",
+        choices=[] # Will be populated in __init__
+    )
+    related_product = forms.ModelMultipleChoiceField(
+        queryset=ProductData.objects.all(),
+        widget=forms.SelectMultiple(attrs={'class': 'form-control select2-multiple'}),
+        required=False,
+        label="Related Products (if type is Product)"
+    )
+    other_type_details = forms.CharField(
+        widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
+        required=False,
+        label="Other Details (if type is Other)"
+    )
 
     class Meta:
         model = Issue
-        fields = ['title', 'description', 'status', 'type', 'is_for_hotel_owner', 'assignee', 'observers']
+        fields = ['title', 'description', 'status', 'type', 'is_for_hotel_owner', 'assignee', 'observers',
+                  'images', 'video', 'related_rooms', 'related_floors', 'related_product', 'other_type_details'] # Added new fields
         widgets = {
             'description': forms.Textarea(attrs={'rows': 1}),
             'status': forms.Select(attrs={'class': 'form-select'}),
             'type': forms.Select(attrs={'class': 'form-select'}),
             'is_for_hotel_owner': forms.Select(choices=[
-                (False, 'Hidden from Hotel Admin'),
-                (True, 'Visible to Hotel Admin')
+                (False, 'Hidden from Hotel Owner'),
+                (True, 'Visible to Hotel Ownwe')
                 ], attrs={'class': 'form-select'}),
-
         }
 
     def __init__(self, *args, **kwargs):
@@ -226,6 +259,18 @@ class IssueUpdateForm(forms.ModelForm):
         if self.instance and self.instance.created_by:
             # Ensure the creator is always included in the initial observers
             self.initial['observers'] = self.instance.observers.all() | InvitedUser.objects.filter(pk=self.instance.created_by.pk)
+
+        # Set type choices (same as IssueForm)
+        self.fields['type'].choices = [
+            ('', 'Select type'),
+            ('ROOM', 'Room Issue'),
+            ('FLOOR', 'Floor Issue'),
+            ('PRODUCT', 'Product Issue'),
+            ('OTHER', 'Other Issue'),
+        ]
+        # Set related_floors choices (same as IssueForm)
+        self.fields['related_floors'].choices = [(i, f'Floor {i}') for i in RoomData.objects.values_list('floor', flat=True).distinct()]
+
 
     def clean_observers(self):
         observers = self.cleaned_data.get('observers')
@@ -235,9 +280,48 @@ class IssueUpdateForm(forms.ModelForm):
             return unique_observers
         return observers
 
-    # Update type choices for edit form
-    def clean_type(self):
-        type = self.cleaned_data.get('type')
-        if type not in ['ROOM', 'FLOOR']:
-            raise ValidationError("Invalid type selected.")
-        return type
+    # Copied from IssueForm
+    def clean_related_floors(self):
+        floors = self.cleaned_data.get('related_floors', [])
+        try:
+            return [int(f) for f in floors if f]
+        except ValueError:
+            raise forms.ValidationError("Invalid floor selection.")
+
+    # Copied and adapted from IssueForm
+    def clean(self):
+        cleaned_data = super().clean()
+        issue_type = cleaned_data.get("type")
+        related_rooms = cleaned_data.get("related_rooms")
+        related_floors = cleaned_data.get("related_floors")
+        related_product = cleaned_data.get("related_product")
+        other_details = cleaned_data.get("other_type_details")
+
+        # Conditional validation based on type
+        if issue_type == "ROOM" and not related_rooms:
+            self.add_error('related_rooms', "Please select at least one room for issues of type 'Room'.")
+        elif issue_type == "FLOOR" and not related_floors:
+            self.add_error('related_floors', "Please select at least one floor for issues of type 'Floor'.")
+        elif issue_type == "PRODUCT" and not related_product:
+            self.add_error('related_product', "Please select at least one product for issues of type 'Product'.")
+        elif issue_type == "OTHER" and not other_details:
+            self.add_error('other_type_details', "Please provide details for issues of type 'Other'.")
+
+        # Clear irrelevant fields based on type - important for updates
+        if issue_type != "ROOM":
+            cleaned_data['related_rooms'] = RoomData.objects.none()
+        if issue_type != "FLOOR":
+            cleaned_data['related_floors'] = []
+        if issue_type != "PRODUCT":
+            cleaned_data['related_product'] = ProductData.objects.none()
+        if issue_type != "OTHER":
+            cleaned_data['other_type_details'] = '' # Set to empty string instead of None for CharField
+
+        return cleaned_data
+
+    # Removed restrictive clean_type method. Model's type field choices will apply.
+    # def clean_type(self):
+    #     type = self.cleaned_data.get('type')
+    #     if type not in ['ROOM', 'FLOOR']:
+    #         raise ValidationError("Invalid type selected.")
+    #     return type
