@@ -250,7 +250,7 @@ class IssueUpdateForm(forms.ModelForm):
             'type': forms.Select(attrs={'class': 'form-select'}),
             'is_for_hotel_owner': forms.Select(choices=[
                 (False, 'Hidden from Hotel Owner'),
-                (True, 'Visible to Hotel Ownwe')
+                (True, 'Visible to Hotel Owner')
                 ], attrs={'class': 'form-select'}),
         }
 
