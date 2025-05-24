@@ -256,9 +256,33 @@ class IssueUpdateForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if self.instance and self.instance.created_by:
-            # Ensure the creator is always included in the initial observers
-            self.initial['observers'] = self.instance.observers.all() | InvitedUser.objects.filter(pk=self.instance.created_by.pk)
+        # Ensure the creator is always included in the initial observers for existing issues
+        if self.instance and self.instance.pk and hasattr(self.instance, 'created_by') and self.instance.created_by:
+            creator_qs = InvitedUser.objects.filter(pk=self.instance.created_by.pk)
+            current_initial_observers = self.initial.get('observers')
+
+            if current_initial_observers:
+                current_initial_observers_qs = InvitedUser.objects.none()
+                if isinstance(current_initial_observers, list):
+                    # current_initial_observers is a list. Its items might be PKs or InvitedUser instances.
+                    processed_pks = []
+                    for item in current_initial_observers:
+                        if isinstance(item, InvitedUser): # Check if item is an InvitedUser instance
+                            processed_pks.append(item.pk)
+                        elif item is not None and str(item).strip() != '' : # Assume it's a PK (or something convertible to PK)
+                            processed_pks.append(item)
+                    
+                    # valid_pks should now only contain actual primary key values
+                    valid_pks = [pk for pk in processed_pks if pk is not None] # Redundant if above elif is strict, but safe
+
+                    if valid_pks:
+                        current_initial_observers_qs = InvitedUser.objects.filter(pk__in=valid_pks)
+                elif hasattr(current_initial_observers, 'all'): # if already a queryset
+                    current_initial_observers_qs = current_initial_observers
+                
+                self.initial['observers'] = current_initial_observers_qs.union(creator_qs)
+            else:
+                self.initial['observers'] = creator_qs
 
         # Set type choices (same as IssueForm)
         self.fields['type'].choices = [
@@ -288,16 +312,46 @@ class IssueUpdateForm(forms.ModelForm):
         except ValueError:
             raise forms.ValidationError("Invalid floor selection.")
 
-    # Copied and adapted from IssueForm
     def clean(self):
         cleaned_data = super().clean()
+        
+        assignee = cleaned_data.get('assignee')
+        # observers from cleaned_data is a list of instances (from clean_observers) or None
+        submitted_observers_list = cleaned_data.get('observers') 
+
+        # Convert list of submitted instances to a QuerySet
+        submitted_observers_qs = InvitedUser.objects.none()
+        if submitted_observers_list:
+            observer_pks = [obs.pk for obs in submitted_observers_list if hasattr(obs, 'pk')]
+            if observer_pks:
+                submitted_observers_qs = InvitedUser.objects.filter(pk__in=observer_pks)
+
+        # Initialize final_observers_qs with what was submitted via the form/modal
+        final_observers_qs = submitted_observers_qs
+
+        # If editing an existing issue AND the 'observers' field was NOT part of the POST data 
+        # (i.e., user didn't interact with the observer modal to make an explicit selection),
+        # then we ensure existing observers from the instance are preserved.
+        if self.instance and self.instance.pk and 'observers' not in self.data: # self.data is request.POST
+            final_observers_qs = final_observers_qs | self.instance.observers.all()
+        
+        # Add assignee to the set of observers
+        if assignee:
+            final_observers_qs = final_observers_qs | InvitedUser.objects.filter(pk=assignee.pk)
+        
+        # Add creator to the set of observers (for existing issues, to ensure they are always included)
+        if self.instance and self.instance.pk and hasattr(self.instance, 'created_by') and self.instance.created_by:
+            final_observers_qs = final_observers_qs | InvitedUser.objects.filter(pk=self.instance.created_by.pk)
+        
+        cleaned_data['observers'] = final_observers_qs.distinct() # Ensure uniqueness
+
+        # --- Conditional validation for related fields based on type (existing logic) ---
         issue_type = cleaned_data.get("type")
         related_rooms = cleaned_data.get("related_rooms")
         related_floors = cleaned_data.get("related_floors")
         related_product = cleaned_data.get("related_product")
         other_details = cleaned_data.get("other_type_details")
 
-        # Conditional validation based on type
         if issue_type == "ROOM" and not related_rooms:
             self.add_error('related_rooms', "Please select at least one room for issues of type 'Room'.")
         elif issue_type == "FLOOR" and not related_floors:

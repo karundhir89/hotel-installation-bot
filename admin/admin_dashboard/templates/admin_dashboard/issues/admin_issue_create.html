@@ -134,7 +134,7 @@
 
     <div class="card">
         <div class="card-header card-header-primary">
-            <h4 class="card-title text-dark mt-2">Report a New Issue 1</h4>
+            <h4 class="card-title text-dark mt-2">Report a New Issue</h4>
         </div>
         <div class="card-body">
             <form id="issue-form" method="post" enctype="multipart/form-data" novalidate>
@@ -232,6 +232,13 @@
                         <div class="file-upload-preview" id="videoPreview"></div>
                     </div>
                 </div>
+
+                <div class="row">
+                    <div class="col-md-12 mb-3">
+                        {{ form.observers|as_crispy_field }}
+                    </div>
+                </div>
+
                 <div class="d-flex justify-content-end mt-4">
                     <a href="{% url 'issue_list' %}" class="btn btn-outline-secondary mr-3">Cancel</a>
                     <button type="submit" class="btn btn-secondary" id="submit-btn">Submit Issue</button>

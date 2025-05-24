@@ -807,28 +807,41 @@ def dashboard(request):
 @user_passes_test(is_staff_user)
 def admin_issue_create(request):
 	is_ajax = request.headers.get('x-requested-with') == 'XMLHttpRequest'
+	available_users = InvitedUser.objects.all() # Moved to top, needed for all paths
+
 	if request.method == 'POST':
-		form = IssueForm(request.POST, request.FILES)
+		print(f"DEBUG: POST data for observers: {request.POST.getlist('observers')}") # DEBUG
+		form = IssueUpdateForm(request.POST, request.FILES)
 		if form.is_valid():
+			print(f"DEBUG: Form cleaned_data for observers: {form.cleaned_data.get('observers')}") # DEBUG
 			issue = form.save(commit=False)
-			invited_user_instance = None # Initialize to None
+			invited_user_instance = None
 			try:
 				if isinstance(request.user, InvitedUser):
 					invited_user_instance = request.user
 				else:
-					invited_user_instance = InvitedUser.objects.get(username=request.user.username) # Example: by username
+					invited_user_instance = InvitedUser.objects.get(id=request.user.id)
 			except InvitedUser.DoesNotExist:
 				messages.error(request, "Associated invited user account not found.")
 				if is_ajax:
 					return JsonResponse({'success': False, 'message': "Associated invited user account not found."}, status=400)
-				# For non-AJAX, we will re-render the form with errors below.
-				# To ensure form.errors includes this, we could add a non-field error, but Django messages should suffice for non-AJAX.
-				# Let it fall through to render form with errors if form isn't valid or to the general error rendering below.
+				# Non-AJAX falls through to render form with errors.
 
 			if invited_user_instance:
 				issue.created_by = invited_user_instance
-				issue.save()
-				form.save_m2m() # Save M2M fields (like related_rooms, related_product)
+				issue.save() # Save the main issue instance first
+				print(f"DEBUG: Issue PK after save: {issue.pk}") # DEBUG
+
+				# Explicitly handle saving observers from cleaned_data
+				if 'observers' in form.cleaned_data:
+					selected_observers = form.cleaned_data['observers']
+					print(f"DEBUG: Selected observers for .set(): {selected_observers}") # DEBUG
+					if selected_observers is not None: # Ensure it's not None before .set()
+						issue.observers.set(selected_observers)
+						print(f"DEBUG: Issue observers after .set(): {list(issue.observers.all())}") # DEBUG
+
+				form.save_m2m() # Save other M2M fields (like related_rooms, related_product)
+				print(f"DEBUG: Issue observers after save_m2m: {list(issue.observers.all())}") # DEBUG
 
 				success_message = f"Issue #{issue.id} created successfully."
 				messages.success(request, success_message)
@@ -840,45 +853,69 @@ def admin_issue_create(request):
 					})
 				return redirect('admin_dashboard:admin_issue_detail', issue_id=issue.id)
 			else:
-				# This else block handles the case where invited_user_instance is still None after the try-except
-				# This path will be hit if InvitedUser.DoesNotExist occurred and it wasn't an AJAX request.
-				# Or if any other logic flaw prevents invited_user_instance from being set.
-				# We should ensure the form is re-rendered with appropriate errors.
-				# The message has already been added via messages.error
-				if is_ajax: # This case should have been handled by the return JsonResponse above, but as a safeguard.
+				# This else handles invited_user_instance being None after try-except (e.g., non-AJAX InvitedUser.DoesNotExist)
+				# Message already added. For AJAX, this path is less likely due to earlier return.
+				if is_ajax: # Safeguard
 					return JsonResponse({'success': False, 'message': "Could not assign creator to the issue."}, status=400)
-				# For non-AJAX, let it fall through to the form invalid / general error handling below.
+				# Non-AJAX falls through to render form with errors.
 
-		# This block executes if form.is_valid() is false OR if invited_user_instance was not found for a non-AJAX request.
+		# Form is invalid OR invited_user_instance was not found (for non-AJAX)
 		error_message = "Please correct the errors below."
-		if not form.is_valid() and not any(messages.get_messages(request)):
-			 # Only add generic error message if no specific message (like user not found) was added.
+		# Add general error message only if no specific one (like 'user not found') was already added by messages.error
+		# and the form itself doesn't have errors that would make this redundant.
+		if not form.errors and not any(m.level == messages.ERROR for m in messages.get_messages(request)):
 			messages.error(request, error_message)
+		elif form.errors and not any(messages.get_messages(request)): # if form has errors but no message yet
+			messages.error(request, error_message)
+
 		if is_ajax:
 			return JsonResponse({'success': False, 'errors': form.errors, 'message': error_message}, status=400)
-		# Non-AJAX will fall through to render the form with errors
-	else:
-		form = IssueForm()
+		# Non-AJAX will fall through to render the form with errors (context setup below)
+	else: # GET request
+		form_initial_data = {}
+		current_user_as_observer_obj_list = [] # For context['observers']
 
-	available_users = InvitedUser.objects.all()
-	current_observer_user = None
-	if request.user.is_authenticated:
-		try:
-			if isinstance(request.user, InvitedUser):
-				current_observer_user = request.user
-			else:
-				current_observer_user = InvitedUser.objects.get(username=request.user.username)
-		except InvitedUser.DoesNotExist:
-			pass
+		if request.user.is_authenticated:
+			try:
+				invited_user_for_creator = None
+				if isinstance(request.user, InvitedUser):
+					invited_user_for_creator = request.user
+				else:
+					invited_user_for_creator = InvitedUser.objects.get(id=request.user.id)
+				
+				if invited_user_for_creator:
+					form_initial_data['observers'] = [invited_user_for_creator.pk]
+					current_user_as_observer_obj_list = [invited_user_for_creator]
+			except (InvitedUser.DoesNotExist, AttributeError, TypeError):
+				# Handles cases like user not being an InvitedUser, or not having 'id' (though login_required should prevent anon)
+				pass
+		form = IssueUpdateForm(initial=form_initial_data) # Changed to IssueUpdateForm
 
-	initial_observers = [current_observer_user] if current_observer_user else []
+	# Context setup for both GET and POST (when form is invalid)
+	context_data_observers = []
+	if request.method == 'GET':
+		context_data_observers = current_user_as_observer_obj_list # From GET logic above
+	else: # POST request with errors
+		# For POST errors, populate from submitted data if possible, for display consistency.
+		# The form itself (in context.form) will render selections based on POST data.
+		observer_pks_from_post = request.POST.getlist('observers')
+		if observer_pks_from_post:
+			try:
+				# Filter out empty strings or invalid PKs before querying
+				valid_pks = [pk for pk in observer_pks_from_post if pk.isdigit()]
+				if valid_pks:
+					context_data_observers = list(InvitedUser.objects.filter(pk__in=valid_pks))
+			except ValueError: # Handles if pk__in receives non-integer values after filtering
+				context_data_observers = []
+		# If no observers in POST or error, it remains empty list.
 
 	context = {
 		'form': form,
-		'is_admin': True,
+		'is_admin': True, # Can be used in template to differentiate create/edit views
 		'form_action': reverse('admin_dashboard:admin_issue_create'),
-		'available_users': available_users,
-		'observers': initial_observers,
+		'available_users': available_users, # For populating choices in select fields
+		'observers': context_data_observers, # List of InvitedUser objects for display
+		# 'issue' is not set for create mode; template should handle {% if issue %}
 	}
 	return render(request, 'admin_dashboard/issues/admin_issue_form.html', context)
 
