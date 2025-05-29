@@ -69,90 +69,119 @@
                 </a>
             </li>
 			{% if request.user.is_superuser %}
-			<li class="nav-item display_prompts li-elements-js" id="prompt">
-                <a class="nav-link" id="prompt-link" href="{% url 'edit_prompts' %}">
-                    <i class="material-icons">edit</i>
-                    <p class="display_prompts-link">Edit Prompt</p>
-                </a>
-            </li>
-			<li class="nav-item user_management li-elements-js" id="management">
-                <a class="nav-link" id="management-link" href="{% url 'user_management' %}">
-                    <i class="material-icons">management</i>
-                    <p class="user_management-link">User Management</p>
-                </a>
-            </li>
+				<li class="nav-item display_prompts li-elements-js" id="prompt">
+					<a class="nav-link" id="prompt-link" href="{% url 'edit_prompts' %}">
+						<i class="material-icons">edit</i>
+						<p class="display_prompts-link">Edit Prompt</p>
+					</a>
+				</li>
+				<li class="nav-item user_management li-elements-js" id="management">
+					<a class="nav-link" id="management-link" href="{% url 'user_management' %}">
+						<i class="material-icons">management</i>
+						<p class="user_management-link">User Management</p>
+					</a>
+				</li>
 
-			<li class="nav-item admin_issues_nav li-elements-js" id="admin_issues_li">
-                <a class="nav-link" id="admin_issues_link" href="{% url 'admin_dashboard:admin_issue_list' %}">
-                    <i class="material-icons">bug_report</i>
-                    <p>Issues</p>
-                </a>
-            </li>
-			<li class="nav-item chat_history li-elements-js" id="chat_history">
-                <a class="nav-link" id="management-link" href="{% url 'chat_history' %}">
-                    <i class="material-icons">chat</i>
-                    <p class="chat_history-link">Chat History</p>
-                </a>
-            </li>
-			<li class="nav-item manage-rooms">
-				<a class="nav-link" data-toggle="collapse" href="#collapseRoom" role="button" aria-expanded="false" aria-controls="collapseRoom">
-					<i class="material-icons">room</i>
-					<p style="color:#666666 !important">
-						Hotel Data
-						<span><i class="fas fa-caret-down caret-down"></i></span>
-						<span><i class="fas fa-caret-up caret-up"></i></span>
-					</p>
-				</a>
-				<div class="collapse" id="collapseRoom">
-					<ul class="nav" id="collapseRoomId" data-parent-id="request-parent-list">
-						<li class="nav-item rooms li-elements-js" id="room">
-							<a class="nav-link" id="rooms-link" href="{% url 'room_data_list' %}">
-								<i class="material-icons">meeting_room</i>
-								<p class="rooms-link">Room Data</p>
-							</a>
-						</li>
-						<li class="nav-item room-models li-elements-js" id="room_model_list">
-							<a class="nav-link" id="room-models-link" href="{% url 'room_model_list' %}">
-								<i class="material-icons">category</i>
-								<p class="room-models-link">Room Models</p>
-							</a>
-						</li>
-						<li class="nav-item inventory li-elements-js" id="inventory_list">
-							<a class="nav-link" id="inventory-link" href="{% url 'inventory_list' %}">
-								<i class="material-icons">inventory</i>
-								<p class="inventory-link">inventory</p>
-							</a>
-						</li>
-						<li class="nav-item install li-elements-js" id="install_list">
-							<a class="nav-link" id="install-link" href="{% url 'install_list' %}">
-								<i class="material-icons">build</i>
-								<p class="install-link">install</p>
-							</a>
-						</li>	
-						<li class="nav-item products li-elements-js" id="product_data_list">
-							<a class="nav-link" id="products-link" href="{% url 'product_data_list' %}">
-								<i class="material-icons">settings</i>
-								<p class="products-link">Product Data</p>
-							</a>
-						</li>
-						<li class="nav-item product-room-models li-elements-js" id="product_room_model_list">
-							<a class="nav-link" id="product-room-models-link" href="{% url 'product_room_model_list' %}">
-								<i class="material-icons">link</i>
-								<p class="product-room-models-link">Product Room Mapping</p>
-							</a>
-						</li>
-						<li class="nav-item schedule li-elements-js" id="schedule_list">
-							<a class="nav-link" id="schedule-link" href="{% url 'schedule_list' %}">
-								<i class="material-icons">build</i>
-								<p class="schedule-link">Schedule</p>
-							</a>
-						</li>
+				<li class="nav-item admin_issues_nav li-elements-js" id="admin_issues_li">
+					<a class="nav-link" id="admin_issues_link" href="{% url 'admin_dashboard:admin_issue_list' %}">
+						<i class="material-icons">bug_report</i>
+						<p>Issues</p>
+					</a>
+				</li>
+				<li class="nav-item chat_history li-elements-js" id="chat_history">
+					<a class="nav-link" id="management-link" href="{% url 'chat_history' %}">
+						<i class="material-icons">chat</i>
+						<p class="chat_history-link">Chat History</p>
+					</a>
+				</li>
+				<li class="nav-item manage-rooms">
+					<a class="nav-link" data-toggle="collapse" href="#collapseRoom" role="button" aria-expanded="false" aria-controls="collapseRoom">
+						<i class="material-icons">room</i>
+						<p style="color:#666666 !important">
+							Hotel Data
+							<span><i class="fas fa-caret-down caret-down"></i></span>
+							<span><i class="fas fa-caret-up caret-up"></i></span>
+						</p>
+					</a>
+					<div class="collapse" id="collapseRoom">
+						<ul class="nav" id="collapseRoomId" data-parent-id="request-parent-list">
+							<li class="nav-item rooms li-elements-js" id="room">
+								<a class="nav-link" id="rooms-link" href="{% url 'room_data_list' %}">
+									<i class="material-icons">meeting_room</i>
+									<p class="rooms-link">Room Data</p>
+								</a>
+							</li>
+							<li class="nav-item room-models li-elements-js" id="room_model_list">
+								<a class="nav-link" id="room-models-link" href="{% url 'room_model_list' %}">
+									<i class="material-icons">category</i>
+									<p class="room-models-link">Room Models</p>
+								</a>
+							</li>
+							<li class="nav-item inventory li-elements-js" id="inventory_list">
+								<a class="nav-link" id="inventory-link" href="{% url 'inventory_list' %}">
+									<i class="material-icons">inventory</i>
+									<p class="inventory-link">inventory</p>
+								</a>
+							</li>
+							<li class="nav-item install li-elements-js" id="install_list">
+								<a class="nav-link" id="install-link" href="{% url 'install_list' %}">
+									<i class="material-icons">build</i>
+									<p class="install-link">install</p>
+								</a>
+							</li>	
+							<li class="nav-item products li-elements-js" id="product_data_list">
+								<a class="nav-link" id="products-link" href="{% url 'product_data_list' %}">
+									<i class="material-icons">settings</i>
+									<p class="products-link">Product Data</p>
+								</a>
+							</li>
+							<li class="nav-item product-room-models li-elements-js" id="product_room_model_list">
+								<a class="nav-link" id="product-room-models-link" href="{% url 'product_room_model_list' %}">
+									<i class="material-icons">link</i>
+									<p class="product-room-models-link">Product Room Mapping</p>
+								</a>
+							</li>
+							<li class="nav-item schedule li-elements-js" id="schedule_list">
+								<a class="nav-link" id="schedule-link" href="{% url 'schedule_list' %}">
+									<i class="material-icons">build</i>
+									<p class="schedule-link">Schedule</p>
+								</a>
+							</li>
 
-				
-					</ul>
-				</div>
-			</li>
+					
+						</ul>
+					</div>
+				</li>
+			{% else %}
+				<li class="nav-item manage-rooms">
+					<a class="nav-link" data-toggle="collapse" href="#collapseRoom" role="button" aria-expanded="false" aria-controls="collapseRoom">
+						<i class="material-icons">room</i>
+						<p style="color:#666666 !important">
+							Hotel Data
+							<span><i class="fas fa-caret-down caret-down"></i></span>
+							<span><i class="fas fa-caret-up caret-up"></i></span>
+						</p>
+					</a>
+					<div class="collapse" id="collapseRoom">
+						<ul class="nav" id="collapseRoomId" data-parent-id="request-parent-list">
+
+							<li class="nav-item inventory li-elements-js" id="inventory_list">
+								<a class="nav-link" id="inventory-link" href="{% url 'inventory_list' %}">
+									<i class="material-icons">inventory</i>
+									<p class="inventory-link">inventory</p>
+								</a>
+							</li>
+							<li class="nav-item schedule li-elements-js" id="schedule_list">
+								<a class="nav-link" id="schedule-link" href="{% url 'schedule_list' %}">
+									<i class="material-icons">build</i>
+									<p class="schedule-link">Schedule</p>
+								</a>
+							</li>
+						</ul>
+					</div>
+				</li>
 			{% endif %}
+
             <li class="nav-item log-out">
                 <a class="nav-link" href="{% url 'logout' %}">
                     <i class="fas fa-user"></i>
