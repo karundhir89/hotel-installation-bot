@@ -48,6 +48,7 @@ from django.db import connection
 from .forms import IssueForm, CommentForm, IssueUpdateForm # Import the forms
 import logging
 from django.contrib.contenttypes.models import ContentType # Added for GFK
+from django.utils.timezone import make_aware
 
 logger = logging.getLogger(__name__)
 
@@ -1378,12 +1379,18 @@ def inventory_shipment(request):
     if request.method == "POST":
         try:
             client_item = request.POST.get("client_item")
-            
-            ship_date = request.POST.get("ship_date")
+            ship_date_str = request.POST.get("ship_date")
+            expected_arrival_date_str = request.POST.get("expected_arrival_date")
+            if ship_date_str:
+                ship_date = make_aware(datetime.strptime(ship_date_str, "%Y-%m-%d"))
+
+            if expected_arrival_date_str:
+                expected_arrival_date = make_aware(datetime.strptime(expected_arrival_date_str, "%Y-%m-%d"))
+
             qty_shipped = int(request.POST.get("qty_shipped") or 0)
             supplier = request.POST.get("supplier")
             tracking_info = request.POST.get("tracking_info")
-            expected_arrival_date = request.POST.get('expected_arrival_date')
+            
             print("expected_arrival_date ::", expected_arrival_date )
             print("ship_date ::", ship_date)
             print("qty_shipped ::", qty_shipped)
@@ -1405,13 +1412,18 @@ def inventory_shipment(request):
             print("Shipping ::", Shipping.objects.all())
 
             # Update Inventory
-            inventory = Inventory.objects.filter(client_id=client_item, item=client_item).first()
+            inventory = Inventory.objects.filter(
+                client_id__iexact=client_item,
+                item__iexact=client_item
+            ).first()            
             print("inventory ::", inventory)
             if inventory:
+                print(f"Before update: qty_ordered = {inventory.qty_ordered}")
                 inventory.qty_ordered = (inventory.qty_ordered or 0) + qty_shipped
                 inventory.save()
+                print(f"After update: qty_ordered = {inventory.qty_ordered}")
 
-            messages.success(request, "Shipment submitted and inventory updated!")
+                messages.success(request, "Shipment submitted and inventory updated!")
             return redirect("inventory_shipment")
 
         except Exception as e:
