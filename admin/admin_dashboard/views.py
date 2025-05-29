@@ -39,7 +39,7 @@ def my_view(request):
 		if user is not None:
 			if user.is_active:
 				login(request, user)
-				return HttpResponseRedirect("/user_management")
+				return HttpResponseRedirect("admin_dashboard:dashboard")
 	except Exception as e:
 		print("error in my_view :::::::::::",e)
 	return HttpResponseRedirect("/admin/login")
@@ -71,12 +71,12 @@ def show_login(request):
 	try:
 		print("user id :::: ",request.user)
 		if request.user.id is not None:
-				return HttpResponseRedirect('user_management')
+				return HttpResponseRedirect('admin_dashboard:dashboard')
 		else:
 			return HttpResponseRedirect('user_login')
 	except Exception as e:
 		print('error in  show_login',str(e))
-	return HttpResponseRedirect('dashboard')
+	return HttpResponseRedirect('admin_dashboard:dashboard')
 
 @login_required
 def logout_view(request):
