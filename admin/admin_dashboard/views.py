@@ -13,7 +13,7 @@ import uuid
 from django.core.files.storage import default_storage
 import json # For AJAX error responses if you re-add them later
 
-from hotel_bot_app.models import Issue, Comment, InvitedUser
+from hotel_bot_app.models import Issue, Comment, InvitedUser, IssueStatus
 from hotel_bot_app.forms import IssueUpdateForm, CommentForm, IssueForm
 
 import logging
@@ -774,6 +774,15 @@ def dashboard(request):
 		pie_chart_data = _prepare_pie_chart_data(total_rooms, completed_rooms)
 		efficiency_data = _prepare_efficiency_data()
 		overall_project_time_data = _prepare_overall_project_time_data()
+
+		# Fetch issues for Hotel Admin
+		hotel_admin_issues_qs = Issue.objects.filter(is_for_hotel_owner=True)\
+									  .select_related('created_by', 'assignee')\
+									  .order_by('-created_at')
+		
+		open_statuses = [IssueStatus.OPEN, IssueStatus.PENDING, IssueStatus.WORKING]
+		hotel_admin_open_issues = hotel_admin_issues_qs.filter(status__in=open_statuses)
+		hotel_admin_closed_issues = hotel_admin_issues_qs.filter(status=IssueStatus.CLOSE)
 		
 		context = {
 			'floor_progress_data': floor_progress_list,
@@ -784,7 +793,9 @@ def dashboard(request):
 			'page_name': 'Dashboard',
 			'room_report_data': None, 
 			'queried_room_data': None,
-			'room_number_query': '' 
+			'room_number_query': '',
+			'hotel_admin_open_issues': hotel_admin_open_issues,
+			'hotel_admin_closed_issues': hotel_admin_closed_issues,
 		}
 
 		room_number_query = request.GET.get('room_number', '').strip()
@@ -802,6 +813,39 @@ def dashboard(request):
 		logger.error(f"Generic error in dashboard view: {e}")
 		messages.error(request, "An error occurred while loading the dashboard.")
 		return redirect("admin_dashboard:login") 
+
+@login_required
+@user_passes_test(is_staff_user)
+def hotel_admin_issue_dashboard(request):
+	# Common queryset for issues intended for hotel owner/admin
+	base_issues_qs = Issue.objects.filter(is_for_hotel_owner=True)\
+								  .select_related('created_by', 'assignee')\
+								  .order_by('-created_at')
+
+	search_query = request.GET.get('q', '')
+	if search_query:
+		base_issues_qs = base_issues_qs.filter(
+			Q(title__icontains=search_query) |
+			Q(description__icontains=search_query) |
+			Q(id__icontains=search_query) # Assuming ID can be searched
+		)
+
+	open_statuses = [IssueStatus.OPEN, IssueStatus.PENDING, IssueStatus.WORKING]
+	
+	open_issues = base_issues_qs.filter(status__in=open_statuses)
+	closed_issues = base_issues_qs.filter(status=IssueStatus.CLOSE)
+
+	# Note: Datatables handles its own pagination, so Django's Paginator is not used here directly
+	# for the table rendering, but you might need it if you were to implement server-side processing
+	# for datatables with very large datasets.
+
+	context = {
+		'open_issues': open_issues,
+		'closed_issues': closed_issues,
+		'search_query': search_query,
+		'page_name': 'Hotel Admin Issues'
+	}
+	return render(request, 'admin_dashboard/hotel_admin_issue_dashboard.html', context)
 
 @login_required
 @user_passes_test(is_staff_user)

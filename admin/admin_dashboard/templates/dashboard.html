@@ -419,6 +419,41 @@
                 </div>
             </div>
         </div>
+
+        <!-- Hotel Admin Issues Section -->
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header card-header-info">
+                        <div class="row">
+                            <div class="col-md-12">
+                                <h3 class="card-title pt-2 text-dark">Top Issues</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <!-- <ul class="nav nav-tabs" id="topIssuesSectionTabs" role="tablist">
+                            <li class="nav-item">
+                                <a class="nav-link active" id="top-issues-open-tab-link" data-toggle="tab" href="#top-issues-open-tab-pane" role="tab" aria-controls="top-issues-open-tab-pane" aria-selected="true">Open Issues</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" id="top-issues-closed-tab-link" data-toggle="tab" href="#top-issues-closed-tab-pane" role="tab" aria-controls="top-issues-closed-tab-pane" aria-selected="false">Closed Issues</a>
+                            </li>
+                        </ul> -->
+                        <div class="tab-content" id="topIssuesSectionTabsContent">
+                            <div class="tab-pane fade show active" id="top-issues-open-tab-pane" role="tabpanel" aria-labelledby="top-issues-open-tab-link">
+                                {% include 'admin_dashboard/issues/_issue_table_partial.html' with issues=hotel_admin_open_issues table_id='topIssuesOpenTable' %}
+                            </div>
+                            <div class="tab-pane fade" id="top-issues-closed-tab-pane" role="tabpanel" aria-labelledby="top-issues-closed-tab-link">
+                                {% include 'admin_dashboard/issues/_issue_table_partial.html' with issues=hotel_admin_closed_issues table_id='topIssuesClosedTable' %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- End Hotel Admin Issues Section -->
+
     </div>
 </div>
 
@@ -437,107 +472,104 @@
 <script src="https://code.highcharts.com/modules/exporting.js"></script> {# Optional: for export functionality #}
 <script src="https://code.highcharts.com/modules/accessibility.js"></script> {# Optional: for accessibility #}
 
+<!-- DataTables CSS and JS -->
+<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.10.25/css/dataTables.bootstrap4.min.css">
+<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.10.25/js/jquery.dataTables.js"></script>
+<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.10.25/js/dataTables.bootstrap4.min.js"></script>
+
 <script>
     $(document).ready(function() {
-        console.log('DOM fully loaded and parsed. Initializing Highcharts pie chart...');
+        // Check if Bootstrap tab function is loaded
+        if (typeof $.fn.tab === 'undefined') {
+            console.error('ERROR: Bootstrap tab.js component is not loaded. Tabs will not function.');
+        }
+
+        console.log('DOM fully loaded. Initializing Highcharts pie chart if container exists...');
 
         const pieChartContainer = document.getElementById('completionPieChartContainer');
         if (!pieChartContainer) {
-            console.error('Highcharts ERROR: Container element #completionPieChartContainer not found.');
-            return; // Stop if container doesn't exist
-        }
-        console.log('Highcharts LOG: Container element #completionPieChartContainer found:', pieChartContainer);
+            console.warn('Highcharts WARN: Container element #completionPieChartContainer not found. Skipping pie chart initialization.');
+        } else {
+            console.log('Highcharts LOG: Container element #completionPieChartContainer found:', pieChartContainer);
+            let completedVal = 0;
+            let pendingVal = 100; // Default values
 
-        let completedVal = 0;
-        let pendingVal = 100; // Default values
+            try {
+                const pieDataElement = document.getElementById('pieChartDataJSON');
+                if (pieDataElement) {
+                    const jsonData = JSON.parse(pieDataElement.textContent);
+                    if (jsonData && typeof jsonData.completed !== 'undefined' && typeof jsonData.pending !== 'undefined') {
+                        completedVal = parseFloat(jsonData.completed);
+                        pendingVal = parseFloat(jsonData.pending);
+                        if (isNaN(completedVal)) completedVal = 0;
+                        if (isNaN(pendingVal)) pendingVal = 100 - completedVal;
+                    }
+                }
+            } catch (e) {
+                console.error('Highcharts ERROR: Error parsing pie chart JSON data. Using default values. Error:', e);
+            }
 
-        try {
-            const pieDataElement = document.getElementById('pieChartDataJSON');
-            if (pieDataElement) {
-                console.log('Highcharts LOG: JSON data script tag #pieChartDataJSON found.');
-                const jsonDataText = pieDataElement.textContent;
-                console.log('Highcharts LOG: Raw JSON text content:', jsonDataText);
-                const jsonData = JSON.parse(jsonDataText);
-                console.log('Highcharts LOG: Parsed JSON data:', jsonData);
-                
-                if (jsonData && typeof jsonData.completed !== 'undefined' && typeof jsonData.pending !== 'undefined') {
-                    completedVal = parseFloat(jsonData.completed);
-                    pendingVal = parseFloat(jsonData.pending);
-                    if (isNaN(completedVal)) completedVal = 0;
-                    if (isNaN(pendingVal)) pendingVal = 100 - completedVal; // ensure it adds up if one is NaN
-                    console.log('Highcharts LOG: Values for chart - Completed:', completedVal, 'Pending:', pendingVal);
-                } else {
-                    console.warn('Highcharts WARN: JSON data does not contain expected completed/pending fields. Using defaults.', jsonData);
+            if (typeof Highcharts !== 'undefined') {
+                try {
+                    Highcharts.chart(pieChartContainer, {
+                        chart: { type: 'pie' },
+                        title: { text: 'Overall Project Completion', align: 'center' },
+                        tooltip: { pointFormat: '{series.name}: <b>{point.percentage:.1f}%</b>' },
+                        accessibility: { point: { valueSuffix: '%' } },
+                        plotOptions: {
+                            pie: {
+                                allowPointSelect: true,
+                                cursor: 'pointer',
+                                dataLabels: { enabled: true, format: '<b>{point.name}</b>: {point.percentage:.1f} %' },
+                                showInLegend: true
+                            }
+                        },
+                        series: [{
+                            name: 'Status',
+                            colorByPoint: true,
+                            data: [
+                                { name: 'Pending', y: pendingVal, color: 'rgba(255, 99, 132, 0.7)' },
+                                { name: 'Completed', y: completedVal, color: 'rgba(75, 192, 192, 0.7)', sliced: true, selected: true }
+                            ]
+                        }]
+                    });
+                } catch (chartError) {
+                    console.error('Highcharts ERROR: Error during chart initialization:', chartError);
                 }
             } else {
-                console.error('Highcharts ERROR: JSON data script tag #pieChartDataJSON not found. Using default values for chart.');
+                console.error('Highcharts ERROR: Highcharts library not loaded.');
             }
-        } catch (e) {
-            console.error('Highcharts ERROR: Error parsing pie chart JSON data. Using default values. Error:', e);
         }
 
-        if (typeof Highcharts !== 'undefined') {
-            console.log('Highcharts LOG: Highcharts library is loaded. Version:', Highcharts.version);
-            try {
-                Highcharts.chart(pieChartContainer, {
-                    chart: {
-                        plotBackgroundColor: null,
-                        plotBorderWidth: null,
-                        plotShadow: false,
-                        type: 'pie'
-                    },
-                    title: {
-                        text: 'Overall Project Completion',
-                        align: 'center'
-                    },
-                    tooltip: {
-                        pointFormat: '{series.name}: <b>{point.percentage:.1f}%</b>'
-                    },
-                    accessibility: {
-                        point: {
-                            valueSuffix: '%'
-                        }
-                    },
-                    plotOptions: {
-                        pie: {
-                            allowPointSelect: true,
-                            cursor: 'pointer',
-                            dataLabels: {
-                                enabled: true,
-                                format: '<b>{point.name}</b>: {point.percentage:.1f} %',
-                                style: {
-                                    color: (Highcharts.theme && Highcharts.theme.contrastTextColor) || 'black'
-                                }
-                            },
-                            showInLegend: true
-                        }
-                    },
-                    series: [{
-                        name: 'Status',
-                        colorByPoint: true,
-                        data: [
-                            {
-                                name: 'Pending',
-                                y: pendingVal,
-                                color: 'rgba(255, 99, 132, 0.7)' // Pinkish
-                            },
-                            {
-                                name: 'Completed',
-                                y: completedVal,
-                                color: 'rgba(75, 192, 192, 0.7)', // Teal
-                                sliced: true,
-                                selected: true
-                            }
-                        ]
-                    }]
-                });
-                console.log('Highcharts LOG: Chart initialization attempted.');
-            } catch (chartError) {
-                console.error('Highcharts ERROR: Error during chart initialization:', chartError);
+        // Initialize DataTables for Hotel Admin Issues (Top Issues section)
+        function initializeTopIssuesDataTable(tableId) {
+            if ($('#' + tableId).length === 0) {
+                console.warn('DataTables WARN: Table with id ' + tableId + ' not found. Skipping initialization.');
+                return;
             }
-        } else {
-            console.error('Highcharts ERROR: Highcharts library not loaded. Chart cannot be rendered.');
+            $('#' + tableId).DataTable({
+                "pagingType": "full_numbers",
+                "lengthMenu": [[10, 25, 50, -1], [10, 25, 50, "All"]],
+                responsive: true,
+                language: {
+                    search: "_INPUT_",
+                    searchPlaceholder: "Search records",
+                }
+            });
         }
+
+        initializeTopIssuesDataTable('topIssuesOpenTable');
+        initializeTopIssuesDataTable('topIssuesClosedTable');
+       
+        // Adjust DataTable columns when tabs are shown
+        $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+            console.log('Tab shown event triggered for: ', e.target.id);
+            // Check if the event is for the tabs we care about, to be more specific
+            if ($(e.target).closest('#topIssuesSectionTabs').length > 0) {
+                 $($.fn.dataTable.tables(true)).DataTable().columns.adjust();
+                 console.log('DataTables columns adjusted for Top Issues section.');
+            }
+        });
     });
 </script>
 {% endblock scripts %}

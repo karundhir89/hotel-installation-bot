@@ -13,4 +13,5 @@ urlpatterns = [
     path('admin_issues/<int:issue_id>/comment/admin/', views.admin_comment_create, name='admin_comment_create'),
     path('admin_issues/create/', views.admin_issue_create, name='admin_issue_create'),
     path('dashboard', views.dashboard, name='dashboard'),
+    path('hotel-admin-issues/', views.hotel_admin_issue_dashboard, name='hotel_admin_issue_dashboard'),
 ]
