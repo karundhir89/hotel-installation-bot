@@ -138,11 +138,6 @@
             <p class="text-muted text-center">No comments yet.</p>
         {% endfor %}
     </div>
-    <div id="media-loader" style="display: none; position: fixed; top: 50%; left: 50%; z-index: 1050; transform: translate(-50%, -50%);">
-    <div class="spinner-border text-primary" role="status">
-        <span class="visually-hidden">Loading...</span>
-    </div>
-</div>
 
     {% if can_comment %}
     <form method="post" enctype="multipart/form-data" class="comment-form position-relative" action="{% url 'invited_user_comment_create' issue.id %}">
