@@ -1094,6 +1094,9 @@ def _save_installation_data(request_post_data, user_instance, room_number_str, i
     `room_number_str` is used to fetch RoomData if installation_id is not provided or to verify.
     `installation_id_str` is explicitly passed for admin edits.
     """
+    print(request_post_data)
+            # Now use product_id, step_checked, etc.
+
     try:
         if not room_number_str:
             return {"success": False, "message": "Room number is required."}
@@ -1195,7 +1198,7 @@ def _save_installation_data(request_post_data, user_instance, room_number_str, i
                         product_id_for_new = int(step_id_str.split("_")[1])
                         product_instance = get_object_or_404(ProductData, id=product_id_for_new)
                         room_model_instance = room_instance.room_model_id
-                        
+                        print('instance .........',product_instance.item)
                         install_detail_item, created = InstallDetail.objects.get_or_create(
                             installation=installation_instance,
                             product_id=product_instance,
@@ -1340,9 +1343,30 @@ def installation_form(request):
     if not request.session.get("user_id"): # Redundant due to decorator, but good practice
         messages.warning(request, "You must be logged in to access the form.")
         return redirect("user_login")
+    
 
     invited_user_id = request.session.get("user_id")
     invited_user_instance = get_object_or_404(InvitedUser, id=invited_user_id)
+    checked_product_ids = []
+
+    for key, value in request.POST.items():
+        if key.startswith("step_detail_") and value == "on":
+            detail_id = key.split("step_detail_")[1]
+            product_id = request.POST.get(f"product_id_detail_{detail_id}")
+            if product_id:
+                checked_product_ids.append(product_id)
+
+    # Now checked_product_ids contains ONLY product IDs that were ticked
+    print("Checked Product IDs:", checked_product_ids)
+    for product_id in checked_product_ids:
+        try:
+            inventory_item = Inventory.objects.get(item=product_id)
+            inventory_item.quantity_installed += 1
+            inventory_item.save()
+        except Inventory.DoesNotExist:
+            print(f"Inventory item with product_id {product_id} does not exist.")
+
+    # Now use product_id, step_checked, etc.
 
     if request.method == "POST":
         room_number_str = request.POST.get("room_number")
@@ -1475,7 +1499,10 @@ def inventory_received(request):
             )
 
             # Update Inventory
-            inventory = Inventory.objects.filter(client_id=client_item, item=client_item).first()
+            inventory = Inventory.objects.filter(
+                client_id__iexact=client_item,
+                item__iexact=client_item
+            ).first()
             if inventory:
                 inventory.qty_received = (inventory.qty_received or 0) + (received_qty - damaged_qty)
                 inventory.quantity_available = (inventory.quantity_available or 0) + (received_qty - damaged_qty)
@@ -2180,7 +2207,7 @@ def issue_list(request):
         ('OPEN', 'Open'), ('WORKING', 'Working'), ('PENDING', 'Pending'), ('CLOSE', 'Close')
     ]
     issue_types = Issue.IssueType.choices if hasattr(Issue, 'IssueType') else [
-        ('ROOM', 'Room'), ('FLOOR', 'Floor')
+        ('ROOM', 'Room'), ('FLOOR', 'Floor'),('OTHER', 'other')
     ]
 
     context = {
