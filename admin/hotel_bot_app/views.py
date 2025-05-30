@@ -2207,7 +2207,7 @@ def issue_list(request):
         ('OPEN', 'Open'), ('WORKING', 'Working'), ('PENDING', 'Pending'), ('CLOSE', 'Close')
     ]
     issue_types = Issue.IssueType.choices if hasattr(Issue, 'IssueType') else [
-        ('ROOM', 'Room'), ('FLOOR', 'Floor')
+        ('ROOM', 'Room'), ('FLOOR', 'Floor'),('OTHER', 'other')
     ]
 
     context = {
