@@ -1362,6 +1362,7 @@ def installation_form(request):
         try:
             inventory_item = Inventory.objects.get(item=product_id)
             inventory_item.quantity_installed += 1
+            inventory_item.quantity_available-=1
             inventory_item.save()
         except Inventory.DoesNotExist:
             print(f"Inventory item with product_id {product_id} does not exist.")
