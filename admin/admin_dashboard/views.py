@@ -405,10 +405,10 @@ def _prepare_pie_chart_data(total_project_rooms, total_project_fully_completed_r
 	}
 
 EXPECTED_ROOM_TIMES = {
-	'pre_work': 7,
-	'install': 7,
-	'post_work': 4,
-	'total': 18
+	'pre_work': 14,
+	'install': 14,
+	'post_work': 7,
+	'total': 35
 }
 
 EXPECTED_FLOOR_TIMES = {

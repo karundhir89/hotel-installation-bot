@@ -92,14 +92,14 @@
                     <div class="card-header card-header-primary">
                         <div class="row">
                             <div class="col-md-6">
-                                <h3 class="card-title pt-2 text-dark">Dashboard</h3>
+                                <h4 class="card-title pt-2 text-dark">Dashboard</h4>
                             </div>
                         </div>
                     </div>
                     <div class="card-body">
                         
                         <!-- Floor Renovation Status Summary -->
-                        <h3 class="mt-3">Floor Renovation Status Overview</h3>
+                        <h4 class="mt-3">Floor Renovation Status Overview</h4>
                         <div class="row mb-4">
                             {% if floor_status_summary %}
                             <div class="col-md-4">
@@ -181,7 +181,7 @@
                         <hr class="my-4">
 
                         <!-- Dashboard tables and graphs goes here -->
-                        <h3 class="mt-3 mb-3">Floor Renovation Progress (Detailed)</h3>
+                        <h4 class="mt-3 mb-3">Floor Renovation Progress (Detailed)</h4>
                         <div class="row">
                             <div class="col-md-8">
                                 <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
@@ -225,7 +225,7 @@
                         <hr class="my-4">
 
                         <!-- Efficiency Tracking -->
-                        <h3 class="mt-3 mb-3">EFFICIENCY</h3>
+                        <h4 class="mt-3 mb-3">EFFICIENCY</h4>
                         <div class="row mb-3">
                             <div class="col-md-6">
                                 <h5 class="">ROOMS (DAYS)</h5>
@@ -337,7 +337,7 @@
                         <hr class="my-4">
 
                         <!-- Room Detail Report Section -->
-                        <h3 class="mt-3 mb-3">Detail Report by Room</h3>
+                        <h4 class="mt-3 mb-3">Detail Report by Room</h4>
                         <div class="card mb-4">
                             <div class="card-body">
                                 <form method="GET" action="{% url 'admin_dashboard:dashboard' %}" class="form-inline mb-4">
@@ -427,7 +427,7 @@
                     <div class="card-header card-header-info">
                         <div class="row">
                             <div class="col-md-12">
-                                <h3 class="card-title pt-2 text-dark">Top Issues</h3>
+                                <h4 class="card-title pt-2 text-dark">Top Issues</h4>
                             </div>
                         </div>
                     </div>
@@ -457,9 +457,7 @@
     </div>
 </div>
 
-<div>
-    <!-- {% include "chat_widget.html" %} -->
-</div>
+
 
 
 {# Safely pass Django context data to JavaScript as JSON #}
