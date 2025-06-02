@@ -149,16 +149,16 @@ def admin_issue_edit(request, issue_id):
 		form = IssueUpdateForm(request.POST, request.FILES, instance=issue)
 		if form.is_valid():
 			observer_ids = request.POST.getlist('observers')
-			issue_instance = form.save(commit=False) # Save partially to handle observers before final save
-			issue_instance.observers.clear()
-			for observer_id in observer_ids:
-				try:
-					observer = InvitedUser.objects.get(id=observer_id)
-					issue_instance.observers.add(observer)
-				except InvitedUser.DoesNotExist:
-					continue
-			issue_instance.save() # Save the instance with observers
-			form.save_m2m() # Save other M2M fields if any were added to IssueUpdateForm
+			issue_instance = form.save(commit=False)  # Save partially to handle observers before final save
+
+			if observer_ids:
+				issue_instance.observers.set(
+					InvitedUser.objects.filter(id__in=observer_ids)
+				)
+			# If no observer_ids submitted, keep existing observers unchanged
+
+			issue_instance.save()  # You missed this in the original snippet
+			form.save_m2m()  # Save other M2M fields
 
 			success_message = f"Issue #{issue.id} updated successfully."
 			messages.success(request, success_message)

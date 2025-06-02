@@ -217,7 +217,6 @@
                                     {{ form.title|as_crispy_field }}
                                 </div>
                             </div>
-
                             <div class="row">
                                 <div class="col-md-12 mb-3">
                                     {{ form.description|as_crispy_field }}
@@ -521,6 +520,24 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 <script>
+
+    document.getElementById('issue-form').addEventListener('submit', function (e) {
+    const selected = Array.from(document.querySelectorAll('.user-checkbox:checked'));
+    const selectedIds = selected.map(cb => cb.value);
+
+        // Remove any old observer inputs
+        document.querySelectorAll('input[name="observers"]').forEach(input => input.remove());
+
+        // Add hidden inputs for each selected observer
+        selectedIds.forEach(id => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'observers';
+            input.value = id;
+            this.appendChild(input);
+        });
+    });
+
     document.addEventListener('DOMContentLoaded', function () {
         // Support both radio and select for type field
         const typeRadios = document.querySelectorAll('input[name="type"]');
