@@ -1660,7 +1660,6 @@ def inventory_received_item_num(request):
 def save_schedule(request):
     if request.method == "POST":
         post_data = request.POST
-        print(123)
         schedule_id = post_data.get("schedule_id") or ""
         phase = post_data.get("phase") or ""
         floor = post_data.get("floor") or ""
@@ -1680,7 +1679,6 @@ def save_schedule(request):
         floor_completed = post_data.get("floor_completed") or ""
         floor_closes = post_data.get("floor_closes") or ""
         floor_opens = post_data.get("floor_opens") or ""
-        print("333")
         try:
             if schedule_id:
                 print("Editing ", custom_clearing_ends)
