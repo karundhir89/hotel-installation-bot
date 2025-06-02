@@ -17,6 +17,15 @@
     border-color: #5a6268 !important;
     color: #fff !important;
     }
+    .filter-button {
+    background-color: #5a6268;
+    border-color: #5a6268;
+    color: #fff;
+}
+.filter-button:hover {
+    background-color: #4e555b; /* slightly darker for hover effect */
+    border-color: #4e555b;
+}
 </style>
 <div class="content">
     <div class="container-fluid">
@@ -66,7 +75,7 @@
                                 </select>
                             </div>
                             <div class="col-6 col-md-2 col-md-2">
-                                <button type="submit" class="btn btn-primary w-100">Filter</button>
+                                <button type="submit" class="btn filter-button w-100">Filter</button>
                             </div>
                         </form>
                         {% if issues_page.object_list %}

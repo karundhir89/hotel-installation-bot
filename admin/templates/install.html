@@ -23,6 +23,13 @@
     th.sorting, th.sorting_asc, th.sorting_desc {
         cursor: pointer;
     }
+    .edit-button {
+    background-color: #999999;
+    border-color: #999999;
+    color: #fff;
+}
+
+
     /* Custom styles for modal form elements */
     #editInstallModal .form-check-input, #createInstallModal .form-check-input {
         width: 1.25rem;
@@ -91,13 +98,14 @@
                                         <td>{{ installation.install }}</td>
                                         <td>{{ installation.post_work }}</td>
                                         <td>{{ installation.retouching }}</td>
-                                        <td>
-                                            <button class="btn btn-sm btn-info edit-install-btn"
+                                       <td>
+                                            <button class="btn btn-sm edit-button edit-install-btn"
                                                     data-install-id="{{ installation.id }}"
                                                     data-room-number="{{ installation.room }}">
                                                 Edit
                                             </button>
                                         </td>
+
                                     </tr>
                                     {% endfor %}
                                 </tbody>
