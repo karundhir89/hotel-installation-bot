@@ -13,6 +13,23 @@
         gap:10px;
         margin-left:10px
     }
+    .uploadLoader{
+        position: absolute;
+        top:50%;
+        left: 50%;
+    }
+    /* HTML: <div class="loader"></div> */
+.loader {
+  width: 120px;
+  height: 20px;
+  background:
+   linear-gradient(#000 0 0) 0/0% no-repeat
+   #ddd;
+  animation: l1 2s infinite linear;
+}
+@keyframes l1 {
+    100% {background-size:100%}
+}
 </style>
 <div class="container mt-4">
     {% if messages %}
@@ -64,7 +81,7 @@
             </div>
         </div>
     </div>
-
+    
     <div class="comments-section">
         {% for comment in comment_data %}
             <div class="d-flex mb-3 mt-3 {% if comment.is_by_current_user %}justify-content-end{% else %}justify-content-start{% endif %}">
@@ -137,46 +154,58 @@
         {% empty %}
             <p class="text-muted text-center">No comments yet.</p>
         {% endfor %}
+        
+
     </div>
 
-    {% if can_comment %}
-    <form method="post" enctype="multipart/form-data" class="comment-form position-relative" action="{% url 'invited_user_comment_create' issue.id %}">
-        {% csrf_token %}
-        <div class="comment-input-container d-flex align-items-end bg-white rounded-4 shadow-sm p-3 gap-2 flex-wrap">
-            <div class="flex-grow-1">
-                {{ comment_form.text_content|add_class:"form-control comment-textarea-custom border-0"|attr:"placeholder:Write a comment..." }}
-            </div>
-    
-            <!-- Clip Icon Trigger -->
-            <div class="position-relative">
-                <button type="button" id="clipTrigger" title="Attach" style="background: none; border: none; padding: 0; margin: 0; cursor: pointer;">
-                    <i class="bi bi-paperclip text-muted " style="font-size: 30px;"></i>
-                </button>
-                
-                <!-- Popup menu -->
-                <div id="clipMenu" class="position-absolute border shadow-sm rounded p-3" style="display: none; bottom: 40px; right: 0; z-index: 10; background-color: rgb(233, 236, 240);width: 160px;">
-                    <!-- Attach Image -->
-                    <label for="{{ comment_form.images.id_for_label }}" class="d-block mb-2 " style="cursor: pointer;">
-                        <i class="bi bi-image me-1"></i> Upload Image
-                    </label>
-                    {{ comment_form.images|add_class:"d-none"|attr:"multiple:true"|attr:"accept:image/*" }}
-                    
-                    <!-- Attach Video -->
-                    <label for="{{ comment_form.video.id_for_label }}" class="d-block " style="cursor: pointer;">
-                        <i class="bi bi-camera-reels me-1"></i> Upload Video
-                    </label>
-                    {{ comment_form.video|add_class:"d-none" }}
-                    <!-- // -->
-                </div>
-                
-            </div>
-    
-            <!-- Submit Button -->
-            <button type="submit" class="send-btn btn-secondary rounded-circle d-flex align-items-center justify-content-center ms-2" title="Send Comment" style="width: 40px; height: 40px;">
-                <i class="bi bi-send-fill fs-5"></i>
-            </button>
+{% if can_comment %}
+<!-- Centered hidden upload loader -->
+<!-- Centered full-screen loader (initially hidden) -->
+
+
+
+<form method="post" enctype="multipart/form-data" class="comment-form position-relative" action="{% url 'invited_user_comment_create' issue.id %}">
+    {% csrf_token %}
+    <div class="comment-input-container d-flex align-items-end bg-white rounded-4 shadow-sm p-3 gap-2 flex-wrap">
+        <div class="flex-grow-1">
+            {{ comment_form.text_content|add_class:"form-control comment-textarea-custom border-0"|attr:"placeholder:Write a comment..." }}
         </div>
+
+        <!-- Clip Icon Trigger -->
+        <div class="position-relative">
+            <button type="button" id="clipTrigger" title="Attach" style="background: none; border: none; padding: 0; margin: 0; cursor: pointer;">
+                <i class="bi bi-paperclip text-muted " style="font-size: 30px;"></i>
+            </button>
+            
+            <!-- Popup menu -->
+            <div id="clipMenu" class="position-absolute border shadow-sm rounded p-3" style="display: none; bottom: 40px; right: 0; z-index: 10; background-color: rgb(233, 236, 240); width: 160px;">
+                <!-- Attach Image -->
+                <label for="{{ comment_form.images.id_for_label }}" class="d-block mb-2" style="cursor: pointer;">
+                    <i class="bi bi-image me-1"></i> Upload Image
+                </label>
+                {{ comment_form.images|add_class:"d-none"|attr:"multiple:true"|attr:"accept:image/*" }}
+
+                <!-- Attach Video -->
+                <label for="{{ comment_form.video.id_for_label }}" class="d-block" style="cursor: pointer;">
+                    <i class="bi bi-camera-reels me-1"></i> Upload Video
+                </label>
+                {{ comment_form.video|add_class:"d-none" }}
+
+            <div id="uploadLoader" style="display: none; z-index: 1050;">
+         <div class="loader text-secondary" role="status">
+        <span class="visually-hidden"></span>
+    </div>
+    </div>
+            </div>
+        </div>
+
+        <!-- Submit Button -->
+        <button type="submit" class="send-btn btn-secondary rounded-circle d-flex align-items-center justify-content-center ms-2" title="Send Comment" style="width: 40px; height: 40px;">
+            <i class="bi bi-send-fill fs-5"></i>
+        </button>
+    </div>
     </form>
+
     
     {% else %}
         <p class="text-muted">You do not have permission to comment on this issue.</p>
@@ -340,6 +369,43 @@
         }
     });
     
+    
 });
+document.addEventListener('DOMContentLoaded', function () {
+    const imageInput = document.getElementById("{{ comment_form.images.id_for_label }}");
+    const videoInput = document.getElementById("{{ comment_form.video.id_for_label }}");
+    const loader = document.getElementById("uploadLoader");
+
+    function showLoader() {
+        if (loader) {
+            loader.style.display = 'block';
+        }
+    }
+
+    if (imageInput) {
+        imageInput.addEventListener('change', function () {
+            if (this.files.length > 0) {
+                showLoader();
+                document.querySelector('form.comment-form').submit();
+            }
+        });
+    }
+
+    if (videoInput) {
+        videoInput.addEventListener('change', function () {
+            if (this.files.length > 0) {
+                showLoader();
+                document.querySelector('form.comment-form').submit();
+            }
+        });
+    }
+
+    // Scroll chat to bottom
+    const commentSection = document.querySelector('.comments-section');
+    if (commentSection) {
+        commentSection.scrollTop = commentSection.scrollHeight;
+    }
+});
+
     </script>
 {% endblock %}
