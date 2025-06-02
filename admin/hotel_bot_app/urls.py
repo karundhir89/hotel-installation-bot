@@ -10,6 +10,7 @@ urlpatterns = [
     path("api/get_chat_history/", get_chat_history, name="get_chat_history"),   
     path("user_management/", user_management, name="user_management"),  
     path("add_users_roles/", add_users_roles, name="add_users_roles"), 
+    path('users/roles/edit/<int:user_id>/', edit_users_roles, name='edit_users_roles'),
     path("user_login/", user_login, name="user_login"), 
     path('rooms/', room_data_list, name='room_data_list'),
     path('rooms/add/', add_room, name='add_room'),  # Add room view

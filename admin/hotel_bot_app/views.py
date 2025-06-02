@@ -403,15 +403,86 @@ def add_users_roles(request):
         roles_list = roles.split(", ") if roles else []
         print(name, email, type(roles_list), roles_list, status, password)
 
+        # Check if email already exists
+        if InvitedUser.objects.filter(email=email).exists():
+            return JsonResponse({"error": "User with this email already exists."}, status=400)
+
+
         user = InvitedUser.objects.create(
             name=name,
             role=roles_list,
             last_login=now(),
             email=email,
+            status=status if status else 'activated', # Default to activated if not provided
             password=bcrypt.hashpw(password.encode(), bcrypt.gensalt()),
         )
 
-    return render(request, "add_users_roles.html")
+        if 'admin' in roles_list:
+            auth_user = User.objects.create_user(
+                username=email,
+                password=password,
+                email=email,
+            )
+            auth_user.is_superuser = False
+            auth_user.save()
+        
+
+    return render(request, "add_users_roles.html") # Should not be reached if AJAX
+
+@login_required
+def edit_users_roles(request, user_id):
+    if request.method == "POST":
+        try:
+            print("edit_users_roles user_id::", user_id)
+            user = get_object_or_404(InvitedUser, id=user_id)
+            
+            name = request.POST.get("name")
+            email = request.POST.get("email")
+            roles = request.POST.get("role")
+            status = request.POST.get("status")
+            password = request.POST.get("password")
+
+            roles_list = roles.split(", ") if roles else []
+
+            # Check if email is being changed and if the new email already exists for another user
+            if email != user.email and InvitedUser.objects.filter(email=email).exclude(id=user_id).exists():
+                return JsonResponse({"error": "Another user with this email already exists."}, status=400)
+
+            user.name = name
+            user.email = email
+            user.role = roles_list
+            user.status = status if status else 'activated' # Default to activated
+
+            if password: # Only update password if a new one is provided
+                user.password = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
+            
+            user.save()
+
+            if 'admin' in roles_list:
+                auth_user = User.objects.create_user(
+                    username=email,
+                    password=password,
+                    email=email,
+                )
+                auth_user.is_superuser = False
+                auth_user.save()
+            else:
+                try:
+                    auth_user = User.objects.get(username=email)
+                    auth_user.delete()
+                except User.DoesNotExist:
+                    pass
+            return JsonResponse({"message": "User updated successfully!"})
+
+        except InvitedUser.DoesNotExist:
+            return JsonResponse({"error": "User not found."}, status=404)
+        except Exception as e:
+            logger.error(f"Error editing user {user_id}: {e}", exc_info=True)
+            return JsonResponse({"error": f"An error occurred: {str(e)}"}, status=500)
+    
+    # GET request to this URL isn't typical for AJAX forms but could render a form if needed.
+    # For now, redirect or return error for GET.
+    return JsonResponse({"error": "Invalid request method. Only POST is allowed for editing."}, status=405)
 
 @csrf_exempt
 def user_login(request):
