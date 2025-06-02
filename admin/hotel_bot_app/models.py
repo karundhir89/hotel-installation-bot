@@ -11,7 +11,7 @@ class InvitedUser(models.Model):
     role = ArrayField(models.CharField(max_length=100), blank=True, default=list)
     last_login = models.DateTimeField(null=True, blank=True)  # Allow null values
     email = models.EmailField(unique=True)
-    status = models.CharField(max_length=50, default='invited', null=False, blank=True)  # ✅ Add default
+    status = models.CharField(max_length=50, default='activated', null=False, blank=True)  # ✅ Add default
     password = models.BinaryField()
 
 

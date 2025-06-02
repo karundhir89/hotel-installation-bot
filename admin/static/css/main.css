@@ -193,10 +193,16 @@ iframe {
   position: relative;
 }
 
+.login_logo {
+  text-align: center;
+  margin: 20px auto 10px auto;
+}
 
-
-
-
+.login_logo img {
+  max-width: 300px;  /* Adjust size as needed */
+  height: auto;
+  display: inline-block;
+}
 
 
 
@@ -225,7 +231,7 @@ iframe {
 }
 
 .login100-form-title-1 {
-  font-family: Poppins-Bold;
+  font-family: Roboto, Helvetica, Arial, sans-serif;
   font-size: 30px;
   color: #fff;
   text-transform: uppercase;
@@ -249,9 +255,6 @@ iframe {
 /*==================================================================
 [ Form ]*/
 
-
-
-
 .login100-form {
   width: 100%;
   display: -webkit-box;
@@ -261,7 +264,7 @@ iframe {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  padding: 43px 88px 93px 190px;
+  padding: 54px 100px 55px 100px;
 }
 
 
