@@ -3,82 +3,83 @@
 {% block content %}
 
 <style>
-/* Increase height of table rows */
-#room_table tbody tr {
-    height: 60px;  /* Adjust row height (you can tweak this value as needed) */
-}
+    /* Increase height of table rows */
+    #room_table tbody tr {
+        height: 60px;  /* Adjust row height (you can tweak this value as needed) */
+    }
 
-/* Increase the width of columns */
-#room_table th, #room_table td {
-    white-space: nowrap; /* Prevent text wrapping to keep content in one line */
-    padding: 15px; /* Add more padding for better spacing */
-}
+    /* Increase the width of columns */
+    #room_table th, #room_table td {
+        white-space: nowrap; /* Prevent text wrapping to keep content in one line */
+        padding: 15px; /* Add more padding for better spacing */
+    }
 
-/* Specifically for the description column, allow it to expand */
-#room_table td:nth-child(8) {
-    max-width: 250px; /* Limit width for description */
-    overflow: hidden; /* Hide text overflow */
-    text-overflow: ellipsis; /* Display ellipsis (...) when the text is too long */
-    word-wrap: break-word; /* Allow text to break into multiple lines if needed */
-}
+    /* Specifically for the description column, allow it to expand */
+    #room_table td:nth-child(8) {
+        max-width: 250px; /* Limit width for description */
+        overflow: hidden; /* Hide text overflow */
+        text-overflow: ellipsis; /* Display ellipsis (...) when the text is too long */
+        word-wrap: break-word; /* Allow text to break into multiple lines if needed */
+    }
 
-/* Add extra padding to the description column for better readability */
-#room_table td:nth-child(8) {
-    padding-top: 10px;
-    padding-bottom: 10px;
-}
-th.sorting::after {
-    content: "\2195"; /* Arrow icon: ↕ */
-    margin-left: 5px;
-}
+    /* Add extra padding to the description column for better readability */
+    #room_table td:nth-child(8) {
+        padding-top: 10px;
+        padding-bottom: 10px;
+    }
+    th.sorting::after {
+        content: "\2195"; /* Arrow icon: ↕ */
+        margin-left: 5px;
+    }
 
-th.sorting_asc::after {
-    content: "\2191"; /* Up arrow: ↑ */
-}
+    th.sorting_asc::after {
+        content: "\2191"; /* Up arrow: ↑ */
+    }
 
-th.sorting_desc::after {
-    content: "\2193"; /* Down arrow: ↓ */
-}
+    th.sorting_desc::after {
+        content: "\2193"; /* Down arrow: ↓ */
+    }
 
-/* Optional: Adding cursor to indicate the column is sortable */
-th.sorting, th.sorting_asc, th.sorting_desc {
-    cursor: pointer;
-}
-.modal-overlay {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0,0,0,0.5);
-    z-index: 1000;
-}
-.modal {
-    display: none;
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    z-index: 1001;
-    padding: 20px;
-    border-radius: 5px;
-    border: 2ox solid green;
-}
-.modal-content {
-    width: 42%;
-    height: 74vh;
-    overflow: auto;
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-}
-.form-group {
-    padding: 10px;
-    position: relative;
-    margin: 20px 0 0;
-}
+    /* Optional: Adding cursor to indicate the column is sortable */
+    th.sorting, th.sorting_asc, th.sorting_desc {
+        cursor: pointer;
+    }
+    .modal-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.5);
+        z-index: 1000;
+    }
+    .modal {
+        display: none;
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 1001;
+        padding: 20px;
+        border-radius: 5px;
+        border: 2ox solid green;
+    }
+    .modal-content {
+        width: 42%;
+        height: 74vh;
+        overflow: auto;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+    }
+    .form-group {
+        padding: 10px;
+        position: relative;
+        margin: 20px 0 0;
+    }
+
 </style>
 
 <!-- Loader -->
@@ -276,6 +277,12 @@ th.sorting, th.sorting_asc, th.sorting_desc {
             order: [[0, 'desc']],  // Default sort by the first column (Room) in descending order
             pageLength: 10,    // Set default number of rows per page
             lengthMenu: [5, 10, 15, 20], // Allow different rows per page
+            dom : 'Bfr<"row pt-5"<"col-sm-12"t>><"row pt-3"<"col-sm-12 col-md-5"i><"col-sm-12 col-md-7"p>>',
+			buttons : [{
+	            extend: 'excel',
+	            text: 'Export To Excel',
+                className:'custom-download-btn'
+	        }]
         });
 
         // Open Add Room modal

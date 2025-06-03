@@ -43,6 +43,10 @@
     .install-modal .form-check, .install-modal label {
         color: #6b6b6b;
     }
+    .dataTables_filter{
+        margin-bottom: 0;
+    }
+    
 
 </style>
 
@@ -208,6 +212,12 @@
             order: [[0, 'asc']],
             pageLength: 10,
             lengthMenu: [5, 10, 15, 20],
+            dom : 'Bfr<"row pt-5"<"col-sm-12"t>><"row pt-3"<"col-sm-12 col-md-5"i><"col-sm-12 col-md-7"p>>',
+			buttons : [{
+	            extend: 'excel',
+	            text: 'Export To Excel',
+                className:'custom-download-btn'
+	        }]
         });
 
         // Handle Floor Filter change

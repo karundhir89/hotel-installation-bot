@@ -195,7 +195,12 @@ input:checked + .slider:before {
 .dataTables_filter {
     width: 244px;
     float: right;
-    margin-bottom: 40px;
+    margin-bottom: 0;
+}
+button.btn.btn-secondary.buttons-excel.buttons-html5.custom-download-btn {
+    background: #999999;
+    color: #fff;
+    border-color: #7a7a7a;
 }
 .dataTables_length{
     width: 200px;
