@@ -42,6 +42,9 @@ urlpatterns = [
     path('inventory_pull/', inventory_pull, name='inventory_pull'),
     path('chat_history/', chat_history, name='chat_history'),
     path('chat_history/<int:session_id>/', view_chat_history, name='view_chat_history'),
+    path('get_shipment_details/', get_shipment_details, name='get_shipment_details'),
+    path('check_container_exists/', check_container_exists, name='check_container_exists'),
+    path('get_container_data/', get_container_data, name='get_container_data'),
     
     # New URLs for Product Room Model
     path('product-room-models/', product_room_model_list, name='product_room_model_list'),

@@ -1415,7 +1415,6 @@ def installation_form(request):
         messages.warning(request, "You must be logged in to access the form.")
         return redirect("user_login")
     
-
     invited_user_id = request.session.get("user_id")
     invited_user_instance = get_object_or_404(InvitedUser, id=invited_user_id)
     checked_product_ids = []
@@ -1454,9 +1453,91 @@ def installation_form(request):
             messages.error(request, result["message"])
         return redirect("installation_form") # Redirect back to the form page
 
+    # Fetch data for the "Previous Summary" table - SIMPLIFIED APPROACH
+    previous_summaries = []
+    
+    try:
+        # Print for debugging
+        print("Fetching installation data for summary table...")
+        
+        # Get the installations with a simpler approach - limit to 50 for performance
+        installations = Installation.objects.all().order_by('room')
+        
+        room_numbers = [inst.room for inst in installations]
+        room_data_map = {
+            rd.room: rd for rd in RoomData.objects.filter(room__in=room_numbers).select_related('room_model_id')
+        }
+        
+        install_ids = [inst.id for inst in installations]
+        details = InstallDetail.objects.filter(installation_id__in=install_ids)
+        details_map = {}
+        for detail in details:
+            details_map.setdefault(detail.installation_id, []).append(detail)
+        
+        previous_summaries = []
+        for installation in installations:
+            room_data = room_data_map.get(installation.room)
+            room_type = room_data.room_model_id.room_model if room_data and room_data.room_model_id else "Unknown"
+            install_details = details_map.get(installation.id, [])
+            installed_count = sum(1 for d in install_details if d.status == "YES")
+            pending_count = sum(1 for d in install_details if d.status == "NO")
+            summary_entry = {
+                'room_number': installation.room,
+                'room_type': room_type,
+                'prework': "YES" if installation.prework == "YES" else "NO",
+                'product_arrival': "YES" if installation.product_arrived_at_floor == "YES" else "NO",
+                'retouching': "YES" if installation.retouching == "YES" else "NO",
+                'product_installed': f"{installed_count} item(s)",
+                'pending_products': f"{pending_count} item(s)",
+            }
+            previous_summaries.append(summary_entry)
+
+        page = request.GET.get('page', 1)
+        paginator = Paginator(previous_summaries, 50) # 50 summaries per page
+        try:
+            summaries_page = paginator.page(page)
+        except PageNotAnInteger:
+            summaries_page = paginator.page(1)
+        except EmptyPage:
+            summaries_page = paginator.page(paginator.num_pages)
+        return render(request, "installation_form.html", {
+            "invited_user": invited_user_instance, # Used by JS to prefill user name
+            "previous_summaries": summaries_page,
+             "is_paginated":summaries_page.has_other_pages(),
+            "page_obj": summaries_page, # For pagination in the template
+        })
+              
+              
+            #    Data for the previous summaries table      
+            # except Exception as inst_err:
+            #     print(f"Error processing installation {getattr(installation, 'id', 'unknown')}: {inst_err}")
+            #     # Skip this installation but continue processing others
+        
+        print(f"Successfully loaded {len(previous_summaries)} installation summaries")
+        
+    except Exception as e:
+        print(f"Critical error fetching installation summaries: {e}")
+        logger.error(f"Error fetching installation summaries: {e}", exc_info=True)
+        # Add a basic summary entry to ensure the page renders
+        previous_summaries = [
+            {
+                'room_number': 'Error',
+                'room_type': 'Error loading data',
+                'prework': 'N/A',
+                'product_arrival': 'N/A',
+                'retouching': 'N/A',
+                'product_installed': 'Error',
+                'pending_products': 'Error',
+            }
+        ]
+    
+    # Print summary for debugging
+    print(f"Final previous_summaries count: {len(previous_summaries)}")
+    
     # For GET request, the existing JS will call get_room_type to populate the form.
     return render(request, "installation_form.html", {
         "invited_user": invited_user_instance, # Used by JS to prefill user name
+        "previous_summaries": previous_summaries # Data for the previous summaries table
     })
 
 @session_login_required
@@ -1467,65 +1548,177 @@ def inventory_shipment(request):
     if user_id:
         try:
             user = InvitedUser.objects.get(id=user_id)
-            user_name = user.name  # Adjust field name if different
+            user_name = user.name
         except InvitedUser.DoesNotExist:
             pass
 
     if request.method == "POST":
         try:
-            client_item = request.POST.get("client_item")
+            # Get common form fields
             ship_date_str = request.POST.get("ship_date")
             expected_arrival_date_str = request.POST.get("expected_arrival_date")
-            if ship_date_str:
-                ship_date = make_aware(datetime.strptime(ship_date_str, "%Y-%m-%d"))
-
-            if expected_arrival_date_str:
-                expected_arrival_date = make_aware(datetime.strptime(expected_arrival_date_str, "%Y-%m-%d"))
-
-            qty_shipped = int(request.POST.get("qty_shipped") or 0)
-            supplier = request.POST.get("supplier")
             tracking_info = request.POST.get("tracking_info")
             
-            print("expected_arrival_date ::", expected_arrival_date )
-            print("ship_date ::", ship_date)
-            print("qty_shipped ::", qty_shipped)
-            print("supplier ::", supplier)
-            print("tracking_info ::", tracking_info)
-            print("user ::", user)
-            print("client_item ::", client_item)
-            # Save the shipping entry
-            Shipping.objects.create(
-                client_id=client_item,
-                item=client_item,
-                ship_date=ship_date,
-                ship_qty=qty_shipped,
-                supplier=supplier,
-                bol=tracking_info,
-                checked_by=user,
-                expected_arrival_date = expected_arrival_date
-            )
-            print("Shipping ::", Shipping.objects.all())
-
-            # Update Inventory
-            inventory = Inventory.objects.filter(
-                client_id__iexact=client_item,
-                item__iexact=client_item
-            ).first()            
-            print("inventory ::", inventory)
-            if inventory:
-                print(f"Before update: qty_ordered = {inventory.qty_ordered}")
-                inventory.qty_ordered = (inventory.qty_ordered or 0) + qty_shipped
-                inventory.save()
-                print(f"After update: qty_ordered = {inventory.qty_ordered}")
-
-                messages.success(request, "Shipment submitted and inventory updated!")
+            # Check if this is an edit operation
+            is_editing = request.POST.get("is_editing") == "1"
+            editing_container_id = request.POST.get("editing_container_id", "").strip()
+            
+            # Debug logging
+            print(f"Form submission - is_editing value: '{request.POST.get('is_editing')}'")
+            print(f"Form submission - is_editing: {is_editing}, editing_container_id: '{editing_container_id}'")
+            print(f"Current tracking_info (Container ID): '{tracking_info}'")
+            
+            # Parse dates
+            if ship_date_str:
+                ship_date = make_aware(datetime.strptime(ship_date_str, "%Y-%m-%d"))
+            else:
+                ship_date = None
+            
+            if expected_arrival_date_str:
+                expected_arrival_date = make_aware(datetime.strptime(expected_arrival_date_str, "%Y-%m-%d"))
+            else:
+                expected_arrival_date = None
+                
+            # Get multiple items data
+            client_items = request.POST.getlist("client_items")
+            product_names = request.POST.getlist("product_names")
+            suppliers = request.POST.getlist("suppliers")
+            quantities = request.POST.getlist("quantities")
+            
+            # Debug logging
+            print(f"Items to process: {len(client_items)}")
+            print(f"Client items: {client_items}")
+            print(f"Suppliers: {suppliers}")
+            
+            # Check if we have items to process
+            if not client_items:
+                messages.error(request, "No items added to shipment.")
+                return redirect("inventory_shipment")
+            
+            # Check if this container ID already exists (regardless of edit flag)
+            container_exists = False
+            if tracking_info:
+                existing_count = Shipping.objects.filter(bol=tracking_info).count()
+                if existing_count > 0:
+                    container_exists = True
+                    print(f"Container ID '{tracking_info}' already exists with {existing_count} items")
+                    
+                    # If not explicitly in edit mode, set it to edit mode
+                    if not is_editing:
+                        is_editing = True
+                        editing_container_id = tracking_info
+                        print(f"Setting to EDIT MODE because container ID '{tracking_info}' already exists")
+            
+            # If editing, delete all previous items with the same container_id
+            if is_editing and editing_container_id:
+                print(f"EDIT MODE DETECTED - Will replace items in container: {editing_container_id}")
+                
+                # Get count of deleted items for message
+                deleted_count = Shipping.objects.filter(bol=editing_container_id).count()
+                
+                # Debug logging
+                print(f"Deleting {deleted_count} items with container ID: {editing_container_id}")
+                
+                # Delete previous entries
+                Shipping.objects.filter(bol=editing_container_id).delete()
+                
+                # Use the original container ID when editing
+                tracking_info = editing_container_id
+                
+                print(f"After delete - using container ID: {tracking_info}")
+                
+                if container_exists:
+                    messages.info(request, f"Found existing container ID '{tracking_info}'. Updated with new items.")
+                else:
+                    messages.info(request, f"Deleted {deleted_count} previous items from this container.")
+            elif container_exists:
+                # This should not happen with our new logic, but just in case:
+                messages.warning(request, f"Container ID '{tracking_info}' already exists. Creating duplicate container.")
+            else:
+                print(f"NEW SUBMISSION MODE - Creating new container with ID: {tracking_info}")
+            
+            # Process each item
+            for i in range(len(client_items)):
+                client_item = client_items[i]
+                supplier = suppliers[i] if i < len(suppliers) else ""
+                qty_shipped = int(quantities[i]) if i < len(quantities) and quantities[i] else 0
+                
+                # Save the shipping entry
+                Shipping.objects.create(
+                    client_id=client_item,
+                    item=client_item,
+                    ship_date=ship_date,
+                    ship_qty=qty_shipped,
+                    supplier=supplier,
+                    bol=tracking_info,
+                    checked_by=user,
+                    expected_arrival_date=expected_arrival_date
+                )
+                
+                # Update Inventory
+                inventory = Inventory.objects.filter(
+                    client_id__iexact=client_item,
+                    item__iexact=client_item
+                ).first()
+                
+                if inventory:
+                    inventory.qty_ordered = (inventory.qty_ordered or 0) + qty_shipped
+                    inventory.save()
+            
+            if is_editing:
+                messages.success(request, f"Updated shipment with {len(client_items)} items successfully!")
+            else:
+                messages.success(request, f"New shipment with {len(client_items)} items submitted and inventory updated!")
             return redirect("inventory_shipment")
 
         except Exception as e:
             print("error ::", e)
             messages.error(request, f"Error submitting shipment: {str(e)}")
 
-    return render(request, "inventory_shipment.html", {"user_name": user_name})
+    # Get previous submissions (grouped by container ID/BOL)
+    previous_submissions = []
+    try:
+        # Get unique container IDs
+        containers = Shipping.objects.values('bol').distinct().order_by('-ship_date')
+        
+        for container in containers:
+            if not container['bol']:  # Skip empty BOLs
+                continue
+                
+            # Get all items for this container
+            items = Shipping.objects.filter(bol=container['bol']).order_by('-ship_date')
+            if not items:
+                continue
+                
+            first_item = items.first()  # Get the first item to extract common data
+            
+            # Format the dates for display
+            ship_date_display = first_item.ship_date.strftime('%Y-%m-%d') if first_item.ship_date else 'N/A'
+            expected_arrival_display = first_item.expected_arrival_date.strftime('%Y-%m-%d') if first_item.expected_arrival_date else 'N/A'
+            
+            # Get the checker name
+            checker = first_item.checked_by.name if first_item.checked_by else 'Unknown'
+            
+            # Create submission summary
+            submission = {
+                'id': first_item.id,  # Use the first item's ID as reference
+                'container_id': first_item.bol,
+                'ship_date': ship_date_display,
+                'expected_arrival': expected_arrival_display,
+                'product_count': items.count(),
+                'checked_by': checker,
+                # Add other fields as needed
+            }
+            
+            previous_submissions.append(submission)
+    except Exception as e:
+        print(f"Error fetching previous submissions: {e}")
+        # Don't halt the page if there's an error with previous submissions
+
+    return render(request, "inventory_shipment.html", {
+        "user_name": user_name,
+        "previous_submissions": previous_submissions
+    })
 
 @session_login_required
 def get_product_item_num(request):
@@ -1534,9 +1727,11 @@ def get_product_item_num(request):
         client_data_fetched = ProductData.objects.get(client_id__iexact=clientId)
         get_item = client_data_fetched.item if client_data_fetched.item else ""
         supplier = client_data_fetched.supplier if client_data_fetched.supplier else "N.A."
-        product_name = ProductData.objects.filter(item=client_data_fetched.item).values_list('description', flat=True).first() or ""
+        # Use description consistently (or fall back to item)
+        product_name = client_data_fetched.description or client_data_fetched.item or ""
+        print(f"get_product_item_num - client_id: {clientId}, product_name: {product_name}")
         return JsonResponse({"success": True, "room_type": get_item, "supplier": supplier, "product_name": product_name})
-    except RoomData.DoesNotExist:
+    except ProductData.DoesNotExist:
         return JsonResponse({"success": False})
 
 
@@ -2742,3 +2937,138 @@ def admin_save_installation_details(request):
             return JsonResponse({"success": False, "message": f"An server error occurred: {str(e)}"}, status=500)
 
     return JsonResponse({"error": "Invalid request method. Only POST is allowed."}, status=405)
+
+@session_login_required
+def get_shipment_details(request):
+    shipment_id = request.GET.get('shipment_id')
+    if not shipment_id:
+        return JsonResponse({'success': False, 'message': 'Shipment ID is required'})
+    
+    try:
+        # Get the reference shipping item
+        reference_item = get_object_or_404(Shipping, id=shipment_id)
+        container_id = reference_item.bol
+        
+        # Get all items with this container ID
+        items = Shipping.objects.filter(bol=container_id)
+        
+        # Format dates for form fields
+        ship_date = reference_item.ship_date.strftime('%Y-%m-%d') if reference_item.ship_date else ''
+        expected_arrival = reference_item.expected_arrival_date.strftime('%Y-%m-%d') if reference_item.expected_arrival_date else ''
+        
+        # Format items for JSON response
+        item_list = []
+        for item in items:
+            # Get product name from ProductData if available
+            try:
+                product = ProductData.objects.get(client_id=item.client_id)
+                product_name = product.description
+            except ProductData.DoesNotExist:
+                product_name = item.item or "Unknown Product"
+            
+            item_list.append({
+                'id': item.id,
+                'client_id': item.client_id,
+                'product_name': product_name,
+                'supplier': item.supplier or "N/A",
+                'quantity': item.ship_qty or 1
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'container_id': container_id,
+            'ship_date': ship_date,
+            'expected_arrival': expected_arrival,
+            'items': item_list
+        })
+    
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': str(e)})
+
+@session_login_required
+def check_container_exists(request):
+    """
+    API endpoint to check if a container ID already exists
+    """
+    container_id = request.GET.get('container_id', '').strip()
+    
+    if not container_id:
+        return JsonResponse({
+            'exists': False,
+            'count': 0
+        })
+    
+    # Count shipping entries with this container ID
+    count = Shipping.objects.filter(bol=container_id).count()
+    
+    return JsonResponse({
+        'exists': count > 0,
+        'count': count
+    })
+
+@session_login_required
+def get_container_data(request):
+    """
+    API endpoint to get all data for a specific container ID
+    """
+    container_id = request.GET.get('container_id', '').strip()
+    
+    if not container_id:
+        return JsonResponse({
+            'success': False,
+            'message': 'Container ID is required'
+        })
+    
+    try:
+        # Get all items with this container ID
+        items = Shipping.objects.filter(bol=container_id)
+        
+        if not items.exists():
+            return JsonResponse({
+                'success': False,
+                'message': f'No items found for container ID: {container_id}'
+            })
+        
+        # Get the first item to extract common data
+        first_item = items.first()
+        
+        # Format dates for form fields
+        ship_date = first_item.ship_date.strftime('%Y-%m-%d') if first_item.ship_date else ''
+        expected_arrival = first_item.expected_arrival_date.strftime('%Y-%m-%d') if first_item.expected_arrival_date else ''
+        
+        # Format items for JSON response
+        item_list = []
+        for item in items:
+            # Get product name from ProductData if available
+            try:
+                # Use case-insensitive lookup to match product data
+                product = ProductData.objects.get(client_id__iexact=item.client_id)
+                # Use description consistently (or fall back to item) - same as get_product_item_num
+                product_name = product.description or product.item or "Unknown Product"
+                print(f"get_container_data - client_id: {item.client_id}, product_name: {product_name}")
+            except ProductData.DoesNotExist:
+                product_name = item.item or "Unknown Product"
+                print(f"Product not found for client_id: {item.client_id}, using item name: {product_name}")
+            
+            item_list.append({
+                'id': item.id,
+                'client_id': item.client_id,
+                'product_name': product_name,
+                'supplier': item.supplier or "N/A",
+                'quantity': item.ship_qty or 1
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'container_id': container_id,
+            'ship_date': ship_date,
+            'expected_arrival': expected_arrival,
+            'items': item_list,
+            'count': len(item_list)
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'message': str(e)
+        })

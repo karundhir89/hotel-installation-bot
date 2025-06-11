@@ -20,73 +20,134 @@
   <div class="card shadow-sm rounded-4">
     <div class="card-body p-4">
       <h3 class="mb-4 text-center text-secondary py-4">Shipment Form</h3>
+      
+      <h4 class="form-title mb-4">Create New Shipment</h4>
 
-      <form method="post" action="{% url 'inventory_shipment' %}">
+      <form method="post" action="{% url 'inventory_shipment' %}" id="shipment-form">
         {% csrf_token %}
 
         <!-- Client & Product Info -->
-        <div class="row mb-4">
-          <div class="col-md-6 mb-3">
-            <label for="room_number" class="form-label">Client Item #</label>
-            <div class="input-group">
-              <input type="text" class="form-control" name="client_item" id="room_number" required>
-              <button type="button" class="btn btn-secondary" id="search_client">
-                <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true" id="search_spinner"></span>
-                <span id="search_text">Search</span>
-              </button>
-            </div>
-          </div>
-          <div class="col-md-6 mb-3">
-            <label for="product_name" class="form-label">Product Name</label>
-            <input type="text" class="form-control" name="product_namme" id="product_name" readonly required>
+         <div class="row mb-4">
+          <div class="col-md-6">
+            <label class="form-label">Container ID </label>
+            <input type="text" class="form-control" name="tracking_info" placeholder="Tracking number or BOL" required>
           </div>
         </div>
 
-        <hr class="my-4">
-
-        <!-- Shipping Info -->
+          <!-- Shipping Info -->
         <div class="row mb-4">
           <div class="col-md-6 mb-3">
             <label class="form-label">Ship Date</label>
             <input type="date" class="form-control" name="ship_date" required>
           </div>
-          <div class="col-md-6 mb-3">
-            <label class="form-label">QTY Shipped</label>
-            <input type="number" class="form-control" name="qty_shipped" min="0" required>
-          </div>
-          
-        </div>
-        <div class="row mb-4">
           <div class="col-md-6">
             <label class="form-label">Expected Arrival Date</label>
             <input type="date" class="form-control rounded-3" name="expected_arrival_date" required>
           </div>
-          <div class="col-md-6">
-            <label class="form-label">Tracking Information / BOL</label>
-            <input type="text" class="form-control" name="tracking_info" placeholder="Tracking number or BOL" required>
           </div>
-        </div>
-
-        <div class="row mb-4">
-          <div class="col-md-6 mb-3">
-            <label class="form-label">Supplier</label>
-            <input type="text" class="form-control" id="supplier" name="supplier" readonly required>
-          </div>
-          
-          <div class="col-md-6">
+          <div class ="row mb-4">
+            <div class="col-md-6">
             <label class="form-label">Checked By</label>
-            <input type="text" class="form-control rounded-3" readonly name="shipment_checked_by" placeholder="Name" required>
+            <input type="text" class="form-control rounded-3" readonly name="shipment_checked_by" placeholder="Name" required value="{{ user_name }}">
+          </div>
+         </div>
+
+         <hr class="my-5 " style="border-top: 1px solid #9b9b9b;">
+
+
+         <h4 class="mb-3">Add Item in Containers</h4>
+
+        <div class="row mb-4 mt-3">
+          <div class="col-md-6 mb-3">
+            <label for="room_number" class="form-label">Client Item #</label>
+            <div class="input-group">
+              <input type="text" class="form-control" name="client_item" id="room_number", placeholder="Enter Client Item #">
+              <button type="button" class="btn btn-secondary" id="add_item_btn">
+                <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true" id="search_spinner"></span>
+                <span id="search_text">Add</span>
+              </button>
+            </div>           
+          </div>
+          <div class="col-md-6 mb-3">
+            <label for = "product_name_preview" class="form-label">Product Name</label>
+            <input type="text" class="form-control" id="product_name_preview" name="product_name_preview" placeholder="Product Name" readonly>
+          </div>
+
+        </div>
+        <div class=""row mb-4">
+          <div class=""col-12">
+            <table class="table table-bordered table-striped" id="item_table">
+              <thead>
+                <tr>
+                  <th>Client Item #</th>
+                  <th>Product Name</th>
+                  <th>Supplier</th>
+                  <th>QTY Shipped</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="item_list">
+                <!-- Dynamic rows will be added here -->
+              </tbody>
+            </table>
           </div>
         </div>
 
+
+
+        <!-- Hidden field to track edit mode -->
+        <input type="hidden" name="is_editing" id="is_editing" value="0">
+        <input type="hidden" name="editing_container_id" id="editing_container_id" value="">
         
+        <!-- Hidden container for form data -->
+        <div id="form-data-container">
+        </div>
 
-        <hr class="my-4">
+        <div class="text-center mt-5">
+          <div class="d-inline-flex gap-3">
 
-        <div class="text-center">
+          <button type="button" class="btn btn-outline-secondary mr-3" id="clear-form-btn">Cancel / Clear Form</button>
           <button type="submit" class="btn btn-secondary btn-lg px-5">Submit</button>
         </div>
+        </div>
       </form>
+      <hr class="my-5" style="border-top: 1px solid #9b9b9b;">
+
+<h4 class="mb-3">Previous Submission</h4>
+<div class="row mb-4">
+  <div class="col-12">
+    <table class="table table-bordered table-striped">
+      <thead>
+        <tr>
+          <th>Container ID</th>
+          <th>Ship Date</th>
+          <th>Expected Arrival</th>
+          <th>Product Count</th>
+          <th>Checked By</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for submission in previous_submissions %}
+        <tr>
+          <td>{{ submission.container_id }}</td>
+          <td>{{ submission.ship_date }}</td>
+          <td>{{ submission.expected_arrival }}</td>
+          <td>{{ submission.product_count }}</td>
+          <td>{{ submission.checked_by }}</td>
+          <td>
+            <button type="button" class="btn btn-primary btn-sm edit-submission" data-id="{{ submission.id }}">Edit</button>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="6" class="text-center">No previous submissions found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
     </div>
   </div>
 </div>
@@ -102,50 +163,190 @@
   $(document).ready(function () {
     const userName = "{{ user_name }}";
 
+    // Helper function for loading states
+    function setLoading(action, isLoading) {
+      if (action === 'search_client') {
+        if (isLoading) {
+          $('#search_spinner').removeClass('d-none');
+          $('#search_text').text('Searching...');
+        } else {
+          $('#search_spinner').addClass('d-none');
+          $('#search_text').text('Add');
+        }
+      }
+    }
+        function debounce(func, wait) {
+      let timeout;
+      return function(...args) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), wait);
+      };
+    }
+        // Fetch product name as user types client item
+    $('#room_number').on('input', debounce(function() {
+      const clientItem = $(this).val().trim();
+      if (!clientItem) {
+        $('#product_name_preview').val('');
+        return;
+      }
+      // Optionally show loading state
+      $('#product_name_preview').val('Loading...');
+      $.ajax({
+        url: "{% url 'get_product_item_num' %}",
+        type: "GET",
+        data: { room_number: clientItem },
+        success: function(data) {
+          if (data.success) {
+            $('#product_name_preview').val(data.product_name);
+          } else {
+            $('#product_name_preview').val('Not found');
+          }
+        },
+        error: function() {
+          $('#product_name_preview').val('Not Product found');
+        }
+      });
+    }, 500)); 
+
+
     // Get current date in human-readable format (e.g., "April 6, 2025")
     const currentDate = new Date();
     currentDate.setDate(currentDate.getDate() + 30); // Add 30 days
     const isoDate = currentDate.toISOString().split('T')[0]; // "YYYY-MM-DD"
 
     // Auto-fill product item number
-    $('#search_client').on('click', function () {
-      const roomNumber = $('#room_number').val();
-      if (!roomNumber) {
-        toastr.error("Please enter a client item number");
+    $('#add_item_btn').on('click', function () {
+      const clientItem = $('#room_number').val();
+      if (!clientItem) {
+        toastr.error("Please enter a Valid Client Item");
         return;
       }
+
+      $('#add_item_btn').prop('disabled', true);
 
       setLoading('search_client', true);
 
       $.ajax({
         url: "{% url 'get_product_item_num' %}",
         type: "GET",
-        data: { room_number: roomNumber },
+        data: { room_number: clientItem },
         success: function (data) {
           if (data.success) {
-            $('#product_name').val(data.product_name);
-            $('#supplier').val(data.supplier);
-            $('input[name="expected_arrival_date"]').val(isoDate);  // Set formatted date
-            $('input[name="shipment_checked_by"]').val(userName);  // Set checked by
+            let exists = false;
+            $('#item_list tr').each(function () {
+              if ($(this).find('td').eq(0).text().trim() === clientItem) {
+                exists = true;
+              }
+            });
+            if (exists) {
+              toastr.error("Client Item already exists in the list");
+              return;
+            }
+            
+            console.log("Product data from API:", data);
+            const productName = data.product_name || "Unknown Product";
+            
+            //add row to the table
+            $('#item_list').append(`
+              <tr>
+                <td class="client-item">${clientItem}</td>
+                <td class="product-name">${productName}</td>
+                <td class="supplier">${data.supplier}</td>
+                <td>
+                  <input type="number" class="form-control qty-input" min="1" value="1" required/>
+                </td>
+                <td>
+                  <button type="button" class="btn btn-danger btn-sm delete-row">Delete</button>
+                </td>
+              </tr>
+            `);
+            $('#room_number').val('');
+            $('#product_name_preview').val('');
           } else {
-            toastr.error("Room number does not exist");
-            $('#product_name').val('');
-            $('#supplier').val('');
+            toastr.error("Client item does not exist");
           }
         },
         error: function () {
-          toastr.error("Error Fetching Product Item");
-          $('#product_name').val('');
-          $('#supplier').val('');
+          toastr.error("Error fetching product info");
         },
         complete: function() {
           setTimeout(function() {
+            $('#add_item_btn').prop('disabled', false);
             setLoading('search_client', false);
           }, 100);
         }
       });
     });
 
+    // Set up the form submission
+    $('#shipment-form').on('submit', function(e) {
+      // Clear the dynamic form data container only
+      $('#form-data-container').empty();
+      
+      // Read the edit mode flags (now separate from the container)
+      const isEditing = $('#is_editing').val();
+      const editingContainerId = $('#editing_container_id').val();
+      
+      // Debug logging
+      console.log(`Form submission - is_editing: ${isEditing}, editing_container_id: ${editingContainerId}`);
+      
+      // Check if there are items in the table
+      if ($('#item_list tr').length === 0) {
+        e.preventDefault();
+        toastr.error("Please add at least one item to the shipment");
+        return false;
+      }
+      
+      // No need to re-add the edit mode fields since they're now outside the cleared container
+      
+      // Collect data from the table
+      $('#item_list tr').each(function(index) {
+        const clientItem = $(this).find('.client-item').text().trim();
+        const productName = $(this).find('.product-name').text().trim();
+        const supplier = $(this).find('.supplier').text().trim();
+        const quantity = $(this).find('.qty-input').val();
+        
+        console.log(`Adding item ${index+1}: ${clientItem}, supplier: ${supplier}, qty: ${quantity}`);
+        
+        // Add hidden fields to the form
+        $('#form-data-container').append(`
+          <input type="hidden" name="client_items" value="${clientItem}">
+          <input type="hidden" name="product_names" value="${productName}">
+          <input type="hidden" name="suppliers" value="${supplier}">
+          <input type="hidden" name="quantities" value="${quantity}">
+        `);
+      });
+      
+      console.log(`Form submission complete with ${$('#item_list tr').length} items`);
+      
+      // Let the form submit normally
+      return true;
+    });
+
+    // Handle edit button clicks for previous submissions
+    $('.edit-submission').on('click', function() {
+      const submissionId = $(this).data('id');
+      
+      // Get the container ID from the table row
+      const containerId = $(this).closest('tr').find('td').first().text().trim();
+      console.log("Edit button clicked. Submission ID:", submissionId, "Container ID:", containerId);
+      
+      if (containerId) {
+        // Use the common function to load container data
+        loadContainerData(containerId);
+        
+        // Scroll to the form
+        $('html, body').animate({
+          scrollTop: $("#shipment-form").offset().top - 100
+        }, 500);
+      } else {
+        toastr.error("Could not determine container ID from the table row.");
+      }
+    });
+
+    $('#item_list').on('click', '.delete-row', function () {
+      $(this).closest('tr').remove();
+    });
     // Toastr for Django messages
     {% if messages %}
     toastr.options = {
@@ -161,6 +362,126 @@
       {% endif %}
     {% endfor %}
     {% endif %}
+
+    // Reset form - add this right before $(document).ready function ends
+    function resetForm() {
+      // Clear the item table
+      $('#item_list').empty();
+      
+      // Reset form fields
+      $('#shipment-form')[0].reset();
+      
+      // Clear product preview field
+      $('#product_name_preview').val('');
+      
+      // Reset edit mode
+      $('#is_editing').val('0');
+      $('#editing_container_id').val('');
+      
+      // Reset any UI changes that might indicate edit mode
+      $('.form-title').text('Create New Shipment');
+      $('input[name="tracking_info"]').removeClass('border-warning');
+      
+      toastr.info('Form has been cleared. You can start a new shipment.');
+    }
+    
+    // Add button to reset form
+    $('#clear-form-btn').on('click', function() {
+      resetForm();
+    });
+
+    // Container ID validation
+    $('input[name="tracking_info"]').on('blur', function() {
+      const containerId = $(this).val().trim();
+      
+      if (!containerId) {
+        return; // Empty container ID, no need to check
+      }
+      
+      // Check if this container ID exists
+      $.ajax({
+        url: "{% url 'check_container_exists' %}",
+        type: "GET",
+        data: { container_id: containerId },
+        success: function(data) {
+          if (data.exists && data.count > 0) {
+            toastr.info(`Container ID "${containerId}" exists. Loading existing data...`);
+            
+            // Highlight the field to indicate it will trigger an edit operation
+            $('input[name="tracking_info"]').addClass('border-warning');
+            
+            // Load the container data using the existing edit functionality
+            loadContainerData(containerId);
+          } else {
+            // Reset any warning styles
+            $('input[name="tracking_info"]').removeClass('border-warning');
+            $('.form-title').text('Create New Shipment');
+          }
+        }
+      });
+    });
+    
+    // Function to load container data
+    function loadContainerData(containerId) {
+      // Show loading indicator
+      toastr.info("Loading container data...");
+      
+      // Fetch container details via AJAX
+      $.ajax({
+        url: "{% url 'get_container_data' %}",
+        type: "GET",
+        data: { container_id: containerId },
+        success: function(data) {
+          if (data.success) {
+            console.log("Container data received:", data);
+            
+            // Clear the item table
+            $('#item_list').empty();
+            
+            // Fill in the form fields
+            $('input[name="tracking_info"]').val(data.container_id);
+            $('input[name="ship_date"]').val(data.ship_date);
+            $('input[name="expected_arrival_date"]').val(data.expected_arrival);
+            
+            // Mark this as an edit operation
+            $('#is_editing').val('1');
+            $('#editing_container_id').val(data.container_id);
+            
+            // Update form title to show we're editing
+            $('.form-title').text(`Editing Shipment: Container ID ${data.container_id}`);
+            
+            // Add items to the table
+            data.items.forEach(function(item, index) {
+              console.log(`Item ${index+1}:`, item);
+              console.log(`  - client_id: ${item.client_id}`);
+              console.log(`  - product_name: ${item.product_name}`);
+              
+              $('#item_list').append(`
+                <tr>
+                  <td class="client-item">${item.client_id}</td>
+                  <td class="product-name">${item.product_name || "Unknown Product"}</td>
+                  <td class="supplier">${item.supplier}</td>
+                  <td>
+                    <input type="number" class="form-control qty-input" min="1" value="${item.quantity}" required/>
+                  </td>
+                  <td>
+                    <button type="button" class="btn btn-danger btn-sm delete-row">Delete</button>
+                  </td>
+                </tr>
+              `);
+            });
+            
+            toastr.success("Container data loaded successfully!");
+          } else {
+            console.error("Failed to load container data:", data.message);
+            toastr.error("Failed to load container data: " + data.message);
+          }
+        },
+        error: function() {
+          toastr.error("Error loading container data. Please try again.");
+        }
+      });
+    }
   });
 </script>
 {% endblock %}

@@ -70,6 +70,66 @@
                     <button type="submit" class="btn btn-secondary btn-lg px-5">Submit</button>
                 </div>
             </form>
+
+<hr class="my-5">
+
+<h4 class="mb-3">Previous Summary</h4>
+<div class="row mb-4">
+  <div class="col-12">
+    <table class="table table-bordered table-striped" id="summary-table">
+      <thead>
+        <tr>
+          <th>Room #</th>
+          <th>Prework</th>
+          <th>Product Arrival</th>
+          <th>Retouching</th>
+          <th>Product Installed</th>
+          <th>Pending Products</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for summary in previous_summaries %}
+        <tr>
+          <td>{{ summary.room_number }}</td>
+          <td>{{ summary.prework }}</td>
+          <td>{{ summary.product_arrival }}</td>
+          <td>{{ summary.retouching }}</td>
+          <td>{{ summary.product_installed }}</td>
+          <td>{{ summary.pending_products }}</td>
+          <td>
+            <button type="button" class="btn btn-primary btn-sm edit-summary" data-room="{{ summary.room_number }}" data-roomtype="{{ summary.room_type }}">Edit</button>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" class="text-center">No previous summaries found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <!-- Pagination controls -->
+{% if is_paginated %}
+<nav>
+  <ul class="pagination justify-content-center">
+    {% if page_obj.has_previous %}
+      <li class="page-item">
+        <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
+      </li>
+    {% endif %}
+    <li class="page-item disabled">
+      <span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+    </li>
+    {% if page_obj.has_next %}
+      <li class="page-item">
+        <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
+      </li>
+    {% endif %}
+  </ul>
+</nav>
+{% endif %}
+  </div>
+</div>
         </div>
     </div>
 </div>
@@ -212,6 +272,25 @@
       {% endif %}
     {% endfor %}
     {% endif %}
+    
+    // Handle edit button click in the previous summary table
+    $('.edit-summary').on('click', function() {
+      const roomNumber = $(this).data('room');
+      
+      // Set the room number in the search field
+      $('#room_number').val(roomNumber);
+      
+      // Trigger the search button click to load room data
+      $('#search_room').trigger('click');
+      
+      // Scroll to the top of the form for better UX
+      $('html, body').animate({
+        scrollTop: $("#room_number").offset().top - 100
+      }, 500);
+      
+      // Visual feedback
+      toastr.info(`Loading details for room ${roomNumber}...`);
+    });
   });
 </script>
 {% endblock %}
