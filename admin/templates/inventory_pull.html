@@ -7,6 +7,8 @@
 <div class="container-lg my-5">
   <div class="card shadow-sm rounded-4 p-4">
     <h3 class="mb-4 text-center text-secondary py-4">Inventory Pull Form</h3>
+    
+
 
     <form method="post">
       {% csrf_token %}
@@ -32,7 +34,10 @@
       <hr class="my-4">
 
       <div class="text-center mt-4">
-        <button type="submit" class="btn btn-secondary px-5 rounded-3 shadow-sm">Submit</button>
+        <div class="d-inline-flex gap-3">
+          <button type="submit" class="btn btn-secondary px-5 rounded-3 shadow-sm mr-3">Submit</button>
+          <a href="{% url 'issue_create' %}" class="btn btn-secondary px-4 rounded-3 shadow-sm ">Report New Issue</a>
+        </div>
       </div>
     </form>
   </div>

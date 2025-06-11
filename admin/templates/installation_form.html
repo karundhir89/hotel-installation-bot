@@ -39,6 +39,8 @@
         <div class="card-body p-4">
             <h3 class="mb-4 text-center text-secondary py-4">Installation Control Form</h3>
 
+
+
             <form method="post">
                 {% csrf_token %}
 
@@ -67,7 +69,10 @@
 
                 <!-- Submit Button -->
                 <div class="text-center">
-                    <button type="submit" class="btn btn-secondary btn-lg px-5">Submit</button>
+                    <div class="d-inline-flex gap-3">
+                        <button type="submit" class="btn btn-secondary btn-lg px-5 mr-3">Submit</button>
+                        <a href="{% url 'issue_create' %}" class="btn btn-secondary btn-lg px-4">Report New Issue</a>
+                    </div>
                 </div>
             </form>
 
