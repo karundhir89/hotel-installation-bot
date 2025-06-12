@@ -33,6 +33,7 @@ class MultipleFileInput(forms.FileInput):
 
     def value_omitted_from_data(self, data, files, name):
         return not files.getlist(name)  # True if no files  
+        
 class IssueForm(forms.ModelForm):
     # initial_comment = forms.CharField(widget=forms.Textarea, required=True)
     images = MultipleFileField(

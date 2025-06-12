@@ -1415,7 +1415,6 @@ def installation_form(request):
         messages.warning(request, "You must be logged in to access the form.")
         return redirect("user_login")
     
-
     invited_user_id = request.session.get("user_id")
     invited_user_instance = get_object_or_404(InvitedUser, id=invited_user_id)
     checked_product_ids = []
@@ -1454,9 +1453,91 @@ def installation_form(request):
             messages.error(request, result["message"])
         return redirect("installation_form") # Redirect back to the form page
 
+    # Fetch data for the "Previous Summary" table - SIMPLIFIED APPROACH
+    previous_summaries = []
+    
+    try:
+        # Print for debugging
+        print("Fetching installation data for summary table...")
+        
+        # Get the installations with a simpler approach - limit to 50 for performance
+        installations = Installation.objects.all().order_by('room')
+        
+        room_numbers = [inst.room for inst in installations]
+        room_data_map = {
+            rd.room: rd for rd in RoomData.objects.filter(room__in=room_numbers).select_related('room_model_id')
+        }
+        
+        install_ids = [inst.id for inst in installations]
+        details = InstallDetail.objects.filter(installation_id__in=install_ids)
+        details_map = {}
+        for detail in details:
+            details_map.setdefault(detail.installation_id, []).append(detail)
+        
+        previous_summaries = []
+        for installation in installations:
+            room_data = room_data_map.get(installation.room)
+            room_type = room_data.room_model_id.room_model if room_data and room_data.room_model_id else "Unknown"
+            install_details = details_map.get(installation.id, [])
+            installed_count = sum(1 for d in install_details if d.status == "YES")
+            pending_count = sum(1 for d in install_details if d.status == "NO")
+            summary_entry = {
+                'room_number': installation.room,
+                'room_type': room_type,
+                'prework': "YES" if installation.prework == "YES" else "NO",
+                'product_arrival': "YES" if installation.product_arrived_at_floor == "YES" else "NO",
+                'retouching': "YES" if installation.retouching == "YES" else "NO",
+                'product_installed': f"{installed_count} item(s)",
+                'pending_products': f"{pending_count} item(s)",
+            }
+            previous_summaries.append(summary_entry)
+
+        page = request.GET.get('page', 1)
+        paginator = Paginator(previous_summaries, 50) # 50 summaries per page
+        try:
+            summaries_page = paginator.page(page)
+        except PageNotAnInteger:
+            summaries_page = paginator.page(1)
+        except EmptyPage:
+            summaries_page = paginator.page(paginator.num_pages)
+        return render(request, "installation_form.html", {
+            "invited_user": invited_user_instance, # Used by JS to prefill user name
+            "previous_summaries": summaries_page,
+             "is_paginated":summaries_page.has_other_pages(),
+            "page_obj": summaries_page, # For pagination in the template
+        })
+              
+              
+            #    Data for the previous summaries table      
+            # except Exception as inst_err:
+            #     print(f"Error processing installation {getattr(installation, 'id', 'unknown')}: {inst_err}")
+            #     # Skip this installation but continue processing others
+        
+        print(f"Successfully loaded {len(previous_summaries)} installation summaries")
+        
+    except Exception as e:
+        print(f"Critical error fetching installation summaries: {e}")
+        logger.error(f"Error fetching installation summaries: {e}", exc_info=True)
+        # Add a basic summary entry to ensure the page renders
+        previous_summaries = [
+            {
+                'room_number': 'Error',
+                'room_type': 'Error loading data',
+                'prework': 'N/A',
+                'product_arrival': 'N/A',
+                'retouching': 'N/A',
+                'product_installed': 'Error',
+                'pending_products': 'Error',
+            }
+        ]
+    
+    # Print summary for debugging
+    print(f"Final previous_summaries count: {len(previous_summaries)}")
+    
     # For GET request, the existing JS will call get_room_type to populate the form.
     return render(request, "installation_form.html", {
         "invited_user": invited_user_instance, # Used by JS to prefill user name
+        "previous_summaries": previous_summaries # Data for the previous summaries table
     })
 
 @session_login_required
@@ -1467,65 +1548,192 @@ def inventory_shipment(request):
     if user_id:
         try:
             user = InvitedUser.objects.get(id=user_id)
-            user_name = user.name  # Adjust field name if different
+            user_name = user.name
         except InvitedUser.DoesNotExist:
             pass
 
     if request.method == "POST":
         try:
-            client_item = request.POST.get("client_item")
+            # Get common form fields
             ship_date_str = request.POST.get("ship_date")
             expected_arrival_date_str = request.POST.get("expected_arrival_date")
-            if ship_date_str:
-                ship_date = make_aware(datetime.strptime(ship_date_str, "%Y-%m-%d"))
-
-            if expected_arrival_date_str:
-                expected_arrival_date = make_aware(datetime.strptime(expected_arrival_date_str, "%Y-%m-%d"))
-
-            qty_shipped = int(request.POST.get("qty_shipped") or 0)
-            supplier = request.POST.get("supplier")
             tracking_info = request.POST.get("tracking_info")
             
-            print("expected_arrival_date ::", expected_arrival_date )
-            print("ship_date ::", ship_date)
-            print("qty_shipped ::", qty_shipped)
-            print("supplier ::", supplier)
-            print("tracking_info ::", tracking_info)
-            print("user ::", user)
-            print("client_item ::", client_item)
-            # Save the shipping entry
-            Shipping.objects.create(
-                client_id=client_item,
-                item=client_item,
-                ship_date=ship_date,
-                ship_qty=qty_shipped,
-                supplier=supplier,
-                bol=tracking_info,
-                checked_by=user,
-                expected_arrival_date = expected_arrival_date
-            )
-            print("Shipping ::", Shipping.objects.all())
-
-            # Update Inventory
-            inventory = Inventory.objects.filter(
-                client_id__iexact=client_item,
-                item__iexact=client_item
-            ).first()            
-            print("inventory ::", inventory)
-            if inventory:
-                print(f"Before update: qty_ordered = {inventory.qty_ordered}")
-                inventory.qty_ordered = (inventory.qty_ordered or 0) + qty_shipped
-                inventory.save()
-                print(f"After update: qty_ordered = {inventory.qty_ordered}")
-
-                messages.success(request, "Shipment submitted and inventory updated!")
+            # Check if this is an edit operation
+            is_editing = request.POST.get("is_editing") == "1"
+            editing_container_id = request.POST.get("editing_container_id", "").strip()
+            
+            # Debug logging
+            print(f"Form submission - is_editing value: '{request.POST.get('is_editing')}'")
+            print(f"Form submission - is_editing: {is_editing}, editing_container_id: '{editing_container_id}'")
+            print(f"Current tracking_info (Container ID): '{tracking_info}'")
+            
+            # Parse dates
+            if ship_date_str:
+                ship_date = make_aware(datetime.strptime(ship_date_str, "%Y-%m-%d"))
+            else:
+                ship_date = None
+            
+            if expected_arrival_date_str:
+                expected_arrival_date = make_aware(datetime.strptime(expected_arrival_date_str, "%Y-%m-%d"))
+            else:
+                expected_arrival_date = None
+                
+            # Get multiple items data
+            client_items = request.POST.getlist("client_items")
+            product_names = request.POST.getlist("product_names")
+            suppliers = request.POST.getlist("suppliers")
+            quantities = request.POST.getlist("quantities")
+            
+            # Debug logging
+            print(f"Items to process: {len(client_items)}")
+            print(f"Client items: {client_items}")
+            print(f"Suppliers: {suppliers}")
+            
+            # Check if we have items to process
+            if not client_items:
+                messages.error(request, "No items added to shipment.")
+                return redirect("inventory_shipment")
+            
+            # Check if this container ID already exists (regardless of edit flag)
+            container_exists = False
+            if tracking_info:
+                existing_count = Shipping.objects.filter(bol=tracking_info).count()
+                if existing_count > 0:
+                    container_exists = True
+                    print(f"Container ID '{tracking_info}' already exists with {existing_count} items")
+                    
+                    # If not explicitly in edit mode, set it to edit mode
+                    if not is_editing:
+                        is_editing = True
+                        editing_container_id = tracking_info
+                        print(f"Setting to EDIT MODE because container ID '{tracking_info}' already exists")
+            
+            # If editing, delete all previous items with the same container_id
+            if is_editing and editing_container_id:
+                print(f"EDIT MODE DETECTED - Will replace items in container: {editing_container_id}")
+                
+                # Get count of deleted items for message
+                deleted_count = Shipping.objects.filter(bol=editing_container_id).count()
+                
+                # Debug logging
+                print(f"Deleting {deleted_count} items with container ID: {editing_container_id}")
+                
+                # Delete previous entries
+                Shipping.objects.filter(bol=editing_container_id).delete()
+                
+                # Use the original container ID when editing
+                tracking_info = editing_container_id
+                
+                print(f"After delete - using container ID: {tracking_info}")
+                
+                if container_exists:
+                    messages.info(request, f"Found existing container ID '{tracking_info}'. Updated with new items.")
+                else:
+                    messages.info(request, f"Deleted {deleted_count} previous items from this container.")
+            elif container_exists:
+                # This should not happen with our new logic, but just in case:
+                messages.warning(request, f"Container ID '{tracking_info}' already exists. Creating duplicate container.")
+            else:
+                print(f"NEW SUBMISSION MODE - Creating new container with ID: {tracking_info}")
+            
+            # Process each item
+            for i in range(len(client_items)):
+                client_item = client_items[i]
+                supplier = suppliers[i] if i < len(suppliers) else ""
+                qty_shipped = int(quantities[i]) if i < len(quantities) and quantities[i] else 0
+                
+                # Save the shipping entry
+                Shipping.objects.create(
+                    client_id=client_item,
+                    item=client_item,
+                    ship_date=ship_date,
+                    ship_qty=qty_shipped,
+                    supplier=supplier,
+                    bol=tracking_info,
+                    checked_by=user,
+                    expected_arrival_date=expected_arrival_date
+                )
+                
+                # Update Inventory
+                inventory = Inventory.objects.filter(
+                    client_id__iexact=client_item,
+                    item__iexact=client_item
+                ).first()
+                
+                if inventory:
+                    inventory.qty_ordered = (inventory.qty_ordered or 0) + qty_shipped
+                    inventory.save()
+            
+            if is_editing:
+                messages.success(request, f"Updated shipment with {len(client_items)} items successfully!")
+            else:
+                messages.success(request, f"New shipment with {len(client_items)} items submitted and inventory updated!")
             return redirect("inventory_shipment")
 
         except Exception as e:
             print("error ::", e)
             messages.error(request, f"Error submitting shipment: {str(e)}")
 
-    return render(request, "inventory_shipment.html", {"user_name": user_name})
+    # Get previous submissions (grouped by container ID/BOL)
+    previous_submissions = []
+    try:
+        # Get unique container IDs
+        containers = Shipping.objects.values('bol').distinct().order_by('-ship_date')
+        
+        for container in containers:
+            if not container['bol']:  # Skip empty BOLs
+                continue
+                
+            # Get all items for this container
+            items = Shipping.objects.filter(bol=container['bol']).order_by('-ship_date')
+            if not items:
+                continue
+                
+            first_item = items.first()  # Get the first item to extract common data
+            
+            # Format the dates for display
+            ship_date_display = first_item.ship_date.strftime('%Y-%m-%d') if first_item.ship_date else 'N/A'
+            expected_arrival_display = first_item.expected_arrival_date.strftime('%Y-%m-%d') if first_item.expected_arrival_date else 'N/A'
+            
+            # Get the checker name
+            checker = first_item.checked_by.name if first_item.checked_by else 'Unknown'
+            
+            # Create submission summary
+            submission = {
+                'id': first_item.id,  # Use the first item's ID as reference
+                'container_id': first_item.bol,
+                'ship_date': ship_date_display,
+                'expected_arrival': expected_arrival_display,
+                'product_count': items.count(),
+                'checked_by': checker,
+                # Add other fields as needed
+            }
+            
+            previous_submissions.append(submission)
+    except Exception as e:
+        print(f"Error fetching previous submissions: {e}")
+        # Don't halt the page if there's an error with previous submissions
+    page = request.GET.get('page', 1)
+    paginator = Paginator(previous_submissions, 10)  # 10 submissions per page
+    try:
+        previous_submissions_page = paginator.page(page)
+    except PageNotAnInteger:
+        previous_submissions_page = paginator.page(1)
+    except EmptyPage:
+        previous_submissions_page = paginator.page(paginator.num_pages)
+    # Render the page with user name and previous submissions
+    return render(request, "inventory_shipment.html", {
+        "user_name": user_name,
+        "previous_submissions": previous_submissions_page,
+        "is_paginated": previous_submissions_page.has_other_pages(),
+        "page_obj": previous_submissions_page,  # For pagination in the template
+    })
+
+    return render(request, "inventory_shipment.html", {
+        "user_name": user_name,
+        "previous_submissions": previous_submissions
+    })
 
 @session_login_required
 def get_product_item_num(request):
@@ -1534,9 +1742,11 @@ def get_product_item_num(request):
         client_data_fetched = ProductData.objects.get(client_id__iexact=clientId)
         get_item = client_data_fetched.item if client_data_fetched.item else ""
         supplier = client_data_fetched.supplier if client_data_fetched.supplier else "N.A."
-        product_name = ProductData.objects.filter(item=client_data_fetched.item).values_list('description', flat=True).first() or ""
+        # Use description consistently (or fall back to item)
+        product_name = client_data_fetched.description or client_data_fetched.item or ""
+        print(f"get_product_item_num - client_id: {clientId}, product_name: {product_name}")
         return JsonResponse({"success": True, "room_type": get_item, "supplier": supplier, "product_name": product_name})
-    except RoomData.DoesNotExist:
+    except ProductData.DoesNotExist:
         return JsonResponse({"success": False})
 
 
@@ -1555,38 +1765,271 @@ def inventory_received(request):
 
     if request.method == "POST":
         try:
-            client_item = request.POST.get("client_item")
-            received_date = request.POST.get("received_date")
-            received_qty = int(request.POST.get("received_qty") or 0)
-            damaged_qty = int(request.POST.get("damaged_qty") or 0)
+            # Get form data
+            container_id = request.POST.get("container_id")
+            container_id_field = request.POST.get("container_id_field")  # Get the hidden field value
             
-            InventoryReceived.objects.create(
-                client_id=client_item,
-                item=client_item,
-                received_date=received_date,
-                received_qty=received_qty,
-                damaged_qty=damaged_qty,
-                checked_by=user
-            )
+            # Use the hidden field value if it exists (from search), otherwise fallback to container_id
+            final_container_id = container_id_field if container_id_field else container_id
+            
+            received_date = request.POST.get("received_date")
+            is_editing = request.POST.get("is_editing") == "1"
+            editing_record_id = request.POST.get("editing_record_id")
+            product_count = int(request.POST.get("product_count", "0"))
+            
+            # Check if this container ID already exists in InventoryReceived for this user
+            # If it exists, we'll treat this as an edit operation
+            if not is_editing and final_container_id:
+                # Check if this exact container_id (not client_id fallback) exists for this user
+                existing_records = InventoryReceived.objects.filter(
+                    container_id=final_container_id,
+                    checked_by=user
+                )
+                if existing_records.exists():
+                    print(f"Container ID {final_container_id} already exists for this user - switching to edit mode")
+                    is_editing = True
+                    # We'll delete existing records for this container and recreate them
+                    existing_records_count = existing_records.count()
+                    existing_records.delete()
+                    print(f"Deleted {existing_records_count} existing records for this container")
+            
+            # Debug info
+            print(f"Form submission - container_id: {container_id}, container_id_field: {container_id_field}")
+            print(f"Form submission - using container_id: {final_container_id}, received_date: {received_date}")
+            print(f"Form submission - is_editing: {is_editing}, editing_record_id: {editing_record_id}")
+            print(f"Form submission - product_count: {product_count}")
+            
+            if is_editing and editing_record_id:
+                # Update the existing record - for now, we'll keep handling single edits
+                record = InventoryReceived.objects.get(id=editing_record_id)
+                client_item = record.client_id
+                received_qty = int(request.POST.get("received_qty_0") or "0")
+                damaged_qty = int(request.POST.get("damaged_qty_0") or "0")
+                
+                record.received_date = received_date
+                record.received_qty = received_qty
+                record.damaged_qty = damaged_qty
+                record.checked_by = user
+                record.save()
+                
+                # Update the inventory
+                inventory = Inventory.objects.filter(
+                    client_id__iexact=client_item,
+                    item__iexact=client_item
+                ).first()
+                
+                if inventory:
+                    # Calculate the difference for inventory adjustment
+                    old_received = record.received_qty
+                    old_damaged = record.damaged_qty
+                    net_change = (received_qty - damaged_qty) - (old_received - old_damaged)
+                    
+                    inventory.qty_received = (inventory.qty_received or 0) + net_change
+                    inventory.quantity_available = (inventory.quantity_available or 0) + net_change
+                    inventory.save()
+                
+                messages.success(request, "Inventory record updated successfully!")
+            else:
+                # Create new records for each product in the container
+                success_count = 0
+                for i in range(product_count):
+                    client_item = request.POST.get(f"client_item_{i}")
+                    received_qty = int(request.POST.get(f"received_qty_{i}") or "0")
+                    damaged_qty = int(request.POST.get(f"damaged_qty_{i}") or "0")
+                    
+                    # Skip if no quantity received
+                    if received_qty == 0:
+                        continue
+                        
+                    # Debug info for new record
+                    print(f"Creating record for client_item: {client_item}, received_qty: {received_qty}, damaged_qty: {damaged_qty}")
+                    
+                    # Create a new record - store the container_id with the record
+                    print(f"Creating record with container_id: {final_container_id}")
+                    InventoryReceived.objects.create(
+                        client_id=client_item,
+                        item=client_item,
+                        received_date=received_date,
+                        received_qty=received_qty,
+                        damaged_qty=damaged_qty,
+                        checked_by=user,
+                        container_id=final_container_id  # Store the final container_id 
+                    )
 
-            # Update Inventory
-            inventory = Inventory.objects.filter(
-                client_id__iexact=client_item,
-                item__iexact=client_item
-            ).first()
-            if inventory:
-                inventory.qty_received = (inventory.qty_received or 0) + (received_qty - damaged_qty)
-                inventory.quantity_available = (inventory.quantity_available or 0) + (received_qty - damaged_qty)
-                inventory.save()
+                    # Update Inventory
+                    inventory = Inventory.objects.filter(
+                        client_id__iexact=client_item,
+                        item__iexact=client_item
+                    ).first()
+                    
+                    if inventory:
+                        inventory.qty_received = (inventory.qty_received or 0) + (received_qty - damaged_qty)
+                        inventory.quantity_available = (inventory.quantity_available or 0) + (received_qty - damaged_qty)
+                        inventory.save()
+                        
+                    success_count += 1
 
-            messages.success(request, "Inventory received successfully!")
+                if success_count > 0:
+                    messages.success(request, f"Successfully received {success_count} inventory items!")
+                else:
+                    messages.warning(request, "No inventory items were received. Please enter quantities.")
+            
             return redirect("inventory_received")
 
         except Exception as e:
             print("error ::", e)
             messages.error(request, f"Error saving received inventory: {str(e)}")
 
-    return render(request, "inventory_received.html", {"user_name": user_name})
+    # Get previous submissions - complete rewrite to fix duplicate container issue
+    previous_submissions = []
+    already_processed_ids = set()  # Keep track of IDs we've already processed
+    
+    try:
+        # Debug info
+        print("Fetching previous submissions for inventory received...")
+        
+        # Use raw SQL query for maximum precision and no duplicates
+        with connection.cursor() as cursor:
+            # Get distinct containers with their newest received date for this user
+            # Only include containers that actually have a valid container_id
+            cursor.execute("""
+                SELECT 
+                    ir.container_id as display_container_id,
+                    MAX(ir.received_date) as newest_date
+                FROM inventory_received ir
+                WHERE ir.checked_by_id = %s
+                AND ir.container_id IS NOT NULL AND ir.container_id != ''
+                GROUP BY ir.container_id
+                ORDER BY MAX(ir.received_date) DESC
+            """, [user.id])
+            
+            containers = cursor.fetchall()
+            
+        print(f"Found {len(containers)} distinct containers for this user")
+            
+        # Process each unique container
+        for container_row in containers:
+            container_id = container_row[0]  # The container ID or client ID fallback
+            latest_date = container_row[1]   # The newest date for this container
+            
+            if not container_id:
+                print(f"Skipping empty container ID")
+                continue
+                
+            # Query all items for this specific container
+            items = InventoryReceived.objects.filter(
+                checked_by=user
+            ).filter(
+                # Use the appropriate field based on whether this is a container ID or client ID
+                Q(container_id=container_id) | 
+                (Q(client_id=container_id) & (Q(container_id__isnull=True) | Q(container_id='')))
+            ).order_by('-received_date')
+            
+            # Skip if somehow we got no items (shouldn't happen)
+            if not items.exists():
+                print(f"No items found for container {container_id} despite SQL result")
+                continue
+                
+            # Add container group to our dictionary
+            container_groups = {}
+            container_groups[container_id] = list(items)
+            
+            # Create a summary entry for this container
+            if not items:
+                continue
+            
+            # Get first item for date and user info
+            first_item = items[0]
+            
+            # Calculate totals
+            product_count = len(items)  # Count all received items in this container
+            damaged_count = sum(1 for item in items if item.damaged_qty > 0)  # Count items with damage
+            
+            # Format date
+            received_date = first_item.received_date.strftime('%Y-%m-%d') if first_item.received_date else 'N/A'
+            
+            print(f"Adding container {container_id} with {product_count} products, {damaged_count} damaged")
+            
+            previous_submissions.append({
+                'id': first_item.id,
+                'container_id': container_id,
+                'client_id': first_item.client_id,
+                'received_date': received_date,
+                'product_count': product_count,
+                'damaged_count': damaged_count,
+                'checked_by': first_item.checked_by.name if first_item.checked_by else 'Unknown'
+            })
+    except Exception as e:
+        print(f"Error fetching previous submissions: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    # Pagination for previous submissions
+    page = request.GET.get('page', 1)
+    paginator = Paginator(previous_submissions, 10)  # 10 submissions per page
+    try:
+        previous_submissions_page = paginator.page(page)
+    except PageNotAnInteger:
+        previous_submissions_page = paginator.page(1)
+    except EmptyPage:
+        previous_submissions_page = paginator.page(paginator.num_pages)
+
+    return render(request, "inventory_received.html", {
+        "user_name": user_name,
+        "previous_submissions": previous_submissions_page,
+        "is_paginated": previous_submissions_page.has_other_pages(),
+        "page_obj": previous_submissions_page,
+    })
+
+@session_login_required
+def get_received_item_details(request):
+    """API endpoint to get details of a specific received item"""
+    record_id = request.GET.get('record_id')
+    
+    if not record_id:
+        return JsonResponse({'success': False, 'message': 'Record ID is required'})
+    
+    try:
+        # Debug info
+        print(f"Getting details for received item record_id: {record_id}")
+        
+        record = InventoryReceived.objects.get(id=record_id)
+        
+        # Format dates for form fields
+        received_date = record.received_date.strftime('%Y-%m-%d') if record.received_date else ''
+        
+        # Determine container ID - use stored container_id if available, otherwise client_id
+        container_id = getattr(record, 'container_id', None) or record.client_id
+        
+        # Get product name from ProductData if available
+        try:
+            product = ProductData.objects.get(client_id__iexact=record.client_id)
+            product_name = product.description or product.item
+        except ProductData.DoesNotExist:
+            product_name = record.item or "Unknown Product"
+        
+        # Debug info
+        print(f"Record found: client_id={record.client_id}, received_qty={record.received_qty}, damaged_qty={record.damaged_qty}")
+        print(f"Using container_id: {container_id}, received_date: {received_date}")
+        
+        return JsonResponse({
+            'success': True,
+            'record': {
+                'id': record.id,
+                'client_id': record.client_id,
+                'container_id': container_id,
+                'product_name': product_name,
+                'received_date': received_date,
+                'received_qty': record.received_qty,
+                'damaged_qty': record.damaged_qty,
+                'checked_by': record.checked_by.name if record.checked_by else 'Unknown'
+            }
+        })
+        
+    except InventoryReceived.DoesNotExist:
+        return JsonResponse({'success': False, 'message': 'Record not found'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': str(e)})
 
 @session_login_required
 def inventory_pull(request):
@@ -2742,3 +3185,209 @@ def admin_save_installation_details(request):
             return JsonResponse({"success": False, "message": f"An server error occurred: {str(e)}"}, status=500)
 
     return JsonResponse({"error": "Invalid request method. Only POST is allowed."}, status=405)
+
+@session_login_required
+def get_shipment_details(request):
+    shipment_id = request.GET.get('shipment_id')
+    if not shipment_id:
+        return JsonResponse({'success': False, 'message': 'Shipment ID is required'})
+    
+    try:
+        # Get the reference shipping item
+        reference_item = get_object_or_404(Shipping, id=shipment_id)
+        container_id = reference_item.bol
+        
+        # Get all items with this container ID
+        items = Shipping.objects.filter(bol=container_id)
+        
+        # Format dates for form fields
+        ship_date = reference_item.ship_date.strftime('%Y-%m-%d') if reference_item.ship_date else ''
+        expected_arrival = reference_item.expected_arrival_date.strftime('%Y-%m-%d') if reference_item.expected_arrival_date else ''
+        
+        # Format items for JSON response
+        item_list = []
+        for item in items:
+            # Get product name from ProductData if available
+            try:
+                product = ProductData.objects.get(client_id=item.client_id)
+                product_name = product.description
+            except ProductData.DoesNotExist:
+                product_name = item.item or "Unknown Product"
+            
+            item_list.append({
+                'id': item.id,
+                'client_id': item.client_id,
+                'product_name': product_name,
+                'supplier': item.supplier or "N/A",
+                'quantity': item.ship_qty or 1
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'container_id': container_id,
+            'ship_date': ship_date,
+            'expected_arrival': expected_arrival,
+            'items': item_list
+        })
+    
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': str(e)})
+
+@session_login_required
+def check_container_exists(request):
+    """
+    API endpoint to check if a container ID already exists
+    """
+    container_id = request.GET.get('container_id', '').strip()
+    
+    if not container_id:
+        return JsonResponse({
+            'exists': False,
+            'count': 0
+        })
+    
+    # Count shipping entries with this container ID
+    count = Shipping.objects.filter(bol=container_id).count()
+    
+    return JsonResponse({
+        'exists': count > 0,
+        'count': count
+    })
+
+@session_login_required
+def get_container_data(request):
+    """
+    API endpoint to get all data for a specific container ID
+    """
+    container_id = request.GET.get('container_id', '').strip()
+    
+    if not container_id:
+        return JsonResponse({
+            'success': False,
+            'message': 'Container ID is required'
+        })
+    
+    try:
+        # Get all items with this container ID
+        items = Shipping.objects.filter(bol=container_id)
+        
+        if not items.exists():
+            return JsonResponse({
+                'success': False,
+                'message': f'No items found for container ID: {container_id}'
+            })
+        
+        # Get the first item to extract common data
+        first_item = items.first()
+        
+        # Format dates for form fields
+        ship_date = first_item.ship_date.strftime('%Y-%m-%d') if first_item.ship_date else ''
+        expected_arrival = first_item.expected_arrival_date.strftime('%Y-%m-%d') if first_item.expected_arrival_date else ''
+        
+        # Format items for JSON response
+        item_list = []
+        for item in items:
+            # Get product name from ProductData if available
+            try:
+                # Use case-insensitive lookup to match product data
+                product = ProductData.objects.get(client_id__iexact=item.client_id)
+                # Use description consistently (or fall back to item) - same as get_product_item_num
+                product_name = product.description or product.item or "Unknown Product"
+                print(f"get_container_data - client_id: {item.client_id}, product_name: {product_name}")
+            except ProductData.DoesNotExist:
+                product_name = item.item or "Unknown Product"
+                print(f"Product not found for client_id: {item.client_id}, using item name: {product_name}")
+            
+            item_list.append({
+                'id': item.id,
+                'client_id': item.client_id,
+                'product_name': product_name,
+                'supplier': item.supplier or "N/A",
+                'quantity': item.ship_qty or 1
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'container_id': container_id,
+            'ship_date': ship_date,
+            'expected_arrival': expected_arrival,
+            'items': item_list,
+            'count': len(item_list)
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'message': str(e)
+        })
+
+@session_login_required
+def get_container_received_items(request):
+    """API endpoint to get all received items for a specific container ID"""
+    container_id = request.GET.get('container_id')
+    user_id = request.session.get("user_id")
+    
+    if not container_id:
+        return JsonResponse({'success': False, 'message': 'Container ID is required'})
+    
+    try:
+        # Debug info
+        print(f"Fetching received items for container_id: {container_id}")
+        
+        # Get the current user
+        user = None
+        if user_id:
+            user = InvitedUser.objects.get(id=user_id)
+            
+        # Get all inventory received records for this container AND this user
+        # Only consider items with a valid container_id (no legacy fallback to client_id)
+        query = Q(container_id=container_id)
+            
+        # Add user filter if available
+        received_items = InventoryReceived.objects
+        if user:
+            received_items = received_items.filter(checked_by=user)
+            
+        # Apply the container query
+        received_items = received_items.filter(query).order_by('client_id')
+            
+        if not received_items.exists():
+            return JsonResponse({'success': False, 'message': f'No received items found for container {container_id}'})
+        
+        # Get the received date from the first item
+        first_item = received_items.first()
+        received_date = first_item.received_date.strftime('%Y-%m-%d') if first_item.received_date else ''
+        
+        # Format items for response
+        items_data = []
+        for item in received_items:
+            # Get product name from ProductData if available
+            try:
+                product = ProductData.objects.get(client_id__iexact=item.client_id)
+                product_name = product.description or product.item or item.item
+            except ProductData.DoesNotExist:
+                product_name = item.item or "Unknown Product"
+                
+            items_data.append({
+                'id': item.id,
+                'client_id': item.client_id,
+                'product_name': product_name,
+                'received_qty': item.received_qty,
+                'damaged_qty': item.damaged_qty,
+                'checked_by': item.checked_by.name if item.checked_by else 'Unknown'
+            })
+        
+        print(f"Found {len(items_data)} received items")
+        
+        return JsonResponse({
+            'success': True,
+            'container_id': container_id,
+            'items': items_data,
+            'received_date': received_date
+        })
+    
+    except Exception as e:
+        print(f"Error in get_container_received_items: {e}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({'success': False, 'message': str(e)})

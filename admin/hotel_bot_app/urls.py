@@ -39,9 +39,13 @@ urlpatterns = [
     path('get_product_item_num/', get_product_item_num, name='get_product_item_num'),
     path('inventory_received/', inventory_received, name='inventory_received'),
     path('inventory_received_item_num/', inventory_received_item_num, name='inventory_received_item_num'),
+    path('get_received_item_details/', get_received_item_details, name='get_received_item_details'),
     path('inventory_pull/', inventory_pull, name='inventory_pull'),
     path('chat_history/', chat_history, name='chat_history'),
     path('chat_history/<int:session_id>/', view_chat_history, name='view_chat_history'),
+    path('get_shipment_details/', get_shipment_details, name='get_shipment_details'),
+    path('check_container_exists/', check_container_exists, name='check_container_exists'),
+    path('get_container_data/', get_container_data, name='get_container_data'),
     
     # New URLs for Product Room Model
     path('product-room-models/', product_room_model_list, name='product_room_model_list'),
@@ -61,4 +65,5 @@ urlpatterns = [
     path('issue_detail/<int:issue_id>/', issue_detail, name='issue_detail'),
     path('issue_create/', issue_create, name='issue_create'),
     path('issues/<int:issue_id>/comment/invited/', invited_user_comment_create, name='invited_user_comment_create'),
+    path('get_container_received_items/', get_container_received_items, name='get_container_received_items'),
 ]

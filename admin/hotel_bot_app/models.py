@@ -264,6 +264,7 @@ class InventoryReceived(models.Model):
     received_qty = models.PositiveIntegerField()
     damaged_qty = models.PositiveIntegerField()
     checked_by = models.ForeignKey(InvitedUser, on_delete=models.SET_NULL, null=True, blank=True)
+    container_id = models.CharField(max_length=255, null=True, blank=True)
 
     def __str__(self):
         return f"Received {self.received_qty} of {self.item} for {self.client_id}"
