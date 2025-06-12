@@ -1,0 +1,428 @@
+{% extends "frontend_base.html" %}
+{% load static %}
+
+{% block title %}Warehouse Receiver{% endblock %}
+
+{% block content %}
+<style>
+  @media(max-width:768px) {
+    input[type='checkbox'] {
+      width: 25px;
+      height: 25px;
+    }
+    .product_item_class{
+      margin-top: 10px;
+    }
+    .form-label{
+      font-size: 16px;
+    }
+    .fw-bold{
+      font-size: 16px;
+    }
+    .container-lg {
+      padding-left: 5px;
+      padding-right: 5px;
+    }
+    .card-body {
+      padding: 10px 5px;
+    }
+    h3 {
+      font-size: 20px;
+    }
+    h4 {
+      font-size: 18px;
+    }
+    
+    /* Table optimizations for mobile */
+    .table-responsive {
+      overflow-x: auto;
+    }
+    .table {
+      font-size: 12px;
+    }
+    .table th, .table td {
+      padding: 5px;
+    }
+    .table input {
+      padding: 4px;
+      font-size: 13px;
+      height: 32px;
+    }
+    
+    /* Button optimizations for mobile */
+    .btn {
+      padding: 6px 10px;
+      font-size: 14px;
+      margin-bottom: 8px;
+      height: auto;
+      white-space: normal;
+    }
+    .btn-lg {
+      padding: 8px 12px;
+      font-size: 14px;
+    }
+    
+    /* Stack buttons on mobile */
+    .text-center .gap-3 {
+      flex-direction: column;
+      width: 100%;
+    }
+    .text-center .gap-3 .btn, 
+    .text-center .gap-3 a.btn {
+      width: 100%;
+      margin-bottom: 10px;
+      margin-right: 0 !important;
+      margin-left: 0 !important;
+    }
+  }
+
+  /* General responsive improvements */
+  .table-responsive {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  input.form-control, select.form-control {
+    height: 38px;
+    font-size: 16px; /* Prevents iOS zoom on focus */
+  }
+</style>
+
+<div class="container-lg my-5">
+  <!-- First Card: Receiving Form -->
+  <div class="card shadow-sm rounded-4 mb-4">
+    <div class="card-body p-4">
+      <h3 class="mb-2 text-center text-secondary py-4">Warehouse Receiver</h3>
+      <h4 class="mb-4 text-secondary">Received Shipment</h4>
+      
+      <form method="post" action="{% url 'warehouse_receiver' %}" id="warehouse-receiver-form">
+        {% csrf_token %}
+        
+        <!-- Reference ID -->
+        <div class="row mb-4">
+          <div class="col-md-6">
+            <label class="form-label">Reference ID</label>
+            <input type="text" class="form-control" name="reference_id" id="reference_id" placeholder="Enter Reference ID" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Received Date</label>
+            <input type="date" class="form-control" name="received_date" id="received_date" required>
+          </div>
+        </div>
+        
+        <!-- Items Section -->
+        <div class="row mb-4">
+          <div class="col-12">
+            <h5 class="mb-3">Items</h5>
+            
+            <div id="items-container">
+              <!-- Template for item row -->
+              <div class="row mb-3 item-row">
+                <div class="col-md-4">
+                  <label class="form-label">Client Item #</label>
+                  <div class="input-group">
+                    <input type="text" class="form-control client-item" name="client_items[]" placeholder="Enter Client Item #" required>
+                    <button type="button" class="btn btn-outline-secondary lookup-item">
+                      <span class="material-icons">search</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="col-md-5">
+                  <label class="form-label">Product Name</label>
+                  <input type="text" class="form-control product-name" name="product_names[]" placeholder="Product Name" readonly>
+                </div>
+                <div class="col-md-2">
+                  <label class="form-label">Quantity</label>
+                  <input type="number" class="form-control" name="quantities[]" min="1" value="1" required>
+                </div>
+                <div class="col-md-1">
+                  <label class="form-label d-md-block d-none">&nbsp;</label>
+                  <button type="button" class="btn btn-danger remove-item">
+                    <span class="material-icons">delete</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            <div class="text-center mt-3">
+              <button type="button" class="btn btn-secondary" id="add-item-btn">
+                <span class="material-icons align-middle">add</span> Add Another Item
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        <div class="text-center mt-4">
+          <div class="d-inline-flex gap-3">
+            <button type="button" class="btn btn-outline-secondary mr-3" id="clear-form-btn">Cancel / Clear Form</button>
+            <button type="submit" class="btn btn-secondary btn-lg">Submit</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+  
+  <!-- Second Card: Previous Receipts -->
+  <div class="card shadow-sm rounded-4">
+    <div class="card-body p-4">
+      <h4 class="mb-3">Previous Warehouse Receipts</h4>
+      <div class="row">
+        <div class="col-12">
+          <div class="table-responsive">
+            <table class="table table-bordered table-striped">
+              <thead>
+                <tr>
+                  <th>Reference ID</th>
+                  <th>Received Date</th>
+                  <th>Items Count</th>
+                  <th>Total Quantity</th>
+                  <th>Received By</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for receipt in previous_receipts %}
+                <tr>
+                  <td>{{ receipt.reference_id }}</td>
+                  <td>{{ receipt.received_date }}</td>
+                  <td>{{ receipt.items_count }}</td>
+                  <td>{{ receipt.total_quantity }}</td>
+                  <td>{{ receipt.received_by }}</td>
+                  <td>
+                    <button type="button" class="btn btn-primary btn-sm view-details" data-id="{{ receipt.id }}">View Details</button>
+                  </td>
+                </tr>
+                {% empty %}
+                <tr>
+                  <td colspan="5" class="text-center">No previous receipts found.</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          
+          {% if is_paginated %}
+          <nav>
+            <ul class="pagination justify-content-center">
+              {% if page_obj.has_previous %}
+              <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
+              </li>
+              {% endif %}
+              <li class="page-item disabled">
+                <span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+              </li>
+              {% if page_obj.has_next %}
+              <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
+              </li>
+              {% endif %}
+            </ul>
+          </nav>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Receipt Details Modal -->
+<div class="modal fade" id="receiptDetailsModal" tabindex="-1" aria-labelledby="receiptDetailsModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="receiptDetailsModalLabel">Receipt Details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row mb-3">
+          <div class="col-md-6">
+            <p><strong>Reference ID:</strong> <span id="modal-reference-id"></span></p>
+            <p><strong>Received Date:</strong> <span id="modal-received-date"></span></p>
+          </div>
+          <div class="col-md-6">
+            <p><strong>Received By:</strong> <span id="modal-received-by"></span></p>
+          </div>
+        </div>
+        
+        <h6 class="mt-4 mb-3">Items</h6>
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered">
+            <thead>
+              <tr>
+                <th>Client Item #</th>
+                <th>Product Name</th>
+                <th>Quantity</th>
+              </tr>
+            </thead>
+            <tbody id="modal-items-list">
+              <!-- Items will be populated dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  $(document).ready(function() {
+    // Set current date for received date field
+    const today = new Date().toISOString().split('T')[0];
+    $('#received_date').val(today);
+    
+    // Add new item row
+    $('#add-item-btn').on('click', function() {
+      const newRow = $('#items-container .item-row').first().clone();
+      newRow.find('input').val(''); // Clear input values
+      newRow.find('input[name="quantities[]"]').val(1); // Reset quantity to 1
+      $('#items-container').append(newRow);
+    });
+    
+    // Remove item row (using event delegation for dynamically added elements)
+    $('#items-container').on('click', '.remove-item', function() {
+      // Only remove if there's more than one item row
+      if ($('#items-container .item-row').length > 1) {
+        $(this).closest('.item-row').remove();
+      } else {
+        toastr.warning('You must have at least one item.');
+      }
+    });
+    
+    // Clear form button
+    $('#clear-form-btn').on('click', function() {
+      // Reset the form
+      $('#warehouse-receiver-form')[0].reset();
+      
+      // Set current date again
+      $('#received_date').val(today);
+      
+      // Keep only one item row
+      const firstRow = $('#items-container .item-row').first();
+      $('#items-container .item-row').not(firstRow).remove();
+      firstRow.find('input').val('');
+      firstRow.find('input[name="quantities[]"]').val(1);
+      
+      toastr.info('Form has been cleared.');
+    });
+    
+    // Lookup item
+    $('#items-container').on('click', '.lookup-item', function() {
+      const row = $(this).closest('.item-row');
+      const clientItem = row.find('.client-item').val().trim();
+      
+      if (!clientItem) {
+        toastr.error('Please enter a Client Item # first');
+        return;
+      }
+      
+      // Show loading indicator
+      $(this).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>');
+      
+      // Make AJAX request to get product details
+      $.ajax({
+        url: "{% url 'get_product_item_num' %}",
+        type: "GET",
+        data: { room_number: clientItem },
+        success: function(data) {
+          // Reset button
+          row.find('.lookup-item').html('<span class="material-icons">search</span>');
+          
+          if (data.success) {
+            // Fill product name
+            row.find('.product-name').val(data.product_name || data.room_type);
+            toastr.success('Product found');
+          } else {
+            toastr.error('Product not found');
+            row.find('.product-name').val('');
+          }
+        },
+        error: function() {
+          // Reset button
+          row.find('.lookup-item').html('<span class="material-icons">search</span>');
+          toastr.error('Error looking up product');
+        }
+      });
+    });
+    
+    // View receipt details
+    $('.view-details').on('click', function() {
+      const receiptId = $(this).data('id');
+      
+      // Make AJAX request to get receipt details
+      $.ajax({
+        url: "{% url 'get_warehouse_receipt_details' %}",
+        type: "GET",
+        data: { receipt_id: receiptId },
+        success: function(data) {
+          if (data.success) {
+            // Populate modal with receipt details
+            $('#modal-reference-id').text(data.receipt.reference_id);
+            $('#modal-received-date').text(data.receipt.received_date);
+            $('#modal-received-by').text(data.receipt.received_by);
+            
+            // Clear and populate items table
+            const itemsList = $('#modal-items-list');
+            itemsList.empty();
+            
+            data.items.forEach(function(item) {
+              itemsList.append(`
+                <tr>
+                  <td>${item.client_id}</td>
+                  <td>${item.product_name}</td>
+                  <td>${item.quantity}</td>
+                </tr>
+              `);
+            });
+            
+            // Show the modal
+            $('#receiptDetailsModal').modal('show');
+          } else {
+            toastr.error(data.message || 'Failed to load receipt details');
+          }
+        },
+        error: function() {
+          toastr.error('Error loading receipt details');
+        }
+      });
+    });
+    
+    // Initialize toastr options
+    toastr.options = {
+      "closeButton": true,
+      "progressBar": true,
+      "timeOut": "3000"
+    };
+    
+    // Process Django messages with toastr
+    // We use JS-safe approach to handle Django template tags
+    var djangoMessages = [];
+    {% if messages %}
+      {% for message in messages %}
+        djangoMessages.push({
+          "tag": "{{ message.tags }}",
+          "text": "{{ message|escapejs }}"
+        });
+      {% endfor %}
+    {% endif %}
+    
+    // Process the messages with toastr
+    djangoMessages.forEach(function(msg) {
+      if (msg.tag === "success") {
+        toastr.success(msg.text);
+      } else if (msg.tag === "error") {
+        toastr.error(msg.text);
+      } else if (msg.tag === "warning") {
+        toastr.warning(msg.text);
+      } else if (msg.tag === "info") {
+        toastr.info(msg.text);
+      }
+    });
+  });
+</script>
+{% endblock %} 

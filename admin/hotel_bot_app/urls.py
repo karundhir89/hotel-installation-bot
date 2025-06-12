@@ -66,4 +66,7 @@ urlpatterns = [
     path('issue_create/', issue_create, name='issue_create'),
     path('issues/<int:issue_id>/comment/invited/', invited_user_comment_create, name='invited_user_comment_create'),
     path('get_container_received_items/', get_container_received_items, name='get_container_received_items'),
+    path('hotel_warehouse/', hotel_warehouse, name='hotel_warehouse'),
+    path('warehouse_receiver/', warehouse_receiver, name='warehouse_receiver'),
+    path('get_warehouse_receipt_details/', get_warehouse_receipt_details, name='get_warehouse_receipt_details'),
 ]

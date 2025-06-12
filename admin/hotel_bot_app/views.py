@@ -40,6 +40,7 @@ from django.db.models import Q
 from django.contrib.auth import get_user_model # Use this if settings.AUTH_USER_MODEL is Django's default
 from django.contrib.auth.decorators import login_required, user_passes_test # For permission checking
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger # Import Paginator
+from django.db.models import Count, Q, F, ExpressionWrapper, DecimalField, Sum
 
 from .models import *
 from .models import ChatSession
@@ -2088,6 +2089,47 @@ def inventory_pull(request):
     })
 
 @session_login_required
+def hotel_warehouse(request):
+    """
+    Display warehouse inventory requests and their status.
+    """
+    # Query the PullInventory table to get all pull requests grouped by floor
+    warehouse_requests = []
+    
+    # Group pull requests by floor and date
+    pull_requests = PullInventory.objects.values(
+        'floor', 'pulled_by', 'pulled_date'
+    ).annotate(
+        total_qty=Sum('qty_pulled')
+    ).order_by('-pulled_date')
+    
+    # Convert to the format expected by the template
+    for pull_request in pull_requests:
+        # Get the user name from the pulled_by foreign key if available
+        requested_by = "Unknown"
+        if pull_request['pulled_by']:
+            try:
+                user = InvitedUser.objects.get(id=pull_request['pulled_by'])
+                requested_by = user.name
+            except InvitedUser.DoesNotExist:
+                pass
+        
+        warehouse_requests.append({
+            'id': f"{pull_request['floor']}_{pull_request['pulled_date']}",  # Create a pseudo-ID
+            'floor_number': pull_request['floor'],
+            'requested_by': requested_by,
+            'requested_date': pull_request['pulled_date'],
+            'quantity_sent': pull_request['total_qty'],
+            'sent': True  # All items in PullInventory are considered sent
+        })
+    
+    context = {
+        'warehouse_requests': warehouse_requests,
+    }
+    
+    return render(request, 'hotel_warehouse.html', context)
+
+@session_login_required
 def inventory_received_item_num(request):
     clientId = request.GET.get("client_item")
     try:
@@ -3391,3 +3433,234 @@ def get_container_received_items(request):
         import traceback
         traceback.print_exc()
         return JsonResponse({'success': False, 'message': str(e)})
+
+@session_login_required
+def warehouse_receiver(request):
+    """
+    View for receiving warehouse shipments.
+    """
+    # Update all inventory warehouse quantities to ensure consistency
+    update_inventory_warehouse_quantities()
+    
+    user_id = request.session.get("user_id")
+    user = None
+    
+    if user_id:
+        try:
+            user = InvitedUser.objects.get(id=user_id)
+        except InvitedUser.DoesNotExist:
+            pass
+    
+    if request.method == "POST":
+        try:
+            # Get form data
+            reference_id = request.POST.get("reference_id")
+            received_date_str = request.POST.get("received_date")
+            
+            # Parse the received date
+            received_date = parse_date(received_date_str) if received_date_str else now().date()
+            
+            # Get the arrays of data
+            client_items = request.POST.getlist("client_items[]")
+            quantities = request.POST.getlist("quantities[]")
+            product_names = request.POST.getlist("product_names[]")
+            
+            # Validate input
+            if not reference_id:
+                messages.error(request, "Reference ID is required")
+                return redirect("warehouse_receiver")
+            
+            if not client_items:
+                messages.error(request, "No items added to receipt")
+                return redirect("warehouse_receiver")
+            
+            # Create receipt items
+            for i in range(len(client_items)):
+                client_id = client_items[i]
+                quantity = int(quantities[i]) if i < len(quantities) and quantities[i] else 1
+                
+                # Create the warehouse receipt item
+                HotelWarehouse.objects.create(
+                    reference_id=reference_id,
+                    client_item=client_id,
+                    quantity_received=quantity
+                )
+                
+                # Update inventory if needed
+                try:
+                    # Use case-insensitive lookup for client_id
+                    inventory = Inventory.objects.filter(client_id__iexact=client_id).first()
+                    if not inventory:
+                        # If not found with case-insensitive lookup, log warning
+                        logger.warning(f"Inventory not found for client_id: {client_id}")
+                        continue
+                        
+                    inventory.quantity_available = (inventory.quantity_available or 0) + quantity
+                    
+                    # Calculate the total quantity from HotelWarehouse for this client item (case-insensitive)
+                    # First get all possible case variations of this client_id from HotelWarehouse
+                    client_item_variations = HotelWarehouse.objects.filter(
+                        client_item__iexact=client_id
+                    ).values_list('client_item', flat=True).distinct()
+                    
+                    # Then sum quantities for all variations
+                    total_warehouse_qty = HotelWarehouse.objects.filter(
+                        client_item__in=list(client_item_variations)
+                    ).aggregate(total=Sum('quantity_received'))['total'] or 0
+                    
+                    # Update hotel_warehouse_quantity field with the total from HotelWarehouse
+                    inventory.hotel_warehouse_quantity = total_warehouse_qty
+                    inventory.save()
+                except Exception as e:
+                    # Log any other errors
+                    logger.error(f"Error updating inventory for client_id {client_id}: {e}")
+            
+            messages.success(request, f"Warehouse receipt with {len(client_items)} items created successfully")
+            return redirect("warehouse_receiver")
+            
+        except Exception as e:
+            logger.error(f"Error in warehouse_receiver POST: {e}", exc_info=True)
+            messages.error(request, f"Error processing warehouse receipt: {str(e)}")
+            return redirect("warehouse_receiver")
+    
+    # For GET requests, fetch previous receipts
+    previous_receipts = []
+    try:
+        # Get distinct reference IDs ordered by the most recent entries
+        reference_ids = HotelWarehouse.objects.values('reference_id').distinct()
+        
+        for ref_id_dict in reference_ids:
+            ref_id = ref_id_dict['reference_id']
+            # Get all items with this reference ID
+            items = HotelWarehouse.objects.filter(reference_id=ref_id)
+            
+            if items:
+                # Get the first item to extract reference ID
+                first_item = items.first()
+                
+                # Count items and total quantity
+                items_count = items.count()
+                total_quantity = items.aggregate(Sum('quantity_received'))['quantity_received__sum'] or 0
+                
+                # Get user name if available
+                received_by = "System"  # Default value
+                
+                previous_receipts.append({
+                    'id': ref_id,  # Use reference_id as the ID for the receipt
+                    'reference_id': ref_id,
+                    'received_date': now().strftime('%Y-%m-%d'),  # Default to current date as it's not stored
+                    'items_count': items_count,
+                    'total_quantity': total_quantity,
+                    'received_by': received_by
+                })
+    except Exception as e:
+        logger.error(f"Error fetching previous receipts: {e}", exc_info=True)
+    
+    # Paginate results
+    page = request.GET.get('page', 1)
+    paginator = Paginator(previous_receipts, 10)  # 10 receipts per page
+    
+    try:
+        previous_receipts_page = paginator.page(page)
+    except PageNotAnInteger:
+        previous_receipts_page = paginator.page(1)
+    except EmptyPage:
+        previous_receipts_page = paginator.page(paginator.num_pages)
+    
+    context = {
+        'previous_receipts': previous_receipts_page,
+        'is_paginated': previous_receipts_page.has_other_pages(),
+        'page_obj': previous_receipts_page,
+        'user_name': user.name if user else ""
+    }
+    
+    return render(request, "warehouse_receiver.html", context)
+
+@session_login_required
+def get_warehouse_receipt_details(request):
+    """
+    API endpoint to get details of a specific warehouse receipt
+    """
+    reference_id = request.GET.get('receipt_id')
+    
+    if not reference_id:
+        return JsonResponse({'success': False, 'message': 'Reference ID is required'})
+    
+    try:
+        # Get all items with this reference ID
+        items = HotelWarehouse.objects.filter(reference_id=reference_id)
+        
+        if not items.exists():
+            return JsonResponse({'success': False, 'message': 'Receipt not found'})
+        
+        # Format receipt data
+        receipt_data = {
+            'id': reference_id,
+            'reference_id': reference_id,
+            'received_date': now().strftime('%Y-%m-%d'),  # Default to current date as it's not stored
+            'received_by': "System"  # Default value as it's not stored
+        }
+        
+        # Format items data
+        items_data = []
+        for item in items:
+            # Get product name from ProductData if available
+            product_name = "Unknown Product"
+            try:
+                product = ProductData.objects.get(client_id=item.client_item)
+                product_name = product.description or product.item
+            except ProductData.DoesNotExist:
+                pass
+            
+            items_data.append({
+                'id': item.id,
+                'client_id': item.client_item,
+                'product_name': product_name,
+                'quantity': item.quantity_received
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'receipt': receipt_data,
+            'items': items_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in get_warehouse_receipt_details: {e}", exc_info=True)
+        return JsonResponse({'success': False, 'message': str(e)})
+
+def update_inventory_warehouse_quantities():
+    """
+    Update all inventory hotel_warehouse_quantity values based on the sum of quantities in HotelWarehouse.
+    Uses case-insensitive matching for client IDs.
+    """
+    try:
+        # Get all unique client items from Inventory
+        inventory_items = Inventory.objects.values_list('client_id', flat=True).distinct()
+        updated_count = 0
+        
+        for inv_client_id in inventory_items:
+            try:
+                # Find all case variations of this client_id in HotelWarehouse
+                warehouse_items = HotelWarehouse.objects.filter(
+                    client_item__iexact=inv_client_id
+                )
+                
+                if warehouse_items.exists():
+                    # Calculate total quantity for all case variations
+                    total_qty = warehouse_items.aggregate(
+                        total=Sum('quantity_received')
+                    )['total'] or 0
+                    
+                    # Update inventory record
+                    Inventory.objects.filter(client_id=inv_client_id).update(hotel_warehouse_quantity=total_qty)
+                    updated_count += 1
+                else:
+                    # If no warehouse items found for this inventory item, set quantity to 0
+                    Inventory.objects.filter(client_id=inv_client_id).update(hotel_warehouse_quantity=0)
+            except Exception as item_error:
+                logger.error(f"Error updating warehouse quantity for {inv_client_id}: {item_error}")
+        
+        logger.info(f"Updated hotel_warehouse_quantity for {updated_count} inventory items")
+    except Exception as e:
+        logger.error(f"Error updating inventory warehouse quantities: {e}", exc_info=True)

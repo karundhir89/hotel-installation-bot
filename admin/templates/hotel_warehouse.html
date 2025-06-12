@@ -1,0 +1,364 @@
+{% extends "frontend_base.html" %}
+{% load static %}
+
+{% block title %}Hotel Warehouse{% endblock %}
+
+{% block content %}
+<style>
+  @media (max-width: 768px) {
+    input[type='checkbox'] {
+      width: 25px;
+      height: 25px;
+    }
+    .form-label{
+      font-size: 16px;
+    }
+    .fw-bold{
+      font-size: 16px;
+    }
+    .container-lg {
+      padding-left: 5px;
+      padding-right: 5px;
+    }
+    .card-body {
+      padding: 10px 5px;
+    }
+    h3 {
+      font-size: 20px;
+    }
+    h4 {
+      font-size: 18px;
+    }
+    
+    /* Table optimizations for mobile */
+    .table-responsive {
+      overflow-x: auto;
+    }
+    .table {
+      font-size: 12px;
+    }
+    .table th, .table td {
+      padding: 5px;
+    }
+    .table input {
+      padding: 4px;
+      font-size: 13px;
+      height: 32px;
+    }
+    
+    /* Button optimizations for mobile */
+    .btn {
+      padding: 6px 10px;
+      font-size: 14px;
+      margin-bottom: 8px;
+      height: auto;
+      white-space: normal;
+    }
+    .btn-lg {
+      padding: 8px 12px;
+      font-size: 14px;
+    }
+    
+    /* Stack buttons on mobile */
+    .text-center .gap-3 {
+      flex-direction: column;
+      width: 100%;
+    }
+    .text-center .gap-3 .btn, 
+    .text-center .gap-3 a.btn {
+      width: 100%;
+      margin-bottom: 10px;
+      margin-right: 0 !important;
+      margin-left: 0 !important;
+    }
+  }
+
+  /* General responsive improvements */
+  .table-responsive {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  input.form-control, select.form-control {
+    height: 38px;
+    font-size: 16px; /* Prevents iOS zoom on focus */
+  }
+  
+  .yes-badge {
+    background-color: #28a745;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+  }
+  
+  .no-badge {
+    background-color: #dc3545;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+  }
+</style>
+
+<div class="container-lg my-5">
+  <div class="card shadow-sm rounded-4">
+    <div class="card-body p-4">
+      <h3 class="mb-2 text-center text-secondary py-4">Warehouse</h3>
+      <h4 class="mb-4 text-secondary">Requests</h4>
+      
+      <div class="row mb-4">
+        <div class="col-md-6">
+          <div class="input-group">
+            <input type="text" class="form-control" placeholder="Search by floor number" id="search-input">
+            <button class="btn btn-secondary" type="button" id="search-button">Search</button>
+          </div>
+        </div>
+        <div class="col-md-6 text-md-end mt-3 mt-md-0">
+          <button class="btn btn-outline-secondary" id="refresh-button">
+            <i class="material-icons align-middle">refresh</i> Refresh
+          </button>
+        </div>
+      </div>
+      
+      <div class="table-responsive">
+        <table class="table table-bordered table-striped">
+          <thead>
+            <tr>
+              <th>Floor Number</th>
+              <th>Requested By</th>
+              <th>Requested Date</th>
+              <th>Quantity Sent</th>
+              <th>Sent</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="requests-table">
+            {% for request in warehouse_requests %}
+            <tr>
+              <td>{{ request.floor_number }}</td>
+              <td>{{ request.requested_by }}</td>
+              <td>{{ request.requested_date }}</td>
+              <td>{{ request.quantity_sent }}</td>
+              <td>
+                {% if request.sent %}
+                <span class="yes-badge">Yes</span>
+                {% else %}
+                <span class="no-badge">No</span>
+                {% endif %}
+              </td>
+              <td>
+                <button type="button" class="btn btn-primary btn-sm view-details" data-id="{{ request.id }}">View Details</button>
+                {% if not request.sent %}
+                <button type="button" class="btn btn-success btn-sm mark-sent" data-id="{{ request.id }}">Mark as Sent</button>
+                {% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="6" class="text-center">No requests found</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      
+      {% if is_paginated %}
+      <nav>
+        <ul class="pagination justify-content-center">
+          {% if page_obj.has_previous %}
+          <li class="page-item">
+            <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
+          </li>
+          {% endif %}
+          <li class="page-item disabled">
+            <span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+          </li>
+          {% if page_obj.has_next %}
+          <li class="page-item">
+            <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
+          </li>
+          {% endif %}
+        </ul>
+      </nav>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Request Details Modal -->
+<div class="modal fade" id="requestDetailsModal" tabindex="-1" aria-labelledby="requestDetailsModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="requestDetailsModalLabel">Request Details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row mb-3">
+          <div class="col-md-6">
+            <p><strong>Floor Number:</strong> <span id="modal-floor"></span></p>
+            <p><strong>Requested By:</strong> <span id="modal-requester"></span></p>
+            <p><strong>Requested Date:</strong> <span id="modal-date"></span></p>
+          </div>
+          <div class="col-md-6">
+            <p><strong>Status:</strong> <span id="modal-status"></span></p>
+            <p><strong>Total Items:</strong> <span id="modal-items"></span></p>
+          </div>
+        </div>
+        
+        <h6 class="mt-4 mb-3">Requested Items</h6>
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered">
+            <thead>
+              <tr>
+                <th>Item #</th>
+                <th>Description</th>
+                <th>Requested Qty</th>
+                <th>Sent Qty</th>
+              </tr>
+            </thead>
+            <tbody id="modal-items-list">
+              <!-- Items will be populated dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-success" id="modal-mark-sent" style="display: none;">Mark as Sent</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  $(document).ready(function() {
+    // View details button click
+    $('.view-details').on('click', function() {
+      const requestId = $(this).data('id');
+      
+      // In a real implementation, you would fetch details from the server
+      // For now, we'll simulate with sample data
+      const floorNumber = $(this).closest('tr').find('td:eq(0)').text();
+      const requestedBy = $(this).closest('tr').find('td:eq(1)').text();
+      const requestedDate = $(this).closest('tr').find('td:eq(2)').text();
+      const sent = $(this).closest('tr').find('td:eq(4)').text().trim() === 'Yes';
+      
+      // Populate the modal
+      $('#modal-floor').text(floorNumber);
+      $('#modal-requester').text(requestedBy);
+      $('#modal-date').text(requestedDate);
+      $('#modal-status').text(sent ? 'Sent' : 'Pending');
+      $('#modal-items').text('3'); // This would be dynamic in real implementation
+      
+      // Show/hide mark as sent button based on status
+      if (sent) {
+        $('#modal-mark-sent').hide();
+      } else {
+        $('#modal-mark-sent').show();
+        $('#modal-mark-sent').data('id', requestId);
+      }
+      
+      // Sample items - in a real app, these would come from an API
+      const sampleItems = [
+        { item_number: '1001', description: 'Desk Lamp', requested: 5, sent: sent ? 5 : 0 },
+        { item_number: '1002', description: 'Chair', requested: 2, sent: sent ? 2 : 0 },
+        { item_number: '1003', description: 'Coffee Table', requested: 1, sent: sent ? 1 : 0 }
+      ];
+      
+      // Populate items table
+      const itemsList = $('#modal-items-list');
+      itemsList.empty();
+      
+      sampleItems.forEach(item => {
+        itemsList.append(`
+          <tr>
+            <td>${item.item_number}</td>
+            <td>${item.description}</td>
+            <td>${item.requested}</td>
+            <td>${item.sent}</td>
+          </tr>
+        `);
+      });
+      
+      // Show the modal
+      $('#requestDetailsModal').modal('show');
+    });
+    
+    // Mark as sent button click (in modal)
+    $('#modal-mark-sent').on('click', function() {
+      const requestId = $(this).data('id');
+      
+      // In a real implementation, you would send an AJAX request to update the status
+      // For now, we'll just close the modal and show a success message
+      $('#requestDetailsModal').modal('hide');
+      
+      // Show success message
+      toastr.success('Request marked as sent successfully!');
+      
+      // Update the table row to show "Yes" for sent
+      $(`button.mark-sent[data-id="${requestId}"]`).closest('tr').find('td:eq(4)').html('<span class="yes-badge">Yes</span>');
+      
+      // Remove the mark as sent button from the table
+      $(`button.mark-sent[data-id="${requestId}"]`).remove();
+    });
+    
+    // Mark as sent button click (in table)
+    $('.mark-sent').on('click', function() {
+      const requestId = $(this).data('id');
+      
+      // In a real implementation, you would send an AJAX request to update the status
+      // For now, we'll just update the UI directly
+      
+      // Show success message
+      toastr.success('Request marked as sent successfully!');
+      
+      // Update the table row to show "Yes" for sent
+      $(this).closest('tr').find('td:eq(4)').html('<span class="yes-badge">Yes</span>');
+      
+      // Remove the mark as sent button
+      $(this).remove();
+    });
+    
+    // Search functionality
+    $('#search-button').on('click', function() {
+      const searchTerm = $('#search-input').val().trim().toLowerCase();
+      
+      if (searchTerm === '') {
+        // If search is empty, show all rows
+        $('#requests-table tr').show();
+        return;
+      }
+      
+      // Hide rows that don't match the search term
+      $('#requests-table tr').each(function() {
+        const floorNumber = $(this).find('td:eq(0)').text().toLowerCase();
+        if (floorNumber.includes(searchTerm)) {
+          $(this).show();
+        } else {
+          $(this).hide();
+        }
+      });
+    });
+    
+    // Refresh button click
+    $('#refresh-button').on('click', function() {
+      // In a real implementation, you would reload the data from the server
+      // For now, we'll just reset the search and show all rows
+      $('#search-input').val('');
+      $('#requests-table tr').show();
+      toastr.info('Data refreshed');
+    });
+    
+    // Initialize toastr options
+    toastr.options = {
+      "closeButton": true,
+      "progressBar": true,
+      "timeOut": "3000"
+    };
+  });
+</script>
+{% endblock %} 

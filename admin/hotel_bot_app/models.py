@@ -65,12 +65,41 @@ class Inventory(models.Model):
     qty_received = models.IntegerField(null=True, blank=True)
     quantity_installed = models.IntegerField(null=True, blank=True)
     quantity_available = models.IntegerField(null=True, blank=True)
+    hotel_warehouse_quantity = models.IntegerField(null=True, blank=True, default=0)
 
     class Meta:
         db_table = 'inventory'  # Ensure this matches the actual table name in PostgreSQL
 
     def __str__(self):
         return f"Item: {self.item} - Available: {self.quantity_available}"
+    
+class HotelWarehouse(models.Model):
+    id = models.AutoField(primary_key=True)
+    reference_id = models.CharField(max_length=255)  # Warehouse Container ID 
+    client_item = models.CharField(max_length=255)
+    quantity_received = models.PositiveIntegerField(default=0)
+
+    def __str__(self):
+        return f"{self.reference_id} - {self.client_item} ({self.quantity_received})"
+
+    class Meta:
+        db_table = "hotel_warehouse"
+
+class WarehouseRequest(models.Model):
+    id = models.AutoField(primary_key=True)
+    floor_number = models.IntegerField()
+    client_item = models.CharField(max_length=255)
+    requested_by = models.ForeignKey('InvitedUser', on_delete=models.SET_NULL, null=True, blank=True)
+    quantity_requested = models.PositiveIntegerField(default=0)
+    quantity_received = models.PositiveIntegerField(default=0)
+    quantity_sent = models.PositiveIntegerField(default=0)
+    sent = models.BooleanField(default=False)  # True for Yes, False for No
+
+    def __str__(self):
+        return f"Floor {self.floor_number} - {self.client_item} (Requested: {self.quantity_requested}, Sent: {self.quantity_sent})"
+
+    class Meta:
+        db_table = "warehouse_request"
     
 class RoomModel(models.Model):
     id = models.AutoField(primary_key=True)  # Serial (Auto-increment)
