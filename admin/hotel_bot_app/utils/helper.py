@@ -40,7 +40,7 @@ def fetch_data_from_sql(query):
 def format_gpt_prompt(user_message, prompt_data):
     # Enhanced system prompt for SQL Generation
     system_prompt = """
-    You are an expert SQL generation assistant named PksBot, specializing in PostgreSQL for a hotel furniture installation database.
+    You are an expert SQL generation assistant named PksBot, specializing in PostgreSQL for a hotel furniture installation database.i will sometime provide you suggested query logic in the end use that to make query 
 
     **Core Responsibilities:**
     1.  **Analyze User Intent:** Understand the user's request thoroughly.
@@ -48,11 +48,12 @@ def format_gpt_prompt(user_message, prompt_data):
     3.  **Use Human-Readable Data:** Prioritize returning meaningful names/descriptions over IDs. JOIN tables when necessary (e.g., join `ProductData` on `id` with `InstallDetail` on `product_id`).
     4.  **Case-Insensitive Search:** ALWAYS use `ILIKE` for string comparisons involving names, descriptions, or any potentially case-variable text. Example: `WHERE item ILIKE '%sofa%'`.
     5.  **Avoid Type Mismatches:** Ensure correct data types in comparisons (string vs. numeric).
-    6.  **Safety & Performance:** ALWAYS include a `LIMIT` clause (e.g., `LIMIT 50`) to prevent overly large results.
+    6.  **Safety & Performance:** ALWAYS include a `LIMIT` clause (e.g., `LIMIT 200`) to prevent overly large results.
     7.  **Strict Schema Adherence:** ONLY use tables and columns defined in the provided schema. Do NOT hallucinate.
-    8.  **JSON Output:** Return ONLY a valid JSON object containing the SQL query. Format: `{"query": "SELECT ... FROM ... WHERE ... ILIKE ... LIMIT 50;"}`.
+    8.  **JSON Output:** Return ONLY a valid JSON object containing the SQL query. Format: `{"query": "SELECT ... FROM ... WHERE ... ILIKE ... LIMIT 200;"}`.
     9.  **No Explanations:** Do not add any explanations, markdown, or code blocks outside the JSON structure.
-
+    10. - **Room Models rule:** Strictly use only below room models donot go outside these ones and donot put word 'model' in where condition
+            - 'A COL', 'A LO', 'A LO DR', 'B', 'C PN', 'C+', 'CURVA 24', 'CURVA', 'CURVA - DIS', 'D', 'DLX', 'STC', 'SUITE A', 'SUITE B', 'SUITE C', 'SUITE MINI', 'CURVA 35', 'PRESIDENTIAL SUITE', 'Test Room'
     **Schema Information (including examples):**
     The database schema, including example rows for context, is provided below. Use it as your single source of truth for table and column names.
     """
@@ -65,7 +66,6 @@ def format_gpt_prompt(user_message, prompt_data):
         {"role": "system", "content": f"Database Schema:\\n```json\\n{schema_representation}\\n```"}, # Wrap schema in markdown for clarity
         {"role": "user", "content": f"User Query:\\n{user_message.strip()}"},
     ]
-
 
 def gpt_call_json_func(message, gpt_model, json_required=False, temperature=0):
     try:
@@ -120,6 +120,32 @@ def gpt_call_json_func(message, gpt_model, json_required=False, temperature=0):
         print(f"Unexpected error: {e}")
         return {"query": None}
 
+def gpt_call_json_func_two(message,gpt_model,openai_key,json_required=True,temperature=0):
+	try:
+		print("gpt function call")
+		json_payload = {
+			'model': gpt_model,
+			'temperature': temperature,
+			'messages': message
+		}
+		
+		if json_required:
+			json_payload['response_format'] = {"type": "json_object"}
+		
+		gpt_response = requests.post(
+			'https://api.openai.com/v1/chat/completions',
+			json=json_payload,
+			headers={
+				'Authorization': f'Bearer {openai_key}',
+				'Content-Type': 'application/json'
+			}
+		)
+		# print("gpt response got is ",gpt_response.json())
+		# print("gpt function ended with ....",gpt_response.json()['choices'][0]['message']['content'])
+		# print("gpt response got is ",gpt_response.json()['choices'])
+		return gpt_response.json()['choices'][0]['message']['content']
+	except Exception as e:
+		print("gpt call error",e)
 
 def generate_final_response(user_message, rows):
     # --- Input Validation ---
@@ -155,23 +181,6 @@ def generate_final_response(user_message, rows):
         - Data (list of tuples/lists): {str(data) if data else 'None'}
 
     **Output Rules:**
-    1.  **Data Found (num_records > 0):**
-        - Generate ONLY an HTML `<table>`.
-        - Use the exact `columns` provided for the table headers (`<thead><tr><th>...</th></tr></thead>`).
-        - Populate the table body (`<tbody>`) with the `data`. Each inner list/tuple in `data` is a row (`<tr>`), and each item within it is a cell (`<td>`).
-        - Escape HTML special characters within data cells (e.g., '<', '>') to prevent XSS issues.
-        - Example Structure:
-          ```html
-          <table>
-            <thead>
-              <tr><th>Column1</th><th>Column2</th></tr>
-            </thead>
-            <tbody>
-              <tr><td>Row1Val1</td><td>Row1Val2</td></tr>
-              <tr><td>Row2Val1</td><td>Row2Val2</td></tr>
-            </tbody>
-          </table>
-          ```
     2.  **No Data Found (num_records == 0):**
         - Return ONLY the text string: "No records found matching your query." (Do not include the original query here).
     3.  **Non-Data/General Queries (if applicable, though primary focus is data):**
@@ -180,7 +189,6 @@ def generate_final_response(user_message, rows):
         - **NO** introductory text (e.g., "Here are the results:").
         - **NO** concluding text or summaries.
         - **NO** apologies or explanations.
-        - **NO** markdown formatting (like ```html ... ```). Output raw HTML for tables or plain text for "no records".
         - **NO** modifications to column names or data values.
         - **NO** invention of data.
 
@@ -210,7 +218,6 @@ def generate_final_response(user_message, rows):
     except Exception as e:
         print(f"Error calling output_praser_gpt within generate_final_response: {e}")
         return "Sorry, an error occurred while formatting the final response."
-
 
 def output_praser_gpt(message, gpt_model, json_required=True, temperature=0):
     try:
@@ -305,7 +312,7 @@ def verify_sql_query(
     ```
 
     **Example Valid Scenario:**
-    If the original query is `SELECT room FROM RoomData WHERE floor = 5 LIMIT 50;` and it's correct:
+    If the original query is `SELECT room FROM RoomData WHERE floor = 5 LIMIT 200;` and it's correct:
     ```json
     {{
       "is_valid": true,
@@ -323,7 +330,7 @@ def verify_sql_query(
         "Type mismatch: qty_received is numeric but compared against a string '10'.",
         "Potentially ambiguous column 'name'; consider specifying table if joins are possible."
       ],
-      "recommendation": "SELECT item FROM Inventory WHERE qty_received = 10 LIMIT 50;"
+      "recommendation": "SELECT item FROM Inventory WHERE qty_received = 10 LIMIT 200;"
     }}
     ```
 
@@ -366,74 +373,124 @@ def verify_sql_query(
         }
 
 # New function for the initial Intent + Conditional SQL Generation Prompt
-def format_intent_sql_prompt(user_message, prompt_data):
+
+def generate_sql_prompt(user_message, prompt_data):
     """Formats the prompt for the initial LLM call to determine intent and generate SQL if needed."""
     schema_representation = json.dumps(prompt_data, indent=2)
 
+    # Indent the schema representation for better formatting within the f-string
+    indented_schema = "\n".join("  " + line for line in schema_representation.splitlines())
+
     system_prompt = f"""
-    You are PksBot, an AI assistant for a hotel furniture installation system, interfacing via PostgreSQL.
-    Your primary goal is to understand the user's request and determine the necessary action.
+        You are an expert chatbot specializing in hotel furniture installation. Your task is to generate the most accurate and optimized SQL query based on the "User Query", "Database Schema", and "Relevant Context".
 
-    **Analysis Steps:**
-    1.  **Analyze Intent:** Carefully read the user's query: `{user_message}`.
-    2.  **Determine Need for Data:** Decide if answering the query requires information from the database schema provided below.
-    3.  **Action:**
-        *   **If Database Info Needed:** Generate the most appropriate, efficient, and safe PostgreSQL query. Follow these SQL rules strictly:
-            *   Use `ILIKE` for case-insensitive string comparisons on names/descriptions.
-            *   JOIN tables to get human-readable names (e.g., product names) instead of just IDs.
-            *   Always include `LIMIT 50`.
-            *   Adhere strictly to the provided schema.
-            *   Handle potential ambiguities (e.g., qualify column names if necessary).
-        *   **If NO Database Info Needed:** Generate a concise, direct natural language answer to the user's query (e.g., for greetings, general questions about your capabilities).
+        ### Instructions:
+            1.Carefully analyze the user query and related context which can be used to make response more specific and accurate.
 
-    **Database Schema (for reference if needed):**
-    ```json
-    {schema_representation}
-    ```
+            2. Select the most appropriate tables for the query using the provided schema and related tables.
 
-    **Output Format:**
-    Respond ONLY with a single, valid JSON object. No explanations or other text.
-    The JSON object MUST have the following structure:
+            3. Construct a well-structured SQL query that efficiently retrieves the required data which will be best fit according to User Query.
 
-    ```json
-    {{
-      "needs_sql": boolean, // true if you generated a SQL query, false otherwise
-      "query": string | null, // The generated PostgreSQL query if needs_sql is true, otherwise null
-      "direct_answer": string | null // The direct natural language answer if needs_sql is false, otherwise null
-    }}
-    ```
+            4. Ensure accuracy and completeness, handling necessary joins, conditions, and filters.
 
-    **Example 1 (Needs SQL):**
-    User Query: "Show me details for room 101"
-    Expected JSON Output:
-    ```json
-    {{
-      "needs_sql": true,
-      "query": "SELECT room, floor, room_model, description FROM RoomData WHERE room = '101' LIMIT 50;",
-      "direct_answer": null
-    }}
-    ```
+            5. Always add client_id in select columns in case you need to answer about the product data.
 
-    **Example 2 (Doesn't Need SQL):**
-    User Query: "Hello, who are you?"
-    Expected JSON Output:
-    ```json
-    {{
-      "needs_sql": false,
-      "query": null,
-      "direct_answer": "I am PksBot, your AI assistant for hotel furniture installation information."
-    }}
-    ```
+        ### Key Table Relationships and Join Logic:
 
-    **Generate the JSON response now based on the user query: "{user_message}"**
+        - **Product Schedule (by product description):**
+            1. `product_data.description` → `product_data.id`
+            2. `JOIN product_room_model ON product_data.id = product_room_model.product_id`
+            3. `JOIN room_model ON product_room_model.room_model_id = room_model.id`
+            4. `JOIN room_data ON room_model.id = room_data.room_model_id`
+            5. `JOIN schedule ON room_data.floor = schedule.floor`
+
+        - **Inventory and Product Names:**
+            1. `JOIN inventory inv ON inv.client_id = product_data.client_id`
+            2. Access `inv.quantity_available`, `inv.qty_received`, `product_data.description`
+
+        - **Installation Progress by Room:**
+            1. `JOIN install ON install.room = room_data.room`
+
+        ---
+
+        ### SQL Generation Rules:
+
+        - **Schema Adherence:** Use only provided tables and columns. Match data types strictly.
+        - **Readable Aliases:** Use clear aliases (e.g., `inv` for `inventory`, `pd` for `product_data`).
+        - **String Matching:** Use `ILIKE` for case-insensitive comparisons.
+        - **Date Logic:** Compare dates (e.g., schedule completion) with `NOW()` Use only date without time and time zone.
+        - **Limit Results:** Always append `LIMIT 200` unless told otherwise.
+        - **Room Models rule:** Strictly use only below room models donot go outside these ones
+            - 'A COL', 'A LO', 'A LO DR', 'B', 'C PN', 'C+', 'CURVA 24', 'CURVA', 'CURVA - DIS', 'D', 'DLX', 'STC', 'SUITE A', 'SUITE B', 'SUITE C', 'SUITE MINI', 'CURVA 35', 'PRESIDENTIAL SUITE'
+        ---
+
+        ### Aggregation Rules:
+
+        Only use aggregate functions (`SUM`, `COUNT`, `AVG`, etc.) if the user explicitly asks for:
+        - Totals, averages, summaries
+        - Grouped insights (e.g., "Which rooms have completed installations?")
+        - Try not to show duplicate data in the response. Use group by to avoid duplicate data.
+        Avoid aggregation if the user wants specific items or detailed records.
+
+        ---
+
+        ### Safety and Restrictions:
+
+        - **Read-Only Queries:** Do not generate `UPDATE`, `DELETE`, or `INSERT` statements.
+        - **Avoid `SELECT *`:** Only include the specific columns needed for the result.
+
+        ---
+
+
+        **Output Format:**
+
+        Respond ONLY with a single, valid JSON object containing the analysis result. Do not include any explanations, greetings, or text outside the JSON structure.
+
+        ```json
+        {{
+        "needs_sql": boolean, // true if a SQL query was generated, false otherwise
+        "query": string | null, // The generated PostgreSQL query (string) if needs_sql is true, otherwise null
+        "direct_answer": string | null // The direct natural language answer (string) if needs_sql is false, otherwise null
+        }}
+        ```
+
+        **Examples:**
+
+        ***Example 1 (Needs SQL - Specific Item):**
+            *   User Query: "Show me details for room 101"
+            *   JSON Output:
+                ```json
+                {{
+                "needs_sql": true,
+                "query": "SELECT rd.room, rd.floor, rm.model_name, rd.description FROM room_data rd JOIN room_model rm ON rd.room_model_id = rm.id WHERE rd.room = '101' LIMIT 200;",
+                "direct_answer": null
+                }}
+                ```
+        ***Example 2 (Doesn't Need SQL):**
+            *   User Query: "Hello, who are you?"
+            *   JSON Output:
+                ```json
+                {{
+                "needs_sql": false,
+                "query": null,
+                "direct_answer": "I am PksBot, your AI assistant for hotel furniture installation information."
+                }}
+                ```
+
+        **Full Database Schema:** 
+        ```json
+        {indented_schema}
+        ```
+"""
+
+
+    user_prompt = f"""
+        **User Query:** {user_message}
+        
     """
 
-    return [
-        {"role": "system", "content": system_prompt.strip()},
-        # No separate user message needed here as it's embedded in the system prompt for this specific task
-    ]
+    return system_prompt.strip(), user_prompt.strip()
 
-# New function for the Final Natural Language Response Prompt
 def generate_natural_response_prompt(user_message, sql_query, rows):
     """Formats the prompt for the final LLM call to synthesize a natural response based on context and data."""
 
@@ -448,7 +505,7 @@ def generate_natural_response_prompt(user_message, sql_query, rows):
         num_records = len(data) if isinstance(data, (list, tuple)) else 0
 
         if num_records > 0:
-            max_rows_in_prompt = 10 # Slightly increase for context, still limited
+            max_rows_in_prompt = 200 # Slightly increase for context, still limited
             data_preview = data[:max_rows_in_prompt] # Assign within the check
             data_summary = f"Successfully retrieved {num_records} record(s)."
             data_summary += f"\\nColumns: {columns}"
@@ -464,50 +521,85 @@ def generate_natural_response_prompt(user_message, sql_query, rows):
          data_summary = "I attempted to retrieve information, but encountered an issue and could not fetch the data."
 
     system_prompt = f"""
-    You are PksBot, a friendly and helpful AI assistant for a hotel furniture installation system.
-    Your task is to provide a conversational and informative answer to the user's query based on the context provided.
+        You are PksBot, a friendly and helpful AI assistant for a hotel furniture installation system.
+        Your task is to provide a conversational and informative answer to the user's query based on the context provided, presenting data in a full HTML table when appropriate.
 
-    **Context:**
-    1.  **User's Original Query:** "{user_message}"
-    2.  **Database Query Attempted:** `{sql_query if sql_query else 'None'}`
-    3.  **Data Retrieval Summary:** {data_summary}
+        **Context:**
+        1.  **User's Original Query:** "{user_message}"
+        2.  **Database Query Attempted:** `{sql_query if sql_query else 'None'}`
+        3.  **Data Retrieval Summary:** {data_summary}
+        4.  **Full Retrieved Data (for table generation if needed):**
+            - Columns: {columns if columns else 'N/A'}
+            - Number of Records: {num_records}
+            - Data: {str(rows.get('rows', [])) if rows and isinstance(rows, dict) else 'N/A'} # Pass full data here
 
-    **Response Guidelines:**
-    *   Address the user's query directly and naturally.
-    *   **If the user asks for a list of items (e.g., missing items, available products, room details) and data was retrieved (`num_records > 0`):**
-        *   Present the results clearly using an HTML `<table>`.
-        *   Use the `Columns` from the summary as table headers (`<thead><tr><th>...</th></tr></thead>`).
-        *   Populate the table body (`<tbody>`) using the retrieved `Data Preview` (and mention if more rows exist).
-        *   Include a brief introductory sentence before the table, like "Here are the items matching your request:"
-    *   **For other types of queries OR if only one record was found:** Synthesize the key information from the 'Data Retrieval Summary' into a concise natural language sentence or paragraph. Explain what the data means.
-    *   If no data was found (but the query was valid), state that clearly and politely (e.g., "I couldn't find any records matching your criteria.").
-    *   If a query was attempted but failed, inform the user that you couldn't retrieve the information due to an issue (without technical details).
-    *   If no database query was needed or attempted, just answer the user's original query directly.
-    *   Keep the response concise and easy to understand.
-    *   Do NOT include the raw SQL query in your response.
-    *   Do NOT use markdown formatting (like ``` ```) around the HTML table if you generate one.
-    *   Maintain a helpful and professional tone.
+        **Response Guidelines:**
+        *   Address the user's query directly and naturally.
+        *   For date fields, use only date without time and time zone.
+        *   **If the user asks for a list of items (e.g., missing items, available products, room details) and data was retrieved (`num_records > 0`):**
+            *   Provide a brief introductory sentence (e.g., "Here are the items matching your request:").
+            *   Generate a **complete** HTML `<table>` containing **all** retrieved records.
+            *   Assign the table the ID `results-table` (e.g., `<table id="results-table">`).
+            *   Use the exact `Columns` provided in the context for the table headers (`<thead><tr><th>...</th></tr></thead>`).
+            *   Populate the table body (`<tbody>`) with **all** the `Data` provided in the context. Each inner list/tuple in `Data` is a row (`<tr>`), and each item within it is a cell (`<td>`).
+            *   Ensure data within `<td>` elements is properly HTML-escaped.
+        *   **For other types of queries OR if only one record was found:** Synthesize the key information from the 'Data Retrieval Summary' into a concise natural language sentence or paragraph. Explain what the data means.
+        *   If no data was found (but the query was valid), state that clearly and politely (e.g., "I couldn't find any records matching your criteria.").
+        *   If a query was attempted but failed, inform the user that you couldn't retrieve the information due to an issue (without technical details).
+        *   If no database query was needed or attempted, just answer the user's original query directly.
+        *   Keep the response easy to understand.
+        *   Do NOT include the raw SQL query in your response.
+        *   Do NOT use markdown formatting (like ``` ```) around the HTML table. Output raw HTML.
+        *   Do NOT add notes about data being truncated or mention pagination (the front-end will handle that).
+        *   Maintain a helpful and professional tone.
+        *   If you are not giving the table then just give the answer as bold the important information and try to use the bullet points.
 
-    **Example Response (Data Found - List Request -> Table):**
-    User Query: "Show me inventory for client P123"
-    Response:
-    "Okay, here is the inventory information for client P123:
-    <table><thead><tr><th>Item SKU</th><th>Quantity Available</th><th>Quantity Received</th></tr></thead><tbody><tr><td>KS-JWM-702A</td><td>0</td><td>0</td></tr></tbody></table>
-    (Note: Additional data might exist if not fully shown)"
+        **Example Response (Data Found - List Request -> Full Table):**
+        User Query: "Show me inventory for client P123"
+        Response:
+        "Okay, here is the inventory information for client P123:
+        <table id="results-table"><thead><tr><th>Item SKU</th><th>Quantity Available</th><th>Quantity Received</th></tr></thead><tbody><tr><td>KS-JWM-702A</td><td>0</td><td>0</td></tr><tr><td>CH-XYZ-101</td><td>10</td><td>5</td></tr></tbody></table>" 
+        # (Table contains all rows from data)
 
-    **Example Response (Data Found - Specific Question -> Narrative):**
-    User Query: "What is the status of room 1607?"
-    Response:
-    "Room 1607 currently has product availability marked as 'NO', and pre-work, installation, and post-work are also marked as 'NO'. Installation has not yet begun for this room."
+        **Generate the final natural language response for the user now.**
+        """
+        # --- END OF MODIFIED SYSTEM PROMPT ---
 
-    **Example Response (No Data Found):**
-    "I checked for inventory items described as 'purple chair', but couldn't find any matching records."
-
-    **Example Response (Query Failed):**
-    "I tried to look up the information you requested, but encountered a problem retrieving the data. You might want to try rephrasing your question."
-
-    **Generate the final natural language response for the user now.**
-    """
     return [
-        {"role": "system", "content": system_prompt.strip()}
-    ]
+            {"role": "system", "content": system_prompt.strip()}
+        ]
+
+def intent_detection_prompt(user_message):
+    db_schema = load_database_schema()
+    schema_representation = json.dumps(db_schema, indent=2)
+
+    indented_schema = "\n".join("  " + line for line in schema_representation.splitlines())
+    user_prompt = f"""
+        **User Query:** {user_message} 
+
+        
+        
+    """
+
+    system_prompt = f"""
+        *You are a chatbot specialized in hotel furniture installation. Your task is to analyze the User Query and determine its intent.
+ 
+        *If the user is engaging in general conversation (e.g., greetings like "hello" or "how are you?"), then provide me its reply output in json with key 'response'
+        
+        *If the query relates to database columns, hotel-related topics, models, inventory, or installation (such as rooms, services, IDs, scheduling, or product details), extract and return the most relevant tables, columns, data asked in user query and "suggested query logic" in english in JSON format to assist in building SQL queries later.
+
+        *Donot give me sql query instead provide me the suggested query logic to make it with the best way. Always try add additional columns where necessary for adding more value to the response. 
+
+        *Select query columns should not exceeded from 10. So carefully identify valueable columns.
+        
+        *Try to give more detailed answers with all possible importatnt information with response. for example:- 
+        if user ask about the product data then try to give the all information about the product like client_id. 
+
+        **Full Database Schema:**
+        ```json
+        {indented_schema}
+        ```
+    """
+
+    return [{"role":"system","content":system_prompt.strip()}, {"role":"user","content":user_prompt.strip()}]
+

@@ -70,7 +70,7 @@ instance/
 
 # Sphinx documentation
 docs/_build/
-
+admin/staticfiles/
 # PyBuilder
 .pybuilder/
 target/
@@ -172,3 +172,5 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+admin/media/
+media/

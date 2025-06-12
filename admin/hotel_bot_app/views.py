@@ -4,33 +4,53 @@ import random
 import string
 from datetime import date, datetime
 from functools import wraps
-
+from .forms import CommentForm
+import uuid
+from django.db.models.functions import Lower
+from django.urls import reverse
 import bcrypt
 import environ
 import requests
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, user_passes_test
 from django.core.mail import send_mail
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
 from django.utils.timezone import now
+from django.core.files.storage import default_storage
 from django.views.decorators.csrf import csrf_exempt
 from hotel_bot_app.utils.helper import (fetch_data_from_sql,
                                          format_gpt_prompt,
                                          generate_final_response,
-                                         gpt_call_json_func,
+                                         gpt_call_json_func,gpt_call_json_func_two,
                                          load_database_schema,
                                          verify_sql_query,
-                                         format_intent_sql_prompt,
+                                         generate_sql_prompt,
                                          generate_natural_response_prompt,
-                                         output_praser_gpt)
+                                         output_praser_gpt,
+                                         intent_detection_prompt)
 from openai import OpenAI
+from html import escape
+import xlwt
+import pytz
+
+from django.db.models import Q
+from django.contrib.auth import get_user_model # Use this if settings.AUTH_USER_MODEL is Django's default
+from django.contrib.auth.decorators import login_required, user_passes_test # For permission checking
+from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger # Import Paginator
 
 from .models import *
 from .models import ChatSession
 from django.utils.timezone import localtime
+from django.db import connection
+from .forms import IssueForm, CommentForm, IssueUpdateForm # Import the forms
+import logging
+from django.contrib.contenttypes.models import ContentType # Added for GFK
+from django.utils.timezone import make_aware
+
+logger = logging.getLogger(__name__)
 
 env = environ.Env()
 environ.Env.read_env()
@@ -40,6 +60,7 @@ open_ai_key = env("open_ai_api_key")
 
 client = OpenAI(api_key=open_ai_key)
 
+User = InvitedUser # Or User = get_user_model()
 
 def session_login_required(view_func):
     @wraps(view_func)
@@ -65,6 +86,23 @@ def extract_values(json_obj, keys):
     print("table selected ,,,,,,", table_selected)
     return table_selected
 
+
+def get_chat_history_from_db(session_id):
+
+    if not session_id:
+        return JsonResponse({"chat_history": []})  # No session, return empty history
+
+    session = get_object_or_404(ChatSession, id=session_id)
+    history_messages = list(
+        ChatHistory.objects.filter(session=session).values("role", "message")
+    )
+    converted_messages = [
+    {'role': msg['role'], 'content': msg['message']}
+    for msg in history_messages
+    ]
+    return converted_messages
+
+
 @csrf_exempt
 def chatbot_api(request):
     if request.method == "POST":
@@ -80,6 +118,7 @@ def chatbot_api(request):
         # --- Session Management ---
         session_id = request.session.get("chat_session_id")
         session = None
+        print('session id',session_id)
         if session_id:
             try:
                 session = ChatSession.objects.get(id=session_id)
@@ -119,23 +158,63 @@ def chatbot_api(request):
             # 2. First LLM Call: Intent Recognition & Conditional SQL Generation
             intent_response = None
             try:
-                intent_prompt = format_intent_sql_prompt(user_message, DB_SCHEMA)
-                intent_response = gpt_call_json_func(
+                intent_prompt = intent_detection_prompt(user_message)
+
+                intent_prompt_first_output = json.loads(gpt_call_json_func_two(
                     intent_prompt,
                     gpt_model="gpt-4o",
+                    openai_key=open_ai_key,
                     json_required=True
-                )
+                ))
+                print('intent_prompt_first_output',intent_prompt_first_output)
+                
+
+                intent_prompt_system_prompt,intent_prompt_user_prompt = generate_sql_prompt(user_message, DB_SCHEMA)
+                if 'response' not in intent_prompt_first_output:
+                    print("Its a db query, as identify by intent_detection_prompt.")
+                    intent_prompt_system_prompt={"role":"system","content":intent_prompt_system_prompt + f'## Relevant Context : ##{intent_prompt_first_output}'}
+                else:
+                    print("we got response")
+                    intent_prompt_system_prompt={"role":"system","content":intent_prompt_system_prompt}
+
+                intent_prompt_user_prompt={"role":"user","content":intent_prompt_user_prompt}
+                print(1)
+                if session_id!=None:
+                    chat_history_memory=get_chat_history_from_db(session_id)
+                    print(2)
+                    
+                    if len(chat_history_memory) > 5:
+                        chat_history_memory = chat_history_memory[-5:]
+                    
+                    chat_history_memory=[intent_prompt_system_prompt]+chat_history_memory
+                    
+                    # print('chat_history_memory ...........',chat_history_memory)
+                    sql_response = json.loads(gpt_call_json_func_two(
+                        chat_history_memory,
+                        gpt_model="gpt-4o",
+                        openai_key=open_ai_key,
+                        json_required=True
+                    ))
+                    print('sql_response ',sql_response)
+                if session_id==None:
+                    # print("session id is none",[{"role":"system","content":intent_prompt_system_prompt},{"role":"user","content":user_message}])
+                    sql_response = json.loads(gpt_call_json_func_two(
+                        [intent_prompt_system_prompt,{"role":"user","content":user_message}],
+                        gpt_model="gpt-4o",
+                        openai_key=open_ai_key,
+                        json_required=True
+                    ))
             except Exception as e:
                 print(f"Error during Intent/SQL Generation LLM call: {e}")
-                # Fall through, intent_response remains None
+                # Fall through, sql_response remains None
 
-            if not intent_response or not isinstance(intent_response, dict):
+            if not sql_response or not isinstance(sql_response, dict):
                 print("Error: Failed to get valid JSON response from Intent/SQL LLM.")
                 raise Exception("Failed to understand request intent.")
 
-            needs_sql = intent_response.get("needs_sql")
-            initial_sql_query = intent_response.get("query")
-            direct_answer = intent_response.get("direct_answer")
+            needs_sql = sql_response.get("needs_sql")
+            initial_sql_query = sql_response.get("query")
+            direct_answer = sql_response.get("direct_answer")
 
             # 3. Handle based on Intent
             if needs_sql is False and direct_answer:
@@ -144,14 +223,14 @@ def chatbot_api(request):
                 # Skip SQL execution and proceed directly to logging/returning the direct answer
 
             elif needs_sql is True and initial_sql_query:
-                print(f"Intent LLM requires SQL. Generated query: {initial_sql_query}")
+                print(f"\n\nGenerated query: \n\n{initial_sql_query}\n\n\n")
                 final_sql_query = initial_sql_query # Tentatively set the final query
 
                 # 4. Execute SQL (and verify/retry if needed)
                 try:
                     # Initial attempt
                     rows = fetch_data_from_sql(initial_sql_query)
-                    print(f"Initial query execution successful.")
+                    print(f"Initial query execution successful.",rows)
 
                 except Exception as db_error:
                     print(f"Initial DB execution error: {db_error}. Attempting verification.")
@@ -176,7 +255,7 @@ def chatbot_api(request):
                         try:
                             rows = fetch_data_from_sql(recommended_query)
                             final_sql_query = recommended_query # Update the final query executed
-                            print("Retry with recommended query successful.")
+                            print("Retry with recommended query successful.",rows)
                         except Exception as second_error:
                             print(f"Retry with recommended query failed: {second_error}")
                             # Clear rows and final_sql_query as the attempt failed
@@ -193,6 +272,7 @@ def chatbot_api(request):
                 # This block runs whether SQL succeeded, failed, or returned no rows
                 try:
                     response_prompt = generate_natural_response_prompt(user_message, final_sql_query, rows)
+                    # print('response prompt is :::::::',response_prompt)
                     bot_message = output_praser_gpt( # Use output_praser_gpt as we expect text
                         response_prompt,
                         gpt_model="gpt-4o",
@@ -225,20 +305,41 @@ def chatbot_api(request):
                  # If bot_message got corrupted somehow during error handling
                  bot_message = "Sorry, I encountered an unexpected issue and couldn't process your request. Please try again later."
 
-        # --- Log Assistant Message ---
+        
+        messages=bot_message
         try:
-            ChatHistory.objects.create(session=session, message=bot_message, role="assistant")
+            ChatHistory.objects.create(session=session, message=messages, role="assistant")
         except Exception as e:
              print(f"Error saving assistant message to chat history: {e}")
              # Non-critical
 
 
         # --- Return Response ---
-        return JsonResponse({"response": bot_message})
+        return JsonResponse({"response": bot_message,"table_info":rows})
 
     # --- Handle Non-POST Requests ---
     return JsonResponse({"error": "Invalid request method. Only POST is allowed."}, status=405)
 
+def convert_to_html_table(data):
+    html = ['<table>']
+
+    # Header
+    html.append('<tr>')
+    for col in data['columns']:
+        html.append(f'<th>{escape(col)}</th>')
+    html.append('</tr>')
+
+    # Rows
+    for row in data['rows']:
+        html.append('<tr>')
+        for cell in row:
+            if isinstance(cell, datetime):
+                cell = cell.isoformat()
+            html.append(f'<td>{escape(str(cell))}</td>')
+        html.append('</tr>')
+
+    html.append('</table>')
+    return '\n'.join(html)
 
 @csrf_exempt
 def get_chat_history(request):
@@ -251,7 +352,6 @@ def get_chat_history(request):
     history_messages = list(
         ChatHistory.objects.filter(session=session).values("role", "message")
     )
-
     return JsonResponse({"chat_history": history_messages})
 
 
@@ -299,44 +399,96 @@ def add_users_roles(request):
         email = request.POST.get("email")  # Get the new description
         roles = request.POST.get("role")  # Get the new description
         status = request.POST.get("status")  # Get the new description
+        password = request.POST.get("password")  # Get the password
         roles_list = roles.split(", ") if roles else []
-        print(name, email, type(roles_list), roles_list, status, password_generated)
+        print(name, email, type(roles_list), roles_list, status, password)
+
+        # Check if email already exists
+        if InvitedUser.objects.filter(email=email).exists():
+            return JsonResponse({"error": "User with this email already exists."}, status=400)
+
 
         user = InvitedUser.objects.create(
             name=name,
             role=roles_list,
             last_login=now(),
             email=email,
-            password=bcrypt.hashpw(password_generated.encode(), bcrypt.gensalt()),
+            status=status if status else 'activated', # Default to activated if not provided
+            password=bcrypt.hashpw(password.encode(), bcrypt.gensalt()),
         )
-        send_emails(email, password_generated)
 
-    return render(request, "add_users_roles.html")
+        if 'admin' in roles_list:
+            auth_user = User.objects.create_user(
+                username=email,
+                password=password,
+                email=email,
+            )
+            auth_user.is_superuser = False
+            auth_user.save()
+        
 
-def send_emails(recipient_email, password):
-    subject = "Your Access to Hotel Installation Admin"
-    from_email = env("EMAIL_HOST_USER")
-    recipient_list = [recipient_email]
+    return render(request, "add_users_roles.html") # Should not be reached if AJAX
 
-    html_message = render_to_string(
-        "email_sample.html", {"email": recipient_email, "password": password}
-    )
-    plain_message = strip_tags(html_message)
+@login_required
+def edit_users_roles(request, user_id):
+    if request.method == "POST":
+        try:
+            print("edit_users_roles user_id::", user_id)
+            user = get_object_or_404(InvitedUser, id=user_id)
+            
+            name = request.POST.get("name")
+            email = request.POST.get("email")
+            roles = request.POST.get("role")
+            status = request.POST.get("status")
+            password = request.POST.get("password")
 
-    send_mail(
-        subject,
-        plain_message,
-        from_email,
-        recipient_list,
-        html_message=html_message,
-        fail_silently=False,
-    )
+            roles_list = roles.split(", ") if roles else []
 
+            # Check if email is being changed and if the new email already exists for another user
+            if email != user.email and InvitedUser.objects.filter(email=email).exclude(id=user_id).exists():
+                return JsonResponse({"error": "Another user with this email already exists."}, status=400)
 
+            user.name = name
+            user.email = email
+            user.role = roles_list
+            user.status = status if status else 'activated' # Default to activated
+
+            if password: # Only update password if a new one is provided
+                user.password = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
+            
+            user.save()
+
+            if 'admin' in roles_list:
+                auth_user = User.objects.create_user(
+                    username=email,
+                    password=password,
+                    email=email,
+                )
+                auth_user.is_superuser = False
+                auth_user.save()
+            else:
+                try:
+                    auth_user = User.objects.get(username=email)
+                    auth_user.delete()
+                except User.DoesNotExist:
+                    pass
+            return JsonResponse({"message": "User updated successfully!"})
+
+        except InvitedUser.DoesNotExist:
+            return JsonResponse({"error": "User not found."}, status=404)
+        except Exception as e:
+            logger.error(f"Error editing user {user_id}: {e}", exc_info=True)
+            return JsonResponse({"error": f"An error occurred: {str(e)}"}, status=500)
+    
+    # GET request to this URL isn't typical for AJAX forms but could render a form if needed.
+    # For now, redirect or return error for GET.
+    return JsonResponse({"error": "Invalid request method. Only POST is allowed for editing."}, status=405)
+
+@csrf_exempt
 def user_login(request):
-    # Redirect to dashboard if already logged in
+    # Redirect to home page if already logged in
     if request.session.get("user_id"):
-        return redirect("/dashboard")
+        return redirect("/home")
 
     if request.method == "POST":
         try:
@@ -372,8 +524,8 @@ def user_login(request):
 
 @login_required
 def room_data_list(request):
-    # Fetch room data from the database
-    rooms = RoomData.objects.all()
+    # Fetch room data from the database, including related RoomModel
+    rooms = RoomData.objects.select_related('room_model_id').all()
 
     # Pass the room data to the template
     return render(request, "room_data_list.html", {"rooms": rooms})
@@ -498,20 +650,62 @@ def room_model_list(request):
 
 @login_required
 def install_list(request):
-    # Get all installation records
-    install = Installation.objects.all()
-    
-    # Convert the dates to a proper format for use in the template
+    # Get all installation records, including related user data
+    install_query = Installation.objects.select_related(
+        'prework_checked_by',
+        'post_work_checked_by',
+        'product_arrived_at_floor_checked_by',
+        'retouching_checked_by'
+    ).all()
+
+    # Get all distinct floor numbers from RoomData for the filter dropdown
+    all_floors = RoomData.objects.order_by('floor').values_list('floor', flat=True).distinct()
+    selected_floor = request.GET.get('floor')
+
+    if selected_floor:
+        try:
+            selected_floor_int = int(selected_floor)
+            # Filter installations by room numbers that are on the selected floor
+            rooms_on_floor = RoomData.objects.filter(floor=selected_floor_int).values_list('room', flat=True)
+            install_query = install_query.filter(room__in=rooms_on_floor)
+        except ValueError:
+            # Handle cases where floor parameter is not a valid integer, maybe show a message or ignore
+            pass
+
+    install = list(install_query) # Execute the query
+
+    # Create a mapping of room numbers to their floors
+    room_to_floor_map = {rd.room: rd.floor for rd in RoomData.objects.filter(room__in=[i.room for i in install])}
+
+    # Convert the dates to a proper format and add floor information
     for installation in install:
+        installation.floor = room_to_floor_map.get(installation.room) # Add floor to installation object
         if installation.day_install_began:
             installation.formatted_day_install_began = installation.day_install_began.strftime('%Y-%m-%d')
             installation.day_install_began = installation.day_install_began.strftime('%m-%d-%Y')
         if installation.day_install_complete:
             installation.formatted_day_install_complete = installation.day_install_complete.strftime('%Y-%m-%d')
             installation.day_install_complete = installation.day_install_complete.strftime('%m-%d-%Y')
+        if installation.prework_check_on:
+            installation.formatted_prework_check_on = installation.prework_check_on.strftime('%Y-%m-%d')
+            installation.prework_check_on = installation.prework_check_on.strftime('%m-%d-%Y')
+        if installation.post_work_check_on:
+            installation.formatted_post_work_check_on = installation.post_work_check_on.strftime('%Y-%m-%d')
+            installation.post_work_check_on = installation.post_work_check_on.strftime('%m-%d-%Y')
+        if installation.retouching_check_on:
+            installation.formatted_retouching_check_on = installation.retouching_check_on.strftime('%Y-%m-%d')
+            installation.retouching_check_on = installation.retouching_check_on.strftime('%m-%d-%Y')
+        if installation.product_arrived_at_floor_check_on:
+            installation.formatted_product_arrived_at_floor_check_on = installation.product_arrived_at_floor_check_on.strftime('%Y-%m-%d')
+            installation.product_arrived_at_floor_check_on = installation.product_arrived_at_floor_check_on.strftime('%m-%d-%Y')
     
-    # Pass the modified install data to the template
-    return render(request, "install.html", {"install": install})
+    # Pass the modified install data and floor filter data to the template
+    context = {
+        "install": install,
+        "all_floors": all_floors,
+        "selected_floor": selected_floor
+    }
+    return render(request, "install.html", context)
 
 
 @login_required
@@ -741,166 +935,529 @@ def delete_products_data(request):
             return JsonResponse({"error": "Room Model not found."})
     return JsonResponse({"error": "Invalid request."})
 
-@session_login_required
-def get_room_type(request):
-    room_number = request.GET.get("room_number")
-    installed_on = date.today()
-
+def _get_installation_checklist_data(room_number, installation_id=None, user_for_prefill=None):
+    """
+    Helper function to get installation checklist items and saved data.
+    Can be used by both frontend and admin views.
+    If installation_id is provided, it fetches data for that specific installation.
+    Otherwise, it behaves like the original get_room_type for a given room_number.
+    """
     try:
-        room_data = RoomData.objects.get(room=room_number)
-        room_type = room_data.room_model or ""
-        room_model = RoomModel.objects.get(room_model=room_type)
-        room_model_id = room_model.id
+        room_data = RoomData.objects.select_related('room_model_id').get(room=room_number)
+        room_type = room_data.room_model_id.room_model if room_data.room_model_id else ""
+        room_model_instance = room_data.room_model_id
 
+        if not room_model_instance:
+            return {"success": False, "message": "Room model not found for this room."}
+
+        # Determine the Installation instance
+        if installation_id:
+            installation_data = get_object_or_404(Installation, id=installation_id, room=room_number)
+        else: # Original behavior for frontend form if no specific installation_id
+            installation_data, _ = Installation.objects.get_or_create(
+                room=room_data.room, # Use room_data.room (integer)
+                defaults={ # Sensible defaults if creating
+                    'prework': "NO",
+                    'product_arrived_at_floor': "NO",
+                    'retouching': "NO",
+                    'post_work': "NO",
+                }
+            )
+            # If created, it won't have an ID until saved. If fetched, it has one.
+            # If it was just created, its ID might be None until a subsequent save by the form.
+            # This is fine, as InstallDetail items will be created linked to this potential new installation.
+
+
+        # Fetch products associated with the room model
         product_room_models = ProductRoomModel.objects.filter(
-            room_model_id=room_model_id
-        )
-
-        # Get Installation model for the room
-        installation_data = Installation.objects.filter(room=room_number).first()
+            room_model_id=room_model_instance.id
+        ).select_related('product_id')
 
         saved_items = []
-        check_items = []
+        check_items = [] # This will be the final list of all items (installation + details)
 
-        # Check if InstallDetail already exists
-        existing_installs = InstallDetail.objects.filter(
-            room_id=room_data
-        ).select_related("product_id", "room_id", "room_model_id", "installed_by")
+        # Fetch existing InstallDetail items for this installation
+        # Ensure installation_data.id is valid before querying
+        existing_install_details = []
+        if installation_data and installation_data.id:
+            existing_install_details = InstallDetail.objects.filter(
+                installation_id=installation_data.id,
+                room_id=room_data.id
+            ).select_related("product_id", "installed_by")
 
-        if existing_installs.exists():
-            for inst in existing_installs:
-                try:
-                    prm = ProductRoomModel.objects.get(product_id=inst.product_id, room_model_id=inst.room_model_id)
-                    prm_id = prm.id
-                except ProductRoomModel.DoesNotExist:
-                    prm_id = None
+        # Create a map of existing install details for quick lookup
+        existing_details_map = {
+            detail.product_id_id: detail for detail in existing_install_details
+        }
 
-                saved_items.append({
-                    "install_id": inst.install_id,
-                    "product_id": inst.product_id.id if inst.product_id else None,
-                    "product_name": inst.product_name,
-                    "room_id": inst.room_id.id if inst.room_id else None,
-                    "room_model_id": inst.room_model_id.id if inst.room_model_id else None,
-                    "product_room_model_id": prm_id,
-                    "installed_by": inst.installed_by.name if inst.installed_by else None,
-                    "installed_on": inst.installed_on.isoformat() if inst.installed_on else None,
-                    "status": inst.status,
-                })
+        install_details_to_create_or_update = []
 
-                # Add to check_items with install_id as ID
-                check_items.append({
-                    "id": inst.install_id,
-                    "label": f"{inst.product_name}",
-                    "type": "detail",
-                })
+        for prm in product_room_models:
+            product = prm.product_id
+            install_detail_item = existing_details_map.get(product.id)
 
-        else:
-            # Only create InstallDetails if none exist yet
-            install_details_to_create = []
-            for prm in product_room_models:
-                install = InstallDetail(
-                    installation=installation_data,
-                    product_id=prm.product_id,
+            if not install_detail_item and installation_data and installation_data.id : # Only create if an installation record exists
+                # This product is in the room model but not yet in InstallDetail for this installation
+                install_detail_item = InstallDetail(
+                    installation_id=installation_data.id, # Link to existing/created Installation
+                    product_id=product,
                     room_id=room_data,
-                    room_model_id=room_model,
-                    product_name=prm.product_id.description,
-                    installed_on=installed_on,
+                    room_model_id=room_model_instance,
+                    product_name=product.description or product.item, # Ensure product_name is set
+                    status="NO" # Default status
                 )
-                install_details_to_create.append(install)
+                # We can't bulk_create and then get IDs immediately if some items are new and installation_data was just created (no ID yet)
+                # Instead, we'll prepare them. If installation_data has an ID, we save.
+                # This part is tricky if installation_data was just created and doesn't have an ID.
+                # For admin edit, installation_data.id will always exist.
+                # For frontend, if InstallDetail items are crucial *before* first save, this needs care.
+                # Assuming for now that if InstallDetail are created, installation_data.id is valid.
+                if installation_data.id: # Ensure main installation record has an ID
+                    install_detail_item.save() # Save to get an install_id (PK)
+                    existing_details_map[product.id] = install_detail_item # Add to map
+                else:
+                    # If installation record is new (no ID), these won't be saved yet.
+                    # This scenario is more for the initial GET in the frontend form.
+                    # They will be properly created during the POST save.
+                    pass # Defer creation to the POST if main installation is new.
 
-            # Bulk create for efficiency
-            InstallDetail.objects.bulk_create(install_details_to_create)
-
-            # Re-fetch created records with IDs
-            created_installs = InstallDetail.objects.filter(
-                installation=installation_data, room_id=room_data
-            ).select_related("product_id")
-
-            for inst in created_installs:
-                try:
-                    prm = ProductRoomModel.objects.get(product_id=inst.product_id, room_model_id=inst.room_model_id)
-                    prm_id = prm.id
-                except ProductRoomModel.DoesNotExist:
-                    prm_id = None
-
+            # print(f"install_detail_item: {install_detail_item}")
+            # Prepare data for saved_items and check_items
+            if install_detail_item: # If it exists or was just saved
                 saved_items.append({
-                    "install_id": inst.install_id,
-                    "product_id": inst.product_id.id if inst.product_id else None,
-                    "product_name": inst.product_name,
-                    "room_id": inst.room_id.id if inst.room_id else None,
-                    "room_model_id": inst.room_model_id.id if inst.room_model_id else None,
-                    "product_room_model_id": prm_id,
-                    "installed_by": inst.installed_by.name if inst.installed_by else None,
-                    "installed_on": inst.installed_on.isoformat() if inst.installed_on else None,
-                    "status": inst.status,
+                    "install_id": install_detail_item.install_id,
+                    "product_id": product.id,
+                    "product_name": install_detail_item.product_id.description,
+                    "room_id": room_data.id,
+                    "room_model_id": room_model_instance.id,
+                    "product_room_model_id": prm.id, # ID of the ProductRoomModel mapping
+                    "installed_by": install_detail_item.installed_by.name if install_detail_item.installed_by else None,
+                    "installed_on": install_detail_item.installed_on.isoformat() if install_detail_item.installed_on else None,
+                    "status": install_detail_item.status,
+                    "product_client_id": product.client_id,
                 })
-
                 check_items.append({
-                    "id": inst.install_id,
-                    "label": f"{inst.product_name}",
+                    "id": install_detail_item.install_id, # This is InstallDetail PK
+                    "label": f"({product.client_id or 'N/A'}) - {install_detail_item.product_id.description}",
                     "type": "detail",
+                    "status": install_detail_item.status,
+                    "checked_by": install_detail_item.installed_by.name if install_detail_item.installed_by else None,
+                    "check_on": localtime(install_detail_item.installed_on).isoformat() if install_detail_item.installed_on else None,
+                })
+            elif not installation_data.id : # Product from room model, but main installation record is new (no ID yet)
+                 # This is for the initial rendering of the frontend form for a NEW installation
+                 # Create temporary placeholder items
+                check_items.append({
+                    "id": f"newproduct_{product.id}", # Temporary ID for unsaved items
+                    "label": f"({product.client_id or 'N/A'}) - {install_detail_item.product_id.description}",
+                    "type": "detail",
+                    "status": "NO", # Default
+                    "checked_by": None,
+                    "check_on": None,
                 })
 
-        # Process static Installation step items (IDs 0, 1, 12, 13)
-        if installation_data:
-            check_items.extend([
+
+        # Add Installation-level static checklist items
+        if installation_data: # This will always be true due to get_or_create or get_object_or_404
+            static_install_items = [
                 {
-                    "id": 0,
-                    "label": "Pre-Work completed.",
+                    "id": 0, "label": "Pre-Work completed.",
                     "checked_by": installation_data.prework_checked_by.name if installation_data.prework_checked_by else None,
                     "check_on": localtime(installation_data.prework_check_on).isoformat() if installation_data.prework_check_on else None,
-                    "status": installation_data.prework,
-                    "type": "installation"
+                    "status": installation_data.prework, "type": "installation"
                 },
                 {
-                    "id": 1,
-                    "label": "The product arrived at the floor.",
+                    "id": 1, "label": "The product arrived at the floor.",
                     "checked_by": installation_data.product_arrived_at_floor_checked_by.name if installation_data.product_arrived_at_floor_checked_by else None,
                     "check_on": localtime(installation_data.product_arrived_at_floor_check_on).isoformat() if installation_data.product_arrived_at_floor_check_on else None,
-                    "status": installation_data.product_arrived_at_floor,
-                    "type": "installation"
+                    "status": installation_data.product_arrived_at_floor, "type": "installation"
                 },
                 {
-                    "id": 12,
-                    "label": "Retouching.",
+                    "id": 12, "label": "Retouching.",
                     "checked_by": installation_data.retouching_checked_by.name if installation_data.retouching_checked_by else None,
                     "check_on": localtime(installation_data.retouching_check_on).isoformat() if installation_data.retouching_check_on else None,
-                    "status": installation_data.retouching,
-                    "type": "installation"
+                    "status": installation_data.retouching, "type": "installation"
                 },
                 {
-                    "id": 13,
-                    "label": "Post Work.",
+                    "id": 13, "label": "Post Work.",
                     "checked_by": installation_data.post_work_checked_by.name if installation_data.post_work_checked_by else None,
                     "check_on": localtime(installation_data.post_work_check_on).isoformat() if installation_data.post_work_check_on else None,
-                    "status": installation_data.post_work,
-                    "type": "installation"
+                    "status": installation_data.post_work, "type": "installation"
                 },
-            ])
+            ]
+            check_items.extend(static_install_items)
+        
+        # Sort check_items: installation steps first, then details.
+        # Within installation steps, sort by specific IDs (0,1 then 12,13)
+        # Within detail steps, sort by label perhaps, or product ID.
+        def sort_key(item):
+            if item['type'] == 'installation':
+                if item['id'] == 0: return (0, 0)
+                if item['id'] == 1: return (0, 1)
+                if item['id'] == 12: return (0, 12)
+                if item['id'] == 13: return (0, 13)
+                return (0, item['id']) # Should not happen with current static IDs
+            else: # type == 'detail'
+                # Ensure consistent sorting for details, e.g., by label
+                return (1, item['label'])
 
-        # Sort check_items by placing 0 and 1 at the beginning, and 12 and 13 at the end, while sorting the rest by ID
-        check_items = sorted(
-            check_items,
-            key=lambda x: (
-                x["id"] not in [0, 1],  # Ensure IDs 0 and 1 are first
-                x["id"] in [12, 13],  # Ensure IDs 12 and 13 are last
-                x["id"]  # Sort the rest of the IDs normally
-            )
-        )
 
-        return JsonResponse(
-            {
-                "success": True,
-                "room_type": room_type,
-                "check_items": check_items,
-                "saved_items": saved_items,
-            }
-        )
+        check_items = sorted(check_items, key=sort_key)
+
+        return {
+            "success": True,
+            "room_type": room_type,
+            "check_items": check_items, # This now contains both installation and detail types
+            "saved_items": saved_items, # This primarily contains formatted InstallDetail data
+            "installation_id": installation_data.id if installation_data else None,
+            "room_id_for_installation": room_data.id, # Pass room_data.id for clarity
+        }
 
     except RoomData.DoesNotExist:
-        return JsonResponse({"success": False, "message": "Room not found"})
+        return {"success": False, "message": "Room not found"}
     except RoomModel.DoesNotExist:
-        return JsonResponse({"success": False, "message": "Room model not found"})
+        return {"success": False, "message": "Room model not found for this room"}
+    except Installation.DoesNotExist:
+        return {"success": False, "message": "Installation record not found"}
+    except Exception as e:
+        logger.error(f"Error in _get_installation_checklist_data for room {room_number}, install_id {installation_id}: {e}", exc_info=True)
+        return {"success": False, "message": f"An unexpected error occurred: {str(e)}"}
+
+
+# Define parse_date at the module level
+def parse_date(date_str):
+    try:
+        return datetime.strptime(date_str.strip(), "%Y-%m-%d").date() if date_str and date_str.strip() else None
+    except ValueError:
+        try:
+            # Fallback for datetime strings if time is included
+            return datetime.strptime(date_str.strip(), "%Y-%m-%dT%H:%M:%S.%fZ").date() if date_str and date_str.strip() else None
+        except ValueError:
+            try:
+                return datetime.strptime(date_str.strip(), "%Y-%m-%d %H:%M:%S").date() if date_str and date_str.strip() else None
+            except ValueError:
+                logger.warning(f"Could not parse date string: {date_str}")
+                return None
+
+@session_login_required
+def get_room_type(request):
+    room_number_str = request.GET.get("room_number")
+    if not room_number_str:
+        return JsonResponse({"success": False, "message": "Room number not provided."}, status=400)
+    
+    try:
+        # Attempt to convert room_number to integer if your RoomData.room is an IntegerField
+        room_number = int(room_number_str)
+    except ValueError:
+        return JsonResponse({"success": False, "message": "Invalid room number format."}, status=400)
+
+    # Call the helper function
+    # For the frontend form, we don't pass a specific installation_id initially,
+    # the helper will do get_or_create for the Installation object.
+    data = _get_installation_checklist_data(room_number=room_number)
+    return JsonResponse(data)
+
+
+def _save_installation_data(request_post_data, user_instance, room_number_str, installation_id_str=None):
+    """
+    Helper function to save installation data.
+    Used by both frontend installation_form and admin_save_installation_details.
+    `room_number_str` is used to fetch RoomData if installation_id is not provided or to verify.
+    `installation_id_str` is explicitly passed for admin edits.
+    """
+    print(request_post_data)
+            # Now use product_id, step_checked, etc.
+
+    try:
+        if not room_number_str:
+            return {"success": False, "message": "Room number is required."}
+        
+        try:
+            room_number_int = int(room_number_str)
+            room_instance = get_object_or_404(RoomData, room=room_number_int)
+        except ValueError:
+            return {"success": False, "message": "Invalid room number format."}
+        except RoomData.DoesNotExist:
+            return {"success": False, "message": f"Room {room_number_str} not found."}
+
+        # Determine the Installation instance
+        if installation_id_str: # Admin edit or frontend if it was an existing installation
+            installation_id = int(installation_id_str)
+            installation_instance = get_object_or_404(Installation, id=installation_id, room=room_instance.room)
+        else: # Frontend creating a new one or updating based on room number only
+            installation_instance, created = Installation.objects.get_or_create(
+                room=room_instance.room, # Ensure this matches the field type (e.g. room number if integer)
+                defaults={'prework': "NO", 'product_arrived_at_floor':"NO", 'retouching':"NO", 'post_work':"NO"}
+            )
+            if created:
+                logger.info(f"Created new Installation record for room {room_instance.room}")
+        
+        # Process main installation steps
+        main_steps_map = {
+            0: ('prework', 'prework_check_on', 'prework_checked_by'),
+            1: ('product_arrived_at_floor', 'product_arrived_at_floor_check_on', 'product_arrived_at_floor_checked_by'),
+            12: ('retouching', 'retouching_check_on', 'retouching_checked_by'),
+            13: ('post_work', 'post_work_check_on', 'post_work_checked_by'),
+        }
+
+        for step_id_int, fields in main_steps_map.items():
+            status_attr, date_attr, user_attr = fields
+            checkbox_key = f"step_installation_{step_id_int}"
+            form_date_key = f"date_installation_{step_id_int}"
+            form_user_key = f"checked_by_installation_{step_id_int}"
+
+            old_status_val = getattr(installation_instance, status_attr) == "YES"
+            old_date_val = getattr(installation_instance, date_attr)
+            old_user_val = getattr(installation_instance, user_attr)
+
+            is_checked_in_form = request_post_data.get(checkbox_key) == "on"
+            form_date_str = request_post_data.get(form_date_key)
+            form_user_name = request_post_data.get(form_user_key, "").strip()
+
+            if is_checked_in_form:
+                setattr(installation_instance, status_attr, "YES")
+                
+                parsed_form_date = parse_date(form_date_str)
+                if parsed_form_date:
+                    setattr(installation_instance, date_attr, parsed_form_date)
+                elif not old_status_val: # Newly checked and no specific date in form
+                    setattr(installation_instance, date_attr, now().date())
+                else: # Was already checked, form date field empty/invalid, preserve old
+                    setattr(installation_instance, date_attr, old_date_val)
+
+                # User assignment for checked item
+                if not old_status_val: # Newly checked
+                    setattr(installation_instance, user_attr, user_instance)
+                else: # Was already checked
+                    if form_user_name == user_instance.name: # JS set to current user, or admin typed their name
+                        setattr(installation_instance, user_attr, user_instance)
+                    elif not form_user_name and old_user_val: # User field cleared for already checked item
+                        setattr(installation_instance, user_attr, old_user_val) # Preserve old user
+                    elif old_user_val and form_user_name == old_user_val.name: # Name in form matches old user
+                        setattr(installation_instance, user_attr, old_user_val) # Preserve old user
+                    elif form_user_name: # Admin typed some other name or JS populated it (and it's not old user)
+                        # Default to current user if form has a name not matching old user, 
+                        # implying interaction or JS update.
+                        setattr(installation_instance, user_attr, user_instance)
+                    else: # Fallback, preserve old user if form name is empty and didn't match current user above
+                         setattr(installation_instance, user_attr, old_user_val)
+            else: # Not checked in form
+                setattr(installation_instance, status_attr, "NO")
+                setattr(installation_instance, date_attr, None)
+                setattr(installation_instance, user_attr, None)
+        
+        installation_instance.save() # Save main installation steps
+
+        # Process InstallDetail items
+        for key in request_post_data:
+            if key.startswith("step_detail_"):
+                try:
+                    step_id_str = key.split("_")[2]
+                    form_date_key = f"date_detail_{step_id_str}"
+                    form_user_key = f"checked_by_detail_{step_id_str}"
+
+                    is_checked_in_form = request_post_data.get(key) == "on"
+                    form_date_str = request_post_data.get(form_date_key)
+                    form_user_name = request_post_data.get(form_user_key, "").strip()
+                    
+                    install_detail_item = None
+                    created_new_detail = False
+
+                    if step_id_str.startswith("newproduct_"):
+                        if not is_checked_in_form: continue
+
+                        product_id_for_new = int(step_id_str.split("_")[1])
+                        product_instance = get_object_or_404(ProductData, id=product_id_for_new)
+                        room_model_instance = room_instance.room_model_id
+                        print('instance .........',product_instance.item)
+                        install_detail_item, created = InstallDetail.objects.get_or_create(
+                            installation=installation_instance,
+                            product_id=product_instance,
+                            room_id=room_instance,
+                            defaults={
+                                'room_model_id': room_model_instance,
+                                'product_name': product_instance.description or product_instance.item,
+                                'status': "YES",
+                                'installed_on': parse_date(form_date_str) or now().date(),
+                                'installed_by': user_instance
+                            }
+                        )
+                        created_new_detail = created
+                        if not created: # Already existed, treat as normal update path below
+                            pass 
+                        else: # Newly created and defaults set, skip further processing for this item in this loop iteration
+                            continue # Already saved with correct initial values
+
+                    else: # Existing InstallDetail item
+                        detail_pk = int(step_id_str)
+                        install_detail_item = get_object_or_404(InstallDetail, pk=detail_pk)
+                        if install_detail_item.installation_id != installation_instance.id:
+                            logger.warning(f"Data mismatch: InstallDetail {detail_pk}...")
+                            continue
+                    
+                    # Common logic for existing or just-fetched-not-newly-created items
+                    old_status_val = install_detail_item.status == "YES"
+                    old_date_val = install_detail_item.installed_on
+                    old_user_val = install_detail_item.installed_by
+
+                    if is_checked_in_form:
+                        install_detail_item.status = "YES"
+                        parsed_form_date = parse_date(form_date_str)
+                        if parsed_form_date:
+                            install_detail_item.installed_on = parsed_form_date
+                        elif not old_status_val: # Newly checked and no date in form
+                            install_detail_item.installed_on = now().date()
+                        else: # Was already checked, form date field empty/invalid
+                            install_detail_item.installed_on = old_date_val
+                        
+                        # User assignment for checked detail item
+                        if not old_status_val: # Newly checked
+                            install_detail_item.installed_by = user_instance
+                        else: # Was already checked
+                            if form_user_name == user_instance.name:
+                                install_detail_item.installed_by = user_instance
+                            elif not form_user_name and old_user_val:
+                                install_detail_item.installed_by = old_user_val
+                            elif old_user_val and form_user_name == old_user_val.name:
+                                install_detail_item.installed_by = old_user_val
+                            elif form_user_name: # Admin typed some other name or JS populated it
+                                install_detail_item.installed_by = user_instance # Default to current saver
+                            else:
+                                install_detail_item.installed_by = old_user_val
+                    else: # Not checked in form
+                        install_detail_item.status = "NO"
+                        install_detail_item.installed_on = None
+                        install_detail_item.installed_by = None
+                    
+                    install_detail_item.save()
+                        
+                except InstallDetail.DoesNotExist:
+                    logger.error(f"InstallDetail with ID {step_id_str} not found...")
+
+        # --- Automatic setting of day_install_began, install status, and day_install_complete ---
+        installation_data_changed_by_automation = False
+
+        # 1. Automatic setting of day_install_began
+        # This relies on installation_instance.prework and installation_instance.prework_check_on
+        # having been updated earlier in this function from the form data.
+        if installation_instance.prework == "YES" and installation_instance.prework_check_on:
+            # prework_check_on is DateTimeField, day_install_began is DateTimeField
+            if installation_instance.day_install_began != installation_instance.prework_check_on:
+                installation_instance.day_install_began = installation_instance.prework_check_on
+                installation_data_changed_by_automation = True
+        elif installation_instance.prework == "NO": # If prework is not YES or becomes NO
+            if installation_instance.day_install_began is not None:
+                installation_instance.day_install_began = None
+                installation_data_changed_by_automation = True
+        
+        # 2. Automatic setting of install status and day_install_complete
+        all_details_for_install = InstallDetail.objects.filter(installation=installation_instance)
+        all_required_details_completed = False # Default to false
+        latest_detail_completion_date = None
+
+        if all_details_for_install.exists():
+            all_required_details_completed = True # Assume true until a non-completed item is found
+            for detail in all_details_for_install:
+                if detail.status != "YES":
+                    all_required_details_completed = False
+                    latest_detail_completion_date = None # Reset if any item is not complete
+                    break
+                if detail.installed_on: # This is DateTimeField
+                    if latest_detail_completion_date is None or detail.installed_on > latest_detail_completion_date:
+                        latest_detail_completion_date = detail.installed_on
+            if not all_required_details_completed: # if loop broke, ensure latest_date is None
+                 latest_detail_completion_date = None
+        else:
+            # No InstallDetail items found for this installation.
+            # "when all the dynamic products are marked done" - if no products, this condition is not met for "YES".
+            all_required_details_completed = False 
+            latest_detail_completion_date = None
+
+
+        current_install_status = installation_instance.install
+        current_install_complete_date = installation_instance.day_install_complete
+
+        if all_required_details_completed and latest_detail_completion_date:
+            # All details are completed and there's a valid completion date.
+            if current_install_status != "YES":
+                installation_instance.install = "YES"
+                installation_data_changed_by_automation = True
+            if current_install_complete_date != latest_detail_completion_date:
+                installation_instance.day_install_complete = latest_detail_completion_date
+                installation_data_changed_by_automation = True
+        else: 
+            # Not all details completed, or no details exist, or no latest completion date found (e.g. all products 'YES' but no dates)
+            if current_install_status == "YES": # Only change if it was "YES"
+                installation_instance.install = "NO" 
+                installation_data_changed_by_automation = True
+            if current_install_complete_date is not None:
+                installation_instance.day_install_complete = None
+                installation_data_changed_by_automation = True
+        
+        if installation_data_changed_by_automation:
+            installation_instance.save()
+            logger.info(f"Installation {installation_instance.id} updated by automation: day_install_began, install, day_install_complete.")
+
+        return {"success": True, "message": "Installation data saved successfully!"}
+
+    except Installation.DoesNotExist:
+        return {"success": False, "message": "Installation record not found."}
+    except RoomData.DoesNotExist:
+         return {"success": False, "message": f"Room {room_number_str} not found."}
+    except Exception as e:
+        logger.error(f"Error in _save_installation_data for room {room_number_str}, install_id {installation_id_str}: {e}", exc_info=True)
+        return {"success": False, "message": f"An unexpected error occurred: {str(e)}"}
+
+
+@session_login_required
+def installation_form(request):
+    if not request.session.get("user_id"): # Redundant due to decorator, but good practice
+        messages.warning(request, "You must be logged in to access the form.")
+        return redirect("user_login")
+    
+
+    invited_user_id = request.session.get("user_id")
+    invited_user_instance = get_object_or_404(InvitedUser, id=invited_user_id)
+    checked_product_ids = []
+
+    for key, value in request.POST.items():
+        if key.startswith("step_detail_") and value == "on":
+            detail_id = key.split("step_detail_")[1]
+            product_id = request.POST.get(f"product_id_detail_{detail_id}")
+            if product_id:
+                checked_product_ids.append(product_id)
+
+    # Now checked_product_ids contains ONLY product IDs that were ticked
+    print("Checked Product IDs:", checked_product_ids)
+    for product_id in checked_product_ids:
+        try:
+            inventory_item = Inventory.objects.get(item=product_id)
+            inventory_item.quantity_installed += 1
+            inventory_item.save()
+        except Inventory.DoesNotExist:
+            print(f"Inventory item with product_id {product_id} does not exist.")
+
+    # Now use product_id, step_checked, etc.
+
+    if request.method == "POST":
+        room_number_str = request.POST.get("room_number")
+        # For frontend, installation_id might not be explicitly in POST if it's a new installation.
+        # The _save_installation_data helper will handle get_or_create for Installation.
+        # If the form *does* pass an installation_id (e.g., from a hidden field after initial GET), it could be used.
+        # For now, relying on room_number for get_or_create logic in the helper for frontend.
+        
+        result = _save_installation_data(request.POST, invited_user_instance, room_number_str)
+
+        if result["success"]:
+            messages.success(request, result["message"])
+        else:
+            messages.error(request, result["message"])
+        return redirect("installation_form") # Redirect back to the form page
+
+    # For GET request, the existing JS will call get_room_type to populate the form.
+    return render(request, "installation_form.html", {
+        "invited_user": invited_user_instance, # Used by JS to prefill user name
+    })
 
 @session_login_required
 def inventory_shipment(request):
@@ -917,35 +1474,55 @@ def inventory_shipment(request):
     if request.method == "POST":
         try:
             client_item = request.POST.get("client_item")
-            product_item = request.POST.get("product_item")
-            ship_date = request.POST.get("ship_date")
+            ship_date_str = request.POST.get("ship_date")
+            expected_arrival_date_str = request.POST.get("expected_arrival_date")
+            if ship_date_str:
+                ship_date = make_aware(datetime.strptime(ship_date_str, "%Y-%m-%d"))
+
+            if expected_arrival_date_str:
+                expected_arrival_date = make_aware(datetime.strptime(expected_arrival_date_str, "%Y-%m-%d"))
+
             qty_shipped = int(request.POST.get("qty_shipped") or 0)
             supplier = request.POST.get("supplier")
             tracking_info = request.POST.get("tracking_info")
-            shipment_date_text = request.POST.get('shipment_date_text')
-
+            
+            print("expected_arrival_date ::", expected_arrival_date )
+            print("ship_date ::", ship_date)
+            print("qty_shipped ::", qty_shipped)
+            print("supplier ::", supplier)
+            print("tracking_info ::", tracking_info)
+            print("user ::", user)
+            print("client_item ::", client_item)
             # Save the shipping entry
             Shipping.objects.create(
                 client_id=client_item,
-                item=product_item,
+                item=client_item,
                 ship_date=ship_date,
                 ship_qty=qty_shipped,
                 supplier=supplier,
                 bol=tracking_info,
                 checked_by=user,
-                checked_on = shipment_date_text
+                expected_arrival_date = expected_arrival_date
             )
+            print("Shipping ::", Shipping.objects.all())
 
             # Update Inventory
-            inventory = Inventory.objects.filter(client_id=client_item, item=product_item).first()
+            inventory = Inventory.objects.filter(
+                client_id__iexact=client_item,
+                item__iexact=client_item
+            ).first()            
+            print("inventory ::", inventory)
             if inventory:
+                print(f"Before update: qty_ordered = {inventory.qty_ordered}")
                 inventory.qty_ordered = (inventory.qty_ordered or 0) + qty_shipped
                 inventory.save()
+                print(f"After update: qty_ordered = {inventory.qty_ordered}")
 
-            messages.success(request, "Shipment submitted and inventory updated!")
+                messages.success(request, "Shipment submitted and inventory updated!")
             return redirect("inventory_shipment")
 
         except Exception as e:
+            print("error ::", e)
             messages.error(request, f"Error submitting shipment: {str(e)}")
 
     return render(request, "inventory_shipment.html", {"user_name": user_name})
@@ -954,12 +1531,11 @@ def inventory_shipment(request):
 def get_product_item_num(request):
     clientId = request.GET.get("room_number")
     try:
-        client_data_fetched = ProductData.objects.get(client_id=clientId)
-        print(client_data_fetched)
+        client_data_fetched = ProductData.objects.get(client_id__iexact=clientId)
         get_item = client_data_fetched.item if client_data_fetched.item else ""
         supplier = client_data_fetched.supplier if client_data_fetched.supplier else "N.A."
-        print("item = ", get_item)
-        return JsonResponse({"success": True, "room_type": get_item, "supplier": supplier})
+        product_name = ProductData.objects.filter(item=client_data_fetched.item).values_list('description', flat=True).first() or ""
+        return JsonResponse({"success": True, "room_type": get_item, "supplier": supplier, "product_name": product_name})
     except RoomData.DoesNotExist:
         return JsonResponse({"success": False})
 
@@ -980,14 +1556,13 @@ def inventory_received(request):
     if request.method == "POST":
         try:
             client_item = request.POST.get("client_item")
-            product_item = request.POST.get("product_item")
             received_date = request.POST.get("received_date")
             received_qty = int(request.POST.get("received_qty") or 0)
             damaged_qty = int(request.POST.get("damaged_qty") or 0)
-
+            
             InventoryReceived.objects.create(
                 client_id=client_item,
-                item=product_item,
+                item=client_item,
                 received_date=received_date,
                 received_qty=received_qty,
                 damaged_qty=damaged_qty,
@@ -995,7 +1570,10 @@ def inventory_received(request):
             )
 
             # Update Inventory
-            inventory = Inventory.objects.filter(client_id=client_item, item=product_item).first()
+            inventory = Inventory.objects.filter(
+                client_id__iexact=client_item,
+                item__iexact=client_item
+            ).first()
             if inventory:
                 inventory.qty_received = (inventory.qty_received or 0) + (received_qty - damaged_qty)
                 inventory.quantity_available = (inventory.quantity_available or 0) + (received_qty - damaged_qty)
@@ -1005,150 +1583,83 @@ def inventory_received(request):
             return redirect("inventory_received")
 
         except Exception as e:
+            print("error ::", e)
             messages.error(request, f"Error saving received inventory: {str(e)}")
 
     return render(request, "inventory_received.html", {"user_name": user_name})
 
 @session_login_required
 def inventory_pull(request):
+    
     user_id = request.session.get("user_id")
     user_name = ""
 
     if user_id:
         try:
             user = InvitedUser.objects.get(id=user_id)
-            user_name = user.name  # Adjust field name if different
+            user_name = user.name
         except InvitedUser.DoesNotExist:
             pass
-
     if request.method == "POST":
         try:
-            user_id = request.session.get("user_id")
-            print(request.POST)
+            # Get all product IDs from the form
+            product_ids = [key.split('_')[1] for key in request.POST.keys() if key.startswith('product_') and request.POST[key] == 'on']
+            print("product_ids ::", product_ids)
 
-            client_id = request.POST.get("client_id")
-            item = request.POST.get("item_number")
-            available_qty = request.POST.get("qty_available_ready_to_pull")
-            pulled_date = request.POST.get("pull_date_text")
-            qty_pulled_for_install = request.POST.get("qty_pulled_for_install")
-            pulled_by = user
-            floor = request.POST.get("floor_where_going")
-            qty_available = request.POST.get("inventory_available_after_pull")
-
-            PullInventory.objects.create(
-                client_id=client_id,
-                item=item,
-                available_qty=available_qty,
-                pulled_date=pulled_date,
-                qty_pulled=qty_pulled_for_install,
-                pulled_by=pulled_by,
-                floor=floor,
-                qty_available_after_pull=qty_available
-            )
-
-            # Update Inventory
-            inventory = Inventory.objects.filter(client_id=client_id, item=item).first()
-            if inventory:
-                inventory.quantity_available = qty_available
-                inventory.quantity_installed = qty_pulled_for_install
+            for product_id in product_ids:
+                # Get the product room model
+                prm = ProductData.objects.get(id=product_id)
+                print("prm ::", prm)
+                qty_pulled_value = int(request.POST.get(f'qty_pulled_{product_id}'))
+                print("qty_pulled_value ::", qty_pulled_value)
+                # Get the inventory item
+                inventory = Inventory.objects.get(client_id=prm.client_id)
+                print("inventory ::", inventory)
+                print("inventory.quantity_available ::", inventory.quantity_available, type(inventory.quantity_available))
+                print("qty_pulled_value ::", qty_pulled_value, type(qty_pulled_value))
+                # Update inventory quantity
+                inventory.quantity_available -= qty_pulled_value
                 inventory.save()
-
-            messages.success(request, "Inventory pull submitted successfully!")
+                print("Before save ::",prm.client_id,prm.item,prm.id,qty_pulled_value,request.session.get('user_id'),request.POST.get(f'date_{product_id}'),request.POST.get('floor_number'),inventory.quantity_available,inventory.quantity_available - qty_pulled_value)
+                # Create inventory pull record
+                PullInventory.objects.create(
+                    client_id=prm.client_id,
+                    item = prm.item,
+                    qty_pulled=qty_pulled_value,
+                    pulled_by=user,
+                    pulled_date=request.POST.get(f'date_{product_id}'),
+                    floor=request.POST.get('floor_number'),
+                    available_qty=inventory.quantity_available,
+                    qty_available_after_pull=inventory.quantity_available - qty_pulled_value
+                )
+            
+            messages.success(request, "Inventory pull completed successfully!")
+            return redirect('inventory_pull')
+            
         except Exception as e:
-            print(f"Error submitting inventory pull: {str(e)}")
-            messages.error(request, f"Error submitting inventory pull: {str(e)}")
-
-        # 🔄 Prevent resubmission by redirecting after POST
-        return redirect("inventory_pull")
-
-    # For GET request
-    return render(
-        request,
-        "inventory_pull.html",
-        {
-            "user_name": user_name,  # Replace or update as needed
-        },
-    )
-
-@session_login_required
-def inventory_pull_item(request):
-    clientId = request.GET.get("client_id")
-    try:
-        client_data_fetched = Inventory.objects.get(client_id=clientId)
-        get_item = client_data_fetched.item if client_data_fetched.item else ""
-        available_qty = client_data_fetched.quantity_available
-
-        product_ids = ProductData.objects.filter(client_id=clientId).values_list('id', flat=True)
-        room_model_ids = ProductRoomModel.objects.filter(product_id__in=product_ids).values_list('room_model_id', flat=True)
-        floors = list(RoomData.objects.filter(room_model_id__in=room_model_ids)
-              .values_list('floor', flat=True).distinct())
-        return JsonResponse({"success": True, "item_number": get_item, "available_qty":available_qty, "floors": floors})
-    except RoomData.DoesNotExist:
-        return JsonResponse({"success": False})
+            messages.error(request, f"Error processing inventory pull: {str(e)}")
+            return redirect('inventory_pull')
+            
+    return render(request, "inventory_pull.html", {
+        "user_name": user_name
+    })
 
 @session_login_required
 def inventory_received_item_num(request):
     clientId = request.GET.get("client_item")
     try:
-        client_data_fetched = Inventory.objects.get(client_id=clientId)
+        client_data_fetched = Inventory.objects.get(client_id__iexact=clientId)
         get_item = client_data_fetched.item if client_data_fetched.item else ""
-        return JsonResponse({"success": True, "product_item": get_item})
+        product_name = ProductData.objects.filter(item=client_data_fetched.item).values_list('description', flat=True).first() or ""
+        return JsonResponse({"success": True, "product_item": get_item, "product_name": product_name})
     except RoomData.DoesNotExist:
         return JsonResponse({"success": False})
-
-
-@login_required
-def save_installation(request):
-    if request.method == "POST":
-        installation_id = request.POST.get("installation_id")
-        print("[hello]", installation_id)
-        room = request.POST.get("room", "").strip()
-        product_available = request.POST.get("product_available", "").strip()
-        prework = request.POST.get("prework", "").strip()
-        install = request.POST.get("install", "").strip()
-        post_work = request.POST.get("post_work", "").strip()
-        day_install_began = request.POST.get("day_install_began", "").strip()
-        day_install_complete = request.POST.get("day_install_complete", "").strip()
-
-        if not room:
-            return JsonResponse({"error": "Room field is required."}, status=400)
-        try:
-            if installation_id:
-                print("inside")
-                installation = Installation.objects.get(id=installation_id)
-                installation.room = room
-                installation.product_available = product_available
-                installation.prework = prework
-                installation.install = install
-                installation.post_work = post_work
-                installation.day_install_began = parse_date(day_install_began)
-                installation.day_install_complete = parse_date(day_install_complete)
-                installation.save()
-            else:
-                print("Adding new row")
-                Installation.objects.create(
-                    room=room,
-                    product_available=product_available,
-                    prework=prework,
-                    install=install,
-                    post_work=post_work,
-                    day_install_began=parse_date(day_install_began),
-                    day_install_complete=parse_date(day_install_complete),
-                )
-
-            return JsonResponse({"success": True})
-
-        except Installation.DoesNotExist:
-            return JsonResponse({"error": "Installation not found."}, status=404)
-
-    return JsonResponse({"error": "Invalid request"}, status=400)
 
 
 @login_required
 def save_schedule(request):
     if request.method == "POST":
         post_data = request.POST
-        print(123)
         schedule_id = post_data.get("schedule_id") or ""
         phase = post_data.get("phase") or ""
         floor = post_data.get("floor") or ""
@@ -1168,7 +1679,6 @@ def save_schedule(request):
         floor_completed = post_data.get("floor_completed") or ""
         floor_closes = post_data.get("floor_closes") or ""
         floor_opens = post_data.get("floor_opens") or ""
-        print("333")
         try:
             if schedule_id:
                 print("Editing ", custom_clearing_ends)
@@ -1233,7 +1743,6 @@ def save_product_data(request):
         item = post_data.get("item", "").strip()
         client_id = post_data.get("client_id", "").strip()
         description = post_data.get("description") or 0
-        price = post_data.get("price") or 0
 
         supplier = post_data.get("supplier")
         client_selected = post_data.get("client_selected") or 0
@@ -1246,7 +1755,6 @@ def save_product_data(request):
                 installation.client_id = client_id
                 installation.description = description
                 installation.supplier = supplier
-                installation.price = price
                 installation.client_selected = client_selected
                 installation.save()
             else:
@@ -1256,7 +1764,6 @@ def save_product_data(request):
                     client_id=client_id,
                     description=description,
                     supplier=supplier,
-                    price=price,
                     client_selected=client_selected,
                 )
 
@@ -1288,7 +1795,7 @@ def user_logout(request):
 
 
 @session_login_required
-def dashboard(request):
+def home(request):
     user_id = request.session.get("user_id")
 
     if not user_id:
@@ -1297,105 +1804,40 @@ def dashboard(request):
     try:
         user = InvitedUser.objects.get(id=user_id)
 
-        # If user.role is already a list (e.g., from a JSONField or ArrayField)
-        user_roles = [
-            role.strip().lower() for role in user.role if isinstance(role, str)
-        ]
+        # Ensure roles are processed and stored in session for use in base template
+        user_roles = []
+        if user.role:
+             # Handle potential string representation of list
+            roles_raw = user.role
+            if isinstance(roles_raw, str):
+                try:
+                    # Attempt to parse string as list (e.g., "['admin', 'inventory']")
+                    parsed_roles = ast.literal_eval(roles_raw)
+                    if isinstance(parsed_roles, list):
+                        roles_raw = parsed_roles
+                    else:
+                        # Handle simple comma-separated string (e.g., "admin, inventory")
+                        roles_raw = [r.strip() for r in roles_raw.split(',')]
+                except (ValueError, SyntaxError):
+                     # Fallback for simple comma-separated string if literal_eval fails
+                     roles_raw = [r.strip() for r in roles_raw.split(',')]
+            
+            # Ensure it's a list and process
+            if isinstance(roles_raw, list):
+                user_roles = [
+                    role.strip().lower() for role in roles_raw if isinstance(role, str)
+                ]
+            
+        # Store processed roles in session
+        request.session['user_roles'] = user_roles 
 
         return render(
-            request, "dashboard.html", {"name": user.name, "roles": user_roles}
+            request, "home.html", {"name": user.name, "roles": user_roles}
         )
     except InvitedUser.DoesNotExist:
+        # Clear potentially invalid session data if user doesn't exist
+        request.session.flush()
         return redirect("user_login")
-
-@session_login_required
-def installation_form(request):
-    if not request.session.get("user_id"):
-        messages.warning(request, "You must be logged in to access the form.")
-        return redirect("user_login")
-
-    invited_user = request.session.get("user_id")
-    invited_user_instance = get_object_or_404(InvitedUser, id=invited_user)
-
-    if request.method == "POST":
-        room_number = request.POST.get("room_number")
-
-        room_instance = get_object_or_404(RoomData, room=room_number)
-        installation, _ = Installation.objects.get_or_create(room=room_instance.room)
-
-        for key in request.POST:
-            if key.startswith("step_"):
-                parts = key.split("_")  # ['step', 'type', 'id']
-                if len(parts) != 3:
-                    continue
-                _, step_type, step_id_str = parts
-
-                try:
-                    step_id = int(step_id_str)
-                except ValueError:
-                    continue
-
-                is_checked = request.POST.get(key) == "on"
-                date = request.POST.get(f"date_{step_type}_{step_id}") or now().date()
-
-                if step_type == "installation":
-                    if step_id == 0:
-                        installation.prework = "YES" if is_checked else "NO"
-                        installation.prework_check_on = now().date() if is_checked else None
-                        installation.prework_checked_by = invited_user_instance if is_checked else None
-                    elif step_id == 1:
-                        installation.product_arrived_at_floor = "YES" if is_checked else "NO"
-                        installation.product_arrived_at_floor_check_on = now().date() if is_checked else None
-                        installation.product_arrived_at_floor_checked_by = invited_user_instance if is_checked else None
-                    elif step_id == 12:
-                        installation.retouching = "YES" if is_checked else "NO"
-                        installation.retouching_check_on = now().date() if is_checked else None
-                        installation.retouching_checked_by = invited_user_instance if is_checked else None
-                    elif step_id == 13:
-                        installation.post_work = "YES" if is_checked else "NO"
-                        installation.post_work_check_on = now().date() if is_checked else None
-                        installation.post_work_checked_by = invited_user_instance if is_checked else None
-
-                elif step_type == "detail":
-                    try:
-                        product_room_model = ProductRoomModel.objects.get(id=step_id)
-
-                        install_detail, _ = InstallDetail.objects.get_or_create(
-                            install_id=step_id,
-                            defaults={
-                                "product_id": product_room_model.product_id,
-                                "room_model_id": product_room_model.room_model_id,
-                                "room_id": room_instance.id,
-                            }
-                        )
-
-                        if is_checked:
-                            install_detail.status = "YES"
-                            install_detail.installed_on = date
-                            install_detail.installed_by = invited_user_instance
-                        else:
-                            install_detail.status = "NO"
-                            install_detail.installed_on = None
-                            install_detail.installed_by = None
-
-                        install_detail.save()
-                    except ProductRoomModel.DoesNotExist:
-                        pass
-
-
-        installation.save()
-        messages.success(request, "Installation data saved successfully!")
-        return redirect("installation_form")
-
-    return render(request, "installation_form.html", {
-        "invited_user": invited_user_instance,
-    })
-
-def parse_date(date_str):
-    try:
-        return datetime.strptime(date_str.strip(), "%Y-%m-%d") if date_str and date_str.strip() else None
-    except ValueError:
-        return None
 
 @login_required
 def chat_history(request):
@@ -1410,3 +1852,893 @@ def view_chat_history(request, session_id):
         'session': session,
         'chat_messages': chat_messages
     })
+
+@login_required
+def product_room_model_list(request):
+    """
+    Display a list of all product room model mappings with related data.
+    """
+    # Get all mappings with related data for efficient template rendering
+    product_room_model_list = ProductRoomModel.objects.select_related('product_id', 'room_model_id').all()
+    
+    # Get products and room models for the dropdown in the add/edit form
+    products = ProductData.objects.all()
+    room_models = RoomModel.objects.all().order_by(Lower('room_model'))
+    
+    return render(request, "product_room_model_list.html", {
+        "product_room_model_list": product_room_model_list,
+        "products": products,
+        "room_models": room_models
+    })
+
+@login_required
+def save_product_room_model(request):
+    """
+    Add or update a product room model mapping.
+    """
+    if request.method == "POST":
+        mapping_id = request.POST.get("mapping_id")
+        product_id = request.POST.get("product_id")
+        room_model_id = request.POST.get("room_model_id")
+        quantity = request.POST.get("quantity", "1").strip()
+        
+        # Validate inputs
+        if not product_id or not room_model_id:
+            return JsonResponse({"error": "Product and Room Model are required"}, status=400)
+            
+        try:
+            quantity = int(quantity)
+            if quantity < 0:
+                return JsonResponse({"error": "Quantity must be a positive number"}, status=400)
+        except ValueError:
+            return JsonResponse({"error": "Quantity must be a valid number"}, status=400)
+
+        # Check for existing mappings with the same product and room model (avoid duplicates)
+        existing_mapping = ProductRoomModel.objects.filter(
+            product_id_id=product_id, 
+            room_model_id_id=room_model_id
+        )
+        
+        if mapping_id:
+            existing_mapping = existing_mapping.exclude(id=mapping_id)
+        
+        if existing_mapping.exists():
+            return JsonResponse(
+                {"error": "A mapping for this product and room model already exists"}, 
+                status=400
+            )
+        
+        try:
+            product = ProductData.objects.get(id=product_id)
+            room_model = RoomModel.objects.get(id=room_model_id)
+            
+            if mapping_id:
+                # Update existing mapping
+                mapping = ProductRoomModel.objects.get(id=mapping_id)
+                mapping.quantity = quantity
+                mapping.save()
+            else:
+                # Create new mapping
+                ProductRoomModel.objects.create(
+                    product_id=product,
+                    room_model_id=room_model,
+                    quantity=quantity
+                )
+                
+            return JsonResponse({"success": True})
+            
+        except (ProductData.DoesNotExist, RoomModel.DoesNotExist):
+            return JsonResponse({"error": "Product or Room Model not found"}, status=404)
+        except ProductRoomModel.DoesNotExist:
+            return JsonResponse({"error": "Mapping not found"}, status=404)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+    
+    return JsonResponse({"error": "Invalid request method"}, status=405)
+
+@login_required
+def delete_product_room_model(request):
+    """
+    Delete a product room model mapping.
+    """
+    if request.method == "POST":
+        model_id = request.POST.get("model_id")
+        
+        try:
+            mapping = ProductRoomModel.objects.get(id=model_id)
+            mapping.delete()
+            return JsonResponse({"success": True})
+        except ProductRoomModel.DoesNotExist:
+            return JsonResponse({"error": "Mapping not found"}, status=404)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+    
+    return JsonResponse({"error": "Invalid request method"}, status=405)
+
+@session_login_required
+def get_floor_products(request):
+    floor_number = request.GET.get("floor_number")
+    try:
+        # Use raw SQL query to get products with total quantity needed
+        products = ProductData.objects.raw("""
+            WITH room_counts AS (
+                SELECT rm.id AS room_model_id, COUNT(*) AS room_count
+                FROM room_data rd
+                JOIN room_model rm ON rd.room_model_id = rm.id
+                WHERE rd.floor = %s
+                GROUP BY rm.id
+            ),
+            pulled_quantities AS (
+                SELECT client_id, item, SUM(qty_pulled) as total_pulled
+                FROM pull_inventory
+                GROUP BY client_id, item
+            )
+            SELECT pd.id, pd.item, pd.client_id, pd.description, pd.supplier,
+                   SUM(prm.quantity * rc.room_count) AS total_quantity_needed,
+                   COALESCE(inv.quantity_installed, 0) AS quantity_installed,
+                   COALESCE(inv.quantity_available, 0) AS available_qty,
+                   COALESCE(pq.total_pulled, 0) AS pulled_quantity
+            FROM product_room_model prm
+            JOIN product_data pd ON prm.product_id = pd.id
+            JOIN room_counts rc ON prm.room_model_id = rc.room_model_id
+            LEFT JOIN inventory inv ON pd.client_id = inv.client_id
+            LEFT JOIN pulled_quantities pq ON pd.client_id = pq.client_id AND pd.item = pq.item
+            GROUP BY pd.id, pd.client_id, pd.description, pd.supplier, inv.quantity_installed, inv.quantity_available, pq.total_pulled
+            ORDER BY pd.client_id
+        """, [floor_number])
+        
+        result_products = []
+        for product in products:
+            # Calculate remaining quantity needed after subtracting already pulled quantity
+            remaining_quantity = max(0, product.total_quantity_needed - product.pulled_quantity)
+            
+            result_products.append({
+                "id": product.id,
+                "client_id": product.client_id,
+                "description": product.description,
+                "quantity": remaining_quantity,  # Use remaining quantity instead of total
+                "available_qty": product.available_qty,
+                "supplier": product.supplier,
+                "quantity_installed": product.quantity_installed,  # Add quantity already pulled
+                "total_quantity_needed": product.total_quantity_needed,  # Keep original total for reference
+                "pulled_quantity": product.pulled_quantity  # Add pulled quantity
+            })
+            
+        return JsonResponse({
+            "success": True,
+            "products": result_products
+        })
+    except Exception as e:
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        })
+
+# Helper function to generate XLS response
+def _generate_xls_response(data, filename, sheet_name="Sheet1"):
+    response = HttpResponse(content_type='application/ms-excel')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+    wb = xlwt.Workbook(encoding='utf-8')
+    ws = wb.add_sheet(sheet_name)
+
+    # Sheet header, first row
+    row_num = 0
+    font_style = xlwt.XFStyle()
+    font_style.font.bold = True
+
+    # Infer columns from the first dictionary in the list
+    if data:
+        columns = list(data[0].keys())
+        for col_num, column_title in enumerate(columns):
+            ws.write(row_num, col_num, column_title, font_style)
+
+        # Sheet body, remaining rows
+        font_style = xlwt.XFStyle()
+
+        for row_data in data:
+            row_num += 1
+            for col_num, col_key in enumerate(columns):
+                value = row_data.get(col_key, '')
+                # Handle potential date/datetime objects if necessary
+                if isinstance(value, (date, datetime)):
+                    value = value.strftime('%Y-%m-%d %H:%M:%S') # Or just %Y-%m-%d
+                ws.write(row_num, col_num, value, font_style)
+    else:
+         # Write a message if no data
+         ws.write(0, 0, "No data found for the selected criteria.", font_style)
+
+
+    wb.save(response)
+    return response
+
+# Helper function to get floor products data (extracted SQL)
+def _get_floor_products_data(floor_number):
+    try:
+        with connection.cursor() as cursor:
+
+            sql_query = """
+             WITH room_counts AS (
+                SELECT rm.id AS room_model_id, COUNT(*) AS room_count
+                FROM room_data rd
+                JOIN room_model rm ON rd.room_model_id = rm.id
+                WHERE rd.floor = %s
+                GROUP BY rm.id
+            ),
+            pulled_quantities AS (
+                SELECT client_id, item, SUM(qty_pulled) as total_pulled
+                FROM pull_inventory
+                GROUP BY client_id, item
+            )
+            SELECT pd.id, pd.item, pd.client_id, pd.description, pd.supplier,
+                   SUM(prm.quantity * rc.room_count) AS total_quantity_needed,
+                   COALESCE(inv.quantity_installed, 0) AS quantity_installed,
+                   COALESCE(inv.quantity_available, 0) AS available_qty,
+                   COALESCE(pq.total_pulled, 0) AS pulled_quantity
+            FROM product_room_model prm
+            JOIN product_data pd ON prm.product_id = pd.id
+            JOIN room_counts rc ON prm.room_model_id = rc.room_model_id
+            LEFT JOIN inventory inv ON pd.client_id = inv.client_id
+            LEFT JOIN pulled_quantities pq ON pd.client_id = pq.client_id AND pd.item = pq.item
+            GROUP BY pd.id, pd.client_id, pd.description, pd.supplier, inv.quantity_installed, inv.quantity_available, pq.total_pulled
+            ORDER BY pd.client_id"""
+            
+            print("sql_query",sql_query)
+            cursor.execute(sql_query, [floor_number]) # Pass floor_number twice
+
+            columns = [col[0] for col in cursor.description]
+            products = [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+        result_products = []
+        for product in products:
+            total_needed = product.get('total_quantity_needed', 0) or 0
+            pulled = product.get('pulled_quantity', 0) or 0
+            remaining_quantity = max(0, total_needed - pulled)
+
+            result_products.append({
+                "id": product.get('id'),
+                "item": product.get('item'),
+                "client_id": product.get('client_id'),
+                "description": product.get('description'),
+                "supplier": product.get('supplier'),
+                "total_quantity_needed": total_needed,
+                "pulled_quantity": pulled,
+                "remaining_quantity_needed": remaining_quantity, # Renamed from 'quantity' for clarity
+                "available_qty": product.get('available_qty', 0) or 0,
+                "quantity_installed": product.get('quantity_installed', 0) or 0,
+            })
+        return result_products
+    except Exception as e:
+        print(f"Error fetching floor products data: {e}")
+        return []
+
+# Helper function to get room products data
+def _get_room_products_data(room_model_id):
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT
+                    pd.id, pd.item, pd.client_id, pd.description, pd.supplier,
+                    prm.quantity AS quantity_needed_per_room,
+                    COALESCE(inv.quantity_installed, 0) AS quantity_installed,
+                    COALESCE(inv.quantity_available, 0) AS available_qty
+                FROM product_room_model prm
+                JOIN product_data pd ON prm.product_id = pd.id
+                JOIN room_model rm ON prm.room_model_id = rm.id
+                LEFT JOIN inventory inv ON pd.client_id = inv.client_id
+                WHERE prm.room_model_id = %s
+                ORDER BY pd.client_id;
+            """, [room_model_id])
+
+            columns = [col[0] for col in cursor.description]
+            products = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        return products
+    except Exception as e:
+        print(f"Error fetching room products data: {e}")
+        return []
+
+@session_login_required
+def floor_products_list(request):
+    floor_number = request.GET.get('floor_number', '').strip()
+    product_list = []
+    error_message = None
+
+    if floor_number:
+        try:
+            # Validate floor_number is an integer if necessary
+            floor_number = int(floor_number) # Raises ValueError if not an integer
+            print("floor_number",floor_number, type(floor_number))
+
+            product_list = _get_floor_products_data(floor_number)
+            if not product_list and request.GET: # Check if it was a search attempt
+                 error_message = f"No products found for floor {floor_number}."
+
+            # Handle XLS download request
+            if request.GET.get('download') == 'xls':
+                if product_list:
+                    filename = f"products_list_for_{floor_number}_floor.xls"
+                    return _generate_xls_response(product_list, filename, sheet_name=f"Floor {floor_number}")
+                else:
+                     # Optionally handle download request when no data
+                     messages.warning(request, f"No data to download for floor {floor_number}.")
+                     # Redirect or render template again
+                     return redirect(request.path_info + f'?floor_number={floor_number}')
+
+
+        except ValueError:
+            error_message = "Invalid floor number entered. Please enter a number."
+            floor_number = '' # Clear invalid input for template rendering
+        except Exception as e:
+            error_message = f"An error occurred: {str(e)}"
+            print(f"Error in floor_products_list view: {e}")
+
+
+    context = {
+        'product_list': product_list,
+        'floor_number': floor_number,
+        'error_message': error_message,
+    }
+    return render(request, 'floor_products_list.html', context)
+
+
+@session_login_required
+def room_number_products_list(request):
+    room_number = request.GET.get('room_number', '').strip()
+    product_list = []
+    error_message = None
+    found_room = None
+    room_model_name = None
+
+    if room_number:
+        try:
+            # Find the room
+            found_room = RoomData.objects.select_related('room_model_id').get(room=room_number)
+            room_model_id = found_room.room_model_id.id if found_room.room_model_id else None
+            room_model_name = found_room.room_model_id.room_model if found_room.room_model_id else "Unknown Model"
+
+            if room_model_id:
+                product_list = _get_room_products_data(room_model_id)
+                if not product_list and request.GET:
+                    error_message = f"No specific products configured for room model '{room_model_name}' (used by room {room_number})."
+            else:
+                error_message = f"Room {room_number} does not have an associated room model."
+                product_list = [] # Ensure product list is empty
+
+            # Handle XLS download request
+            if request.GET.get('download') == 'xls' and room_model_id:
+                if product_list:
+                    filename = f"products_list_for_room_{room_number}_{room_model_name.replace(' ', '_')}.xls"
+                    return _generate_xls_response(product_list, filename, sheet_name=f"Room {room_number} ({room_model_name})")
+                else:
+                    messages.warning(request, f"No product data to download for room {room_number} (Model: {room_model_name}).")
+                    # Redirect back to the search page for the same room number
+                    return redirect(request.path_info + f'?room_number={room_number}')
+            elif request.GET.get('download') == 'xls' and not room_model_id:
+                 messages.warning(request, f"Cannot download product list for room {room_number} as it has no associated model.")
+                 return redirect(request.path_info + f'?room_number={room_number}')
+
+
+        except RoomData.DoesNotExist:
+             error_message = f"Room number '{room_number}' not found."
+             room_number = '' # Clear invalid input
+             product_list = [] # Ensure product list is empty
+        except Exception as e:
+             error_message = f"An error occurred: {str(e)}"
+             print(f"Error in room_number_products_list view: {e}")
+             product_list = [] # Ensure product list is empty
+
+
+    context = {
+        'product_list': product_list,
+        'room_number': room_number, # Pass back the searched room number
+        'found_room': found_room,
+        'room_model_name': room_model_name,
+        'error_message': error_message,
+    }
+    return render(request, 'room_products_list.html', context)
+
+# --- Issue Tracking Views --- 
+from django.contrib.auth.models import User
+
+@session_login_required # Corrected decorator
+def issue_list(request):
+    user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
+    user_roles = user.role
+    queryset = Issue.objects.filter(
+        Q(created_by=user) |
+        Q(observers=user) |
+        Q(assignee=user)
+    ).distinct().order_by('-created_at').select_related('created_by', 'assignee')
+
+    # Filtering
+    status = request.GET.get('status')
+    if status:
+        queryset = queryset.filter(status=status)
+    issue_type = request.GET.get('type')
+    if issue_type:
+        queryset = queryset.filter(type=issue_type)
+    q = request.GET.get('q')
+    if q:
+        queryset = queryset.filter(Q(title__icontains=q) | Q(id__icontains=q))
+
+    # Pagination
+    paginator = Paginator(queryset, 10)  # Show 10 issues per page
+    page_number = request.GET.get('page')
+    try:
+        issues_page = paginator.page(page_number)
+    except PageNotAnInteger:
+        issues_page = paginator.page(1)
+    except EmptyPage:
+        issues_page = paginator.page(paginator.num_pages)
+
+    # For filter dropdowns
+    issue_statuses = Issue.IssueStatus.choices if hasattr(Issue, 'IssueStatus') else [
+        ('OPEN', 'Open'), ('WORKING', 'Working'), ('PENDING', 'Pending'), ('CLOSE', 'Close')
+    ]
+    issue_types = Issue.IssueType.choices if hasattr(Issue, 'IssueType') else [
+        ('ROOM', 'Room'), ('FLOOR', 'Floor'),('OTHER', 'other')
+    ]
+
+    context = {
+        'issues': issues_page,
+        'user_roles': user_roles,
+        'is_paginated': issues_page.has_other_pages(),
+        'page_obj': issues_page,
+        'issue_statuses': issue_statuses,
+        'issue_types': issue_types,
+    }
+    return render(request, 'issues/issue_list.html', context)
+
+
+@session_login_required  # or your login decorator
+def issue_detail(request, issue_id):
+    issue = get_object_or_404(Issue, id=issue_id)
+    comments = issue.comments.all().select_related('content_type')
+    invited_user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
+
+    # Build comment_data for the template
+    comment_data = []
+    for comment in comments:
+        commenter = comment.commenter
+        comment_data.append({
+            "comment_id": comment.id,
+            "text_content": comment.text_content,
+            "media": comment.media,
+            "commenter_id": getattr(commenter, "id", None),
+            "commenter_name": str(commenter),
+            "is_by_current_user": commenter == invited_user,
+            "created_at": comment.created_at,
+        })
+
+    can_comment = (
+        issue.created_by == invited_user or
+        invited_user in issue.observers.all() or
+        issue.assignee == invited_user
+    )
+
+    comment_form = CommentForm()
+
+    context = {
+        'issue': issue,
+        'comment_data': comment_data,
+        'comment_form': comment_form,
+        'user': invited_user,
+        'can_comment': can_comment,
+        'user_roles': request.session.get('user_roles', [])
+    }
+    return render(request, 'issues/issue_detail.html', context)
+# ... (keep issue_create, invited_user_comment_create, and other non-admin views) ...
+
+@session_login_required
+def issue_create(request):
+    user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
+    
+    initial_data = {}
+    if request.method == 'GET':
+        prefill_type = request.GET.get('type')
+        prefill_room_id = request.GET.get('related_rooms')
+        prefill_floor = request.GET.get('related_floors')
+        prefill_product_id = request.GET.get('related_product')
+
+        if prefill_type:
+            initial_data['type'] = prefill_type
+            
+            if prefill_type == IssueType.ROOM and prefill_room_id:
+                try:
+                    room_ids = [int(id) for id in prefill_room_id.split(',')]
+                    if RoomData.objects.filter(pk__in=room_ids).exists():
+                        initial_data['related_rooms'] = room_ids
+                except (ValueError, TypeError):
+                    pass
+            elif prefill_type == IssueType.FLOOR and prefill_floor:
+                try:
+                    floor_ids = [int(id) for id in prefill_floor.split(',')]
+                    initial_data['related_floors'] = floor_ids
+                except (ValueError, TypeError):
+                    pass
+            elif prefill_type == IssueType.PRODUCT and prefill_product_id:
+                try:
+                    product_ids = [int(id) for id in prefill_product_id.split(',')]
+                    if ProductData.objects.filter(pk__in=product_ids).exists():
+                        initial_data['related_product'] = product_ids
+                except (ValueError, TypeError):
+                    pass
+
+    if request.method == 'POST':
+        form = IssueForm(request.POST, request.FILES)
+        
+        if form.is_valid():
+            issue = form.save(commit=False)
+            issue.created_by = user
+            
+            # Convert floor IDs to integers before saving
+            if issue.type == IssueType.FLOOR:
+                floor_ids = form.cleaned_data.get('related_floors', [])
+                issue.related_floors = [int(floor_id) for floor_id in floor_ids]
+            
+            issue.save()
+            form.save_m2m()  # Save M2M relationships
+            
+            # Add creator as observer
+            issue.observers.add(user)
+
+            # Process media files
+            media_urls = []
+            images = form.cleaned_data.get('images', [])
+            video = form.cleaned_data.get('video')
+
+            for image in images:
+                file_name = default_storage.save(f"issues/images/{uuid.uuid4()}_{image.name}", image)
+                file_url = default_storage.url(file_name)
+                media_urls.append({
+                    'type': 'image',
+                    'url': file_url,
+                    'size': image.size,
+                    'name': image.name
+                })
+
+            if video:
+                file_name = default_storage.save(f"issues/videos/{uuid.uuid4()}_{video.name}", video)
+                file_url = default_storage.url(file_name)
+                media_urls.append({
+                    'type': 'video',
+                    'url': file_url,
+                    'size': video.size,
+                    'name': video.name
+                })
+
+            # Create initial comment if there's media
+            if media_urls:
+                Comment.objects.create(
+                    issue=issue,
+                    commenter=user,
+                    text_content=form.cleaned_data.get('description', ''),
+                    media=media_urls
+                )
+
+            success_message = f"Issue #{issue.id} created successfully."
+            
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({
+                    'success': True,
+                    'message': success_message,
+                    'redirect_url': reverse('issue_detail', kwargs={'issue_id': issue.id})
+                })
+            else:
+                messages.success(request, success_message)
+                return redirect('issue_detail', issue_id=issue.id)
+        else:
+            logger.error(f"Form errors: {form.errors.as_json()}")
+            error_message = "Please correct the errors below."
+            
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({
+                    'success': False,
+                    'message': error_message,
+                    'errors': json.loads(form.errors.as_json())
+                }, status=400)
+            else:
+                messages.error(request, error_message)
+                return render(request, 'issues/issue_form.html', {'form': form})
+    else:
+        form = IssueForm(initial=initial_data)
+
+    return render(request, 'issues/issue_form.html', {'form': form})
+
+@session_login_required # Uses custom session auth
+def invited_user_comment_create(request, issue_id):
+    invited_user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
+    issue = get_object_or_404(Issue, id=issue_id)
+
+    # Permission check: User must be creator, observer, or assignee to comment
+    can_comment = (
+        issue.created_by == invited_user or
+        invited_user in issue.observers.all() or
+        issue.assignee == invited_user
+    )
+
+    if not can_comment:
+        messages.error(request, "You do not have permission to comment on this issue.")
+        return redirect('issue_detail', issue_id=issue.id)
+
+    if request.method == 'POST':
+        form = CommentForm(request.POST, request.FILES)
+        if form.is_valid():
+            comment = form.save(commit=False)
+            comment.commenter = invited_user # Assign the InvitedUser instance
+            comment.issue = issue
+
+            media_info = []
+            images = form.cleaned_data.get('images', [])
+            video = form.cleaned_data.get('video')
+
+            for img in images:
+                if img.size > 4 * 1024 * 1024: # 4MB
+                    messages.error(request, f"Image '{img.name}' exceeds 4MB limit.")
+                    continue # Skip this file
+                file_name = default_storage.save(f"issues/comments/user/{issue.id}/{uuid.uuid4()}_{img.name}", img)
+                media_info.append({"type": "image", "url": default_storage.url(file_name), "name": img.name, "size": img.size})
+            
+            if video:
+                if video.size > 100 * 1024 * 1024: # 100MB
+                    messages.error(request, f"Video '{video.name}' exceeds 100MB limit.")
+                else:
+                    file_name = default_storage.save(f"issues/comments/user/{issue.id}/{uuid.uuid4()}_{video.name}", video)
+                    media_info.append({"type": "video", "url": default_storage.url(file_name), "name": video.name, "size": video.size})
+
+            comment.media = media_info
+            comment.save()
+            messages.success(request, "Your comment has been added.")
+            return redirect('issue_detail', issue_id=issue.id) # Redirect to standard issue detail
+        else:
+            messages.error(request, "There was an error with your comment. Please check the details.")
+
+            comments = issue.comments.all().select_related('content_type')
+            for c in comments: # Pre-fetch commenter
+                _ = c.commenter
+            return render(request, 'issues/issue_detail.html', {
+                'issue': issue,
+                'comments': comments,
+                'comment_form': form, # Pass the invalid form back
+                'user': request.user, # Or invited_user if more appropriate for template
+                'can_comment': can_comment # Pass the permission status, which must be True to reach here
+            })
+    else:
+        # GET request usually means the form is displayed on the issue_detail page
+        return redirect('issue_detail', issue_id=issue.id)
+
+@login_required
+def get_room_products(request):
+    room_number = request.GET.get('room_number')
+    installation_id = request.GET.get('installation_id')
+
+    if not room_number:
+        return JsonResponse({'error': 'Room number is required'}, status=400)
+
+    if not installation_id:
+        return JsonResponse({'error': 'Installation ID is required'}, status=400)
+
+    try:
+        with connection.cursor() as cursor:
+            # Step 1: Get room_id and room_model_id
+            cursor.execute("""
+                SELECT rd.id as room_id, rm.id as room_model_id
+                FROM room_data rd
+                LEFT JOIN room_model rm ON rd.room_model_id = rm.id
+                WHERE rd.room = %s
+            """, [room_number])
+
+            room_data = cursor.fetchone()
+            if not room_data:
+                return JsonResponse({'error': 'Room not found'}, status=404)
+
+            room_id, room_model_id = room_data
+
+            if not room_model_id:
+                return JsonResponse({'error': 'No room model found for this room'}, status=404)
+
+            # Step 2: Check if install_detail has entries
+            cursor.execute("""
+                SELECT 
+                    id.product_id as id,
+                    pd.item as name,
+                    pd.description,
+                    id.status,
+                    id.installed_on,
+                    u.name as installed_by
+                FROM install_detail id
+                JOIN product_data pd ON id.product_id = pd.id
+                LEFT JOIN invited_users u ON id.installed_by = u.id
+                WHERE id.room_id = %s AND id.installation_id = %s
+                ORDER BY pd.item
+            """, [room_id, installation_id])
+
+            install_entries = cursor.fetchall()
+            columns = [col[0] for col in cursor.description]
+
+            if install_entries:
+                products = []
+                for row in install_entries:
+                    product = dict(zip(columns, row))
+                    if product['installed_on']:
+                        product['installed_on'] = product['installed_on'].strftime('%Y-%m-%d')
+                    products.append(product)
+
+                return JsonResponse({'success': True, 'source': 'install_detail', 'products': products})
+
+            # Step 3: Fallback to dynamic room model-based product lookup
+            cursor.execute("""
+                SELECT 
+                    pd.id,
+                    pd.item as name,
+                    pd.description,
+                    prm.quantity,
+                    COALESCE(id.status, 'NO') as status,
+                    id.installed_on,
+                    u.name as installed_by
+                FROM product_room_model prm
+                JOIN product_data pd ON prm.product_id = pd.id
+                LEFT JOIN install_detail id ON pd.id = id.product_id
+                                           AND id.installation_id = %s
+                                           AND id.room_id = %s
+                LEFT JOIN invited_users u ON id.installed_by = u.id
+                WHERE prm.room_model_id = %s
+                ORDER BY pd.item
+            """, [installation_id, room_id, room_model_id])
+
+            dynamic_products = []
+            columns = [col[0] for col in cursor.description]
+
+            for row in cursor.fetchall():
+                product = dict(zip(columns, row))
+                if product['installed_on']:
+                    product['installed_on'] = product['installed_on'].strftime('%Y-%m-%d')
+                dynamic_products.append(product)
+
+            return JsonResponse({'success': True, 'source': 'room_model_fallback', 'products': dynamic_products})
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@login_required # Standard Django login for admin views
+def admin_get_installation_details(request):
+    if not request.user.is_authenticated or not request.user.is_staff: # Basic permission check
+        return JsonResponse({"success": False, "message": "Unauthorized"}, status=403)
+
+    installation_id_str = request.GET.get("installation_id")
+    room_number_str = request.GET.get("room_number")
+
+    # Determine current user's name for JS prefill
+    current_user_name = request.user.username # Default to username
+    # Check if the logged-in user is an instance of InvitedUser and has a 'name' attribute
+    # This depends on your authentication setup for admins.
+    # If admins are Django users, request.user.name might not exist unless custom user model.
+    # If admins are InvitedUser and session is set up, request.user could be InvitedUser.
+    if hasattr(request.user, 'name') and request.user.name and isinstance(request.user, InvitedUser):
+        current_user_name = request.user.name
+    elif hasattr(request.user, 'get_full_name') and request.user.get_full_name():
+        current_user_name = request.user.get_full_name()
+
+
+    if installation_id_str: #优先处理编辑模式 (Prioritize edit mode if installation_id is present)
+        try:
+            installation_id = int(installation_id_str)
+            # Fetch the specific installation
+            installation = get_object_or_404(Installation, id=installation_id)
+            # Get room number from the installation record
+            room_num_for_helper = str(installation.room)
+
+            data = _get_installation_checklist_data(room_number=room_num_for_helper, installation_id=installation_id)
+            if data["success"]:
+                data["current_user_name"] = current_user_name
+            return JsonResponse(data)
+        except ValueError:
+            return JsonResponse({"success": False, "message": "Invalid Installation ID format."}, status=400)
+        # Installation.DoesNotExist is already handled by get_object_or_404
+        except Exception as e:
+            logger.error(f"Error in admin_get_installation_details (edit mode) for install_id {installation_id_str}: {e}", exc_info=True)
+            return JsonResponse({"success": False, "message": f"An unexpected server error occurred: {str(e)}"}, status=500)
+
+    elif room_number_str: # 如果没有 installation_id，但有 room_number，则为创建模式加载 (If no installation_id, but room_number is present, load for create mode)
+        try:
+            # Validate room_number can be converted to int for RoomData query if necessary,
+            # _get_installation_checklist_data expects room_number as string but might do internal conversion.
+            # For create mode, installation_id is None.
+            data = _get_installation_checklist_data(room_number=room_number_str, installation_id=None)
+            if data["success"]:
+                data["current_user_name"] = current_user_name
+            else:
+                # If _get_installation_checklist_data itself returns success:False, pass its message
+                return JsonResponse(data, status=400 if data.get("message") else 500)
+            return JsonResponse(data)
+        except RoomData.DoesNotExist: # Explicitly catch if _get_installation_checklist_data can't find room
+             return JsonResponse({"success": False, "message": f"Room {room_number_str} not found. Cannot create installation checklist."}, status=404)
+        except ValueError: # e.g. if room_number_str is not a valid int and RoomData.room is int
+            return JsonResponse({"success": False, "message": "Invalid Room Number format provided."}, status=400)
+        except Exception as e:
+            logger.error(f"Error in admin_get_installation_details (create mode) for room {room_number_str}: {e}", exc_info=True)
+            return JsonResponse({"success": False, "message": f"An unexpected server error occurred: {str(e)}"}, status=500)
+    else:
+        return JsonResponse({"success": False, "message": "Either Installation ID (for edit) or Room Number (for create) is required."}, status=400)
+
+@login_required # Standard Django login for admin views
+@csrf_exempt # If using AJAX POST from admin template that might not embed CSRF token in form data easily initially
+def admin_save_installation_details(request):
+    if not request.user.is_authenticated or not request.user.is_staff:
+        return JsonResponse({"success": False, "message": "Unauthorized"}, status=403)
+
+    if request.method == "POST":
+        installation_id_str = request.POST.get("installation_id")
+        
+        if not installation_id_str:
+            return JsonResponse({"success": False, "message": "Installation ID is required in POST data."}, status=400)
+
+        try:
+            installation_id = int(installation_id_str)
+            # Fetch the installation to get the room number for the helper
+            installation_instance = get_object_or_404(Installation, id=installation_id)
+            room_number_str = str(installation_instance.room) # Get room number from the instance
+
+            # Determine the user instance for 'checked_by' fields.
+            # If your admins are regular Django Users:
+            # admin_user_instance = request.user
+            # If your admins are also InvitedUser instances and logged in via session:
+            # For simplicity, let's assume if an admin is doing this, they are the 'user_instance'
+            # This might need refinement based on how admin identity is passed or if it should be logged differently.
+            
+            # For now, let's try to find an InvitedUser that matches the logged-in Django admin user's email.
+            # This is a common pattern if you have two user systems.
+            # Or, if admins are *always* also InvitedUsers and logged in through the custom session:
+            admin_user_as_invited_user = None
+            if hasattr(request.user, 'email'): # Check if the Django user has an email
+                 admin_user_as_invited_user = InvitedUser.objects.filter(email=request.user.email).first()
+
+            if not admin_user_as_invited_user:
+                 # Fallback or error if no matching InvitedUser.
+                 # For now, as a simple approach, create a placeholder or use a default admin InvitedUser if one exists.
+                 # This part depends on your user management strategy for admins.
+                 # Let's assume for now the logged-in Django user *is* the one making changes.
+                 # The _save_installation_data expects an InvitedUser instance.
+                 # If your request.user *is* an InvitedUser due to middleware, this is simpler.
+                 # Given the mix of @login_required and @session_login_required, this needs clarity.
+                 # Assuming @login_required means a Django user.
+                 # We need an InvitedUser to pass to the helper.
+                 
+                 # If session_login_required was used for admins, then:
+                 # invited_user_id = request.session.get("user_id")
+                 # user_instance_for_saving = get_object_or_404(InvitedUser, id=invited_user_id)
+
+                 # If @login_required (Django auth) is used for admins:
+                 # We need a way to map Django User to InvitedUser for the save helper.
+                 # Simplest for now: if a field 'name' on Django User matches an InvitedUser.name or email.
+                 # This is a placeholder for robust user mapping.
+                # Default to first admin if any, or handle error
+                # This is a TEMPORARY HACK - replace with proper admin user (InvitedUser) retrieval
+                user_instance_for_saving = InvitedUser.objects.filter(role__contains=['admin']).first()
+                if not user_instance_for_saving and InvitedUser.objects.exists(): # fallback to any user if no admin
+                    user_instance_for_saving = InvitedUser.objects.first()
+                elif not InvitedUser.objects.exists():
+                     return JsonResponse({"success": False, "message": "Configuration error: No InvitedUser available to attribute changes."}, status=500)
+
+                logger.warning(f"Admin save: Using fallback InvitedUser '{user_instance_for_saving.name}' for changes by Django user '{request.user.username}'. Review user mapping.")
+
+            else: # Found a matching InvitedUser for the Django admin
+                user_instance_for_saving = admin_user_as_invited_user
+
+
+            result = _save_installation_data(request.POST, user_instance_for_saving, room_number_str, installation_id_str)
+            
+            if result["success"]:
+                return JsonResponse(result)
+            else:
+                return JsonResponse(result, status=400) # Or 500 if server-side issue in helper
+
+        except ValueError:
+            return JsonResponse({"success": False, "message": "Invalid Installation ID format."}, status=400)
+        except Installation.DoesNotExist:
+            return JsonResponse({"success": False, "message": "Installation record not found to save against."}, status=404)
+        except Exception as e:
+            logger.error(f"Critical error in admin_save_installation_details for install_id {installation_id_str}: {e}", exc_info=True)
+            return JsonResponse({"success": False, "message": f"An server error occurred: {str(e)}"}, status=500)
+
+    return JsonResponse({"error": "Invalid request method. Only POST is allowed."}, status=405)

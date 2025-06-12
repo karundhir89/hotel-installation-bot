@@ -3,57 +3,57 @@
 {% block content %}
 
 <style>
-#roomModelTable tbody tr {
-    height: 60px;
-}
-#roomModelTable th, #roomModelTable td {
-    white-space: nowrap;
-    padding: 15px;
-}
-th.sorting::after {
-    content: "\2195";
-    margin-left: 5px;
-}
-th.sorting_asc::after {
-    content: "\2191";
-}
-th.sorting_desc::after {
-    content: "\2193";
-}
-th.sorting, th.sorting_asc, th.sorting_desc {
-    cursor: pointer;
-}
-.modal-overlay {
-    display: none;
-    position: fixed;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    background: rgba(0,0,0,0.5);
-    z-index: 1000;
-}
-.modal {
-    display: none;
-    position: fixed;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    z-index: 1001;
-    padding: 20px;
-    border-radius: 5px;
-}
-.modal-content {
-    width: 42%;
-    height: 74vh;
-    overflow: auto;
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-}
-.form-group {
-    padding: 10px;
-    position: relative;
-    margin: 20px 0 0;
-}
+    #roomModelTable tbody tr {
+        height: 60px;
+    }
+    #roomModelTable th, #roomModelTable td {
+        white-space: nowrap;
+        padding: 15px;
+    }
+    th.sorting::after {
+        content: "\2195";
+        margin-left: 5px;
+    }
+    th.sorting_asc::after {
+        content: "\2191";
+    }
+    th.sorting_desc::after {
+        content: "\2193";
+    }
+    th.sorting, th.sorting_asc, th.sorting_desc {
+        cursor: pointer;
+    }
+    .modal-overlay {
+        display: none;
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        background: rgba(0,0,0,0.5);
+        z-index: 1000;
+    }
+    .modal {
+        display: none;
+        position: fixed;
+        top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 1001;
+        padding: 20px;
+        border-radius: 5px;
+    }
+    .modal-content {
+        width: 42%;
+        height: 74vh;
+        overflow: auto;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+    }
+    .form-group {
+        padding: 10px;
+        position: relative;
+        margin: 20px 0 0;
+    }
 </style>
 
 <!-- Loader -->
@@ -87,7 +87,6 @@ th.sorting, th.sorting_asc, th.sorting_desc {
                                         <th>Client ID</th>
                                         <th>Description</th>
                                         <th>Supplier</th>
-                                        <th>Price</th>
                                         <th>Client Selected</th>
                                         <th>Actions</th>
                                     </tr>                                    
@@ -100,7 +99,6 @@ th.sorting, th.sorting_asc, th.sorting_desc {
                                         <td>{{ model.client_id }}</td>
                                         <td>{{ model.description }}</td>
                                         <td>{{ model.supplier | default:"N.A." }}</td>
-                                        <td>{{ model.price }}</td>
                                         <td>{{ model.client_selected }}</td>
                                         <td>
                                             <button class="btn editModelBtn"
@@ -109,7 +107,6 @@ th.sorting, th.sorting_asc, th.sorting_desc {
                                                 data-client_id="{{ model.client_id }}"
                                                 data-description="{{ model.description }}"
                                                 data-supplier="{{ model.supplier| default:'' }}"
-                                                data-price="{{ model.price }}"
                                                 data-client_selected="{{ model.client_selected }}">
                                                 Edit
                                             </button>
@@ -147,7 +144,6 @@ th.sorting, th.sorting_asc, th.sorting_desc {
             <div class="form-group"><label for="client_id">Client ID:</label><input type="text" id="client_id" name="client_id" class="form-control"></div>
             <div class="form-group"><label for="description">Description:</label><input type="text" id="description" name="description" class="form-control"></div>
             <div class="form-group"><label for="supplier">Supplier:</label><input type="text" id="supplier" name="supplier" class="form-control"></div>
-            <div class="form-group"><label for="price">Price:</label><input type="text" id="price" name="price" class="form-control"></div>
             <div class="form-group"><label for="client_selected">Client Selected:</label><input type="text" id="client_selected" name="client_selected" class="form-control"></div>
 
             <button type="submit" class="btn float-right">Save Product Data</button>
@@ -167,6 +163,12 @@ $(document).ready(function () {
         order: [[0, 'asc']],
         pageLength: 10,
         lengthMenu: [5, 10, 15, 20],
+        dom : 'Bfr<"row pt-5"<"col-sm-12"t>><"row pt-3"<"col-sm-12 col-md-5"i><"col-sm-12 col-md-7"p>>',
+			buttons : [{
+	            extend: 'excel',
+	            text: 'Export To Excel',
+                className:'custom-download-btn'
+	        }]
     });
 
     $('#addModelBtn').click(function () {
@@ -179,7 +181,6 @@ $(document).ready(function () {
     $('#client_id').prop('readonly', false);
     $('#description').val("");
     $('#supplier').val("");
-    $('#price').val("");
     $('#client_selected').val("");
 
     $('#modelModal').fadeIn();
@@ -196,7 +197,6 @@ $(document).ready(function () {
     $('#client_id').prop('readonly', true);
     $('#description').val($(this).data('description'));
     $('#supplier').val($(this).data('supplier'));
-    $('#price').val($(this).data('price'));
     $('#client_selected').val($(this).data('client_selected'));
 
     $('#modelModal').fadeIn();

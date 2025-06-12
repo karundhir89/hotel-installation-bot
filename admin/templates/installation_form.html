@@ -4,7 +4,37 @@
 {% block title %}Installation Control Form{% endblock %}
 
 {% block content %}
-<div class="container my-5">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@media (max-width: 768px) {
+  .border.border-light {
+    border-radius: 11px !important;
+    /* box-shadow: 14px 2px 17px 0px #ded8d8 !important; */
+
+    box-shadow: rgba(50, 50, 93, 0.25) 0px 6px 12px -2px, rgba(0, 0, 0, 0.3) 0px 3px 7px -3px;
+  }
+  input[type='checkbox'] {
+      width: 22px;
+      height: 22px;
+    }
+
+    #search_room {
+  height: 40px; /* Adjust the height as needed */
+  font-size: 16px; /* Optional: to match other elements */
+  padding: 5px 15px; /* Optional: control inner spacing */
+}
+
+}
+.card{
+  font-size: 16px; /* adjust as needed */
+}
+.form-control{
+  font-size: 16px;
+
+}
+
+</style>
+<div class="container-lg my-5">
     <div class="card shadow-sm rounded-4">
         <div class="card-body p-4">
             <h3 class="mb-4 text-center text-secondary py-4">Installation Control Form</h3>
@@ -15,16 +45,20 @@
                 <!-- Room Info -->
                 <div class="row mb-4">
                     <div class="col-md-6">
-                        <label for="room_number" class="form-label">Room #</label>
-                        <input type="text" class="form-control" name="room_number" id="room_number" required>
+                        <label for="room_number" class="form-label" >Room #</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" name="room_number" id="room_number"  required>
+                            <button type="button" class="btn btn-secondary" id="search_room">
+                                <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true" id="search_spinner"></span>
+                                <span id="search_text">Search</span>
+                            </button>
+                        </div>
                     </div>
                     <div class="col-md-6">
                         <label for="room_type" class="form-label">Room Type</label>
                         <input type="text" class="form-control" name="room_type" id="room_type" readonly required>
                     </div>
                 </div>
-
-                <hr class="my-4">
 
                 <!-- Dynamic Check Items Render Here -->
                 <div id="check-items-wrapper"></div>
@@ -44,9 +78,15 @@
 {% block extra_js %}
 <script>
   $(document).ready(function () {
-    $('#room_number').on('blur', function () {
-      const roomNumber = $(this).val();
-      if (!roomNumber) return;
+    $('#search_room').on('click', function () {
+      const roomNumber = $('#room_number').val();
+      if (!roomNumber) {
+        toastr.error("Please enter a room number");
+        return;
+      }
+
+      setLoading('search_room', true);
+      $('#select_all_section').hide(); // Hide select all section while loading
 
       $.ajax({
         url: "{% url 'get_room_type' %}",
@@ -54,6 +94,7 @@
         data: { room_number: roomNumber },
         success: function (data) {
           console.log("Received data:", data);
+          setLoading('search_room', false);
           if (data.success) {
             $('#room_type').val(data.room_type);
             renderCheckItems(data.check_items, data.saved_items);
@@ -62,9 +103,11 @@
             $('#room_type').val('');
             $('#check-items-wrapper').html('');
           }
+          
         },
         error: function () {
           toastr.error("Error fetching room type");
+          setLoading('search_room', false);
           $('#room_type').val('');
           $('#check-items-wrapper').html('');
         }
@@ -75,9 +118,18 @@
       const wrapper = $('#check-items-wrapper');
       wrapper.html('');
 
+      // Show/hide select all section based on whether there are items
+      if (items.length > 0) {
+        $('#select_all_section').show();
+      } else {
+        $('#select_all_section').hide();
+      }
+
       const savedItemsMap = {};
       savedItems.forEach(item => {
         if (item.install_id !== undefined) {
+
+        console.log("item = ",item);
           savedItemsMap[`detail-${item.install_id}`] = item;
         }
       });
@@ -89,7 +141,7 @@
         let isChecked = false;
         let installedBy = "";
         let installedOn = "";
-
+        let product_client_id = "";
         if (item.type === "installation") {
           isChecked = item.status === "YES";
           installedBy = item.checked_by || "";
@@ -98,24 +150,26 @@
           isChecked = saved.status === "YES";
           installedBy = saved.installed_by || "";
           installedOn = saved.installed_on ? saved.installed_on.split("T")[0] : "";
+          product_client_id = saved.product_client_id ? saved.product_client_id : "";
         }
 
         const html = `
-          <div class="form-group row align-items-center mb-3">
-            <div class="col-md-5">
-              <div class="form-check">
+          <div class="form-group row align-items-center mb-3 border border-light rounded-top">
+            <div class="col-md-5 mt-3">
+              <div class="form-check mb-2">
                 <input type="hidden" name="step_${item.type}_${item.id}" value="off">
-                <input class="form-check-input" type="checkbox" name="step_${item.type}_${item.id}" id="step_${item.type}_${item.id}" value="on" ${isChecked ? 'checked' : ''}>
+            <input class="form-check-input"  type="checkbox" name="step_${item.type}_${item.id}" id="step_${item.type}_${item.id}" value="on" ${isChecked ? 'checked' : ''}>
+            <input type="hidden" name="product_id_${item.type}_${item.id}" value="${product_client_id}">
                 <label class="form-check-label" for="step_${item.type}_${item.id}">
-                  ${item.label}
+                  ${item.label} 
                 </label>
               </div>
             </div>
-            <div class="col-md-3">
-              <input type="date" class="form-control" name="date_${item.type}_${item.id}" value="${installedOn}">
+            <div class="col-md-3 mt-2 mb-2">
+              <input type="date" readonly class="form-control" name="date_${item.type}_${item.id}" value="${installedOn}">
             </div>
-            <div class="col-md-4">
-              <input type="text" class="form-control" name="checked_by_${item.type}_${item.id}" value="${installedBy}" placeholder="Checked by">
+            <div class="col-md-4 mt-2 mb-2">
+              <input type="text" readonly class="form-control" name="checked_by_${item.type}_${item.id}" value="${installedBy}" placeholder="Checked by">
             </div>
           </div>
         `;

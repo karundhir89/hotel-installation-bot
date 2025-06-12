@@ -4,7 +4,37 @@
 {% block title %}Receiving Form{% endblock %}
 
 {% block content %}
-<div class="container my-5">
+<style>
+  @media(max-width:768px) {
+    input[type='checkbox'] {
+      width: 25px;
+      height: 25px;
+    }
+    .product_item_class{
+      margin-top: 10px;
+    }
+    .form-label{
+  font-size: 20px;
+}
+.fw-bold{
+  font-size: 20px;
+}
+  }
+/* 
+  .mt-3{
+    margin-top: 0rem !important
+  } */
+
+  @media(min-width:768px) {
+    .check{
+      transform: translate(-6%,-14%);
+    }
+  }
+
+
+
+</style>
+<div class="container-lg my-5">
   <div class="card shadow-sm rounded-4 p-4">
     <h3 class="mb-4 text-center text-secondary py-4">Receiving Form</h3>
 
@@ -14,51 +44,59 @@
       <div class="row mb-3">
         <div class="col-md-6">
           <label class="form-label">Client Item</label>
-          <input type="text" class="form-control rounded-3" name="client_item" id="client_item" required>
+          <div class="input-group">
+            <input type="text" class="form-control rounded-3" name="client_item" id="client_item" required>
+            <button type="button" class="btn btn-secondary" id="search_client">
+              <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"
+                id="search_spinner"></span>
+              <span id="search_text">Search</span>
+            </button>
+          </div>
         </div>
-        <div class="col-md-6">
-          <label class="form-label">Product Item Number</label>
-          <input type="text" class="form-control rounded-3" name="product_item" id="product_item" readonly required>
+        <div class="col-md-6 product_item_class">
+          <label class="form-label">Product Name</label>
+          <input type="text" class="form-control rounded-3" name="product_name" id="product_name" readonly required>
         </div>
-      </div>      
+      </div>
 
       <div class="border rounded-3 p-3 mb-4 bg-light">
         <div class="row mb-3 align-items-center">
-          <div class="col-md-1">
-            <input type="checkbox" name="arrival_checked" id="arrival_checked" required>
+          <div class="col-md-1 ">
+            <input type="checkbox" name="arrival_checked" id="arrival_checked" required >
           </div>
-          <div class="col-md-11">
-            <label class="fw-bold mb-0">1. ARRIVAL DATE</label>
-          </div>
-        </div>
-      
-        <div class="row mb-3">
-          <div class="col-md-6">
-            <label class="form-label">Date</label>
-            <input type="date" class="form-control rounded-3" name="received_date" required>
-          </div>
-          <div class="col-md-6">
-            <label class="form-label">Checked By</label>
-            <input type="text" class="form-control rounded-3" name="checked_by" placeholder="Name" required>
+          <div class="col-md-11 mt-3 check">
+            <label class="fw-bold">1. ARRIVAL DATE</label>
           </div>
         </div>
-      
         <div class="row mb-3">
-          <div class="col-md-6">
+          <div class="col-md-6 mt-3">
             <label class="form-label">QTY RECEIVED</label>
             <input type="number" class="form-control rounded-3" name="received_qty" min="0" required>
           </div>
-          <div class="col-md-6">
+          <div class="col-md-6 mt-3">
             <label class="form-label">QTY DAMAGED (if any)</label>
             <input type="number" class="form-control rounded-3" name="damaged_qty" min="0">
           </div>
         </div>
-      
+
+        <div class="row mb-3">
+          <div class="col-md-6 ">
+            <label class="form-label">Date</label>
+            <input type="date" class="form-control rounded-3" name="received_date" required readonly>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Checked By</label>
+            <input type="text" class="form-control rounded-3"  name="checked_by" placeholder="Name" required readonly>
+          </div>
+        </div>
+
+        
+
         <!-- <div class="mb-3">
           <label class="form-label">Notes</label>
           <textarea class="form-control rounded-3" name="arrival_notes" rows="2" placeholder="Additional details..."></textarea>
         </div> -->
-      </div>        
+      </div>
 
       <div class="text-center mt-4">
         <button type="submit" class="btn btn-secondary px-5 rounded-3 shadow-sm">Submit</button>
@@ -71,39 +109,50 @@
 {% block extra_js %}
 <script>
   $(document).ready(function () {
+
     const currentDate = new Date(); // Format: YYYY-MM-DD
     const userName = "{{ user_name }}";
     const isoDate = currentDate.toISOString().split('T')[0]; // "YYYY-MM-DD"
 
     $('#arrival_checked').on('change', function () {
       if ($(this).is(':checked')) {
+        console.log("checked", isoDate, typeof isoDate);
         $('input[name="received_date"]').val(isoDate);
         $('input[name="checked_by"]').val(userName);
       } else {
+        console.log("null date");
         $('input[name="received_date"]').val('');
         $('input[name="checked_by"]').val('');
       }
     });
+    
 
-    $('#client_item').on('blur', function () {
-      const roomNumber = $(this).val();
-      if (!roomNumber) return;
+    $('#search_client').on('click', function () {
+      const roomNumber = $('#client_item').val();
+      if (!roomNumber) {
+        toastr.error("Please enter a client item number");
+        return;
+      }
+
+      setLoading('search_client', true);
 
       $.ajax({
         url: "{% url 'inventory_received_item_num' %}",
         type: "GET",
         data: { client_item: roomNumber },
         success: function (data) {
+          setLoading('search_client', false);
           if (data.success) {
-            $('#product_item').val(data.product_item);
+            $('#product_name').val(data.product_name);
           } else {
             toastr.error("Room number does not exist");
-            $('#product_item').val('');
+            $('#product_name').val('');
           }
         },
         error: function () {
+          setLoading('search_client', false);
           toastr.error("Error fetching room type");
-          $('#product_item').val('');
+          $('#product_name').val('');
         }
       });
     });
@@ -116,11 +165,11 @@
       "timeOut": "4000"
     };
     {% for message in messages %}
-      {% if message.tags == "success" %}
-        toastr.success("{{ message|escapejs }}");
-      {% elif message.tags == "error" %}
-        toastr.error("{{ message|escapejs }}");
-      {% endif %}
+    {% if message.tags == "success" %}
+    toastr.success("{{ message|escapejs }}");
+    {% elif message.tags == "error" %}
+    toastr.error("{{ message|escapejs }}");
+    {% endif %}
     {% endfor %}
     {% endif %}
   });

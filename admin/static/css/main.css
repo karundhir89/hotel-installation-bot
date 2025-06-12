@@ -6,7 +6,7 @@
 
 /*//////////////////////////////////////////////////////////////////
 [ FONT ]*/
-
+/* 
 @font-face {
   font-family: Poppins-Regular;
   src: url('../fonts/poppins/Poppins-Regular.ttf'); 
@@ -25,7 +25,7 @@
 @font-face {
   font-family: Poppins-SemiBold;
   src: url('../fonts/poppins/Poppins-SemiBold.ttf'); 
-}
+} */
 
 /*//////////////////////////////////////////////////////////////////
 [ RESTYLE TAG ]*/
@@ -38,13 +38,12 @@
 
 body, html {
 	height: 100%;
-	 font-family: "Gill Sans", sans-serif;
+	 font-family: Roboto, Helvetica, Arial, sans-serif;
 }
 
 /*---------------------------------------------*/
 a {
-	font-family: Poppins-Regular;
-  font-family: "Gill Sans", sans-serif;
+	font-family: Roboto, Helvetica, Arial, sans-serif;
 	font-size: 14px;
 	line-height: 1.7;
 	color: #666666;
@@ -70,7 +69,7 @@ h1,h2,h3,h4,h5,h6 {
 }
 
 p {
-	font-family: Poppins-Regular;
+	font-family: Roboto, Helvetica, Arial, sans-serif;
 	font-size: 14px;
 	line-height: 1.7;
 	color: #666666;
@@ -194,10 +193,16 @@ iframe {
   position: relative;
 }
 
+.login_logo {
+  text-align: center;
+  margin: 20px auto 10px auto;
+}
 
-
-
-
+.login_logo img {
+  max-width: 300px;  /* Adjust size as needed */
+  height: auto;
+  display: inline-block;
+}
 
 
 
@@ -226,7 +231,7 @@ iframe {
 }
 
 .login100-form-title-1 {
-  font-family: Poppins-Bold;
+  font-family: Roboto, Helvetica, Arial, sans-serif;
   font-size: 30px;
   color: #fff;
   text-transform: uppercase;
@@ -250,9 +255,6 @@ iframe {
 /*==================================================================
 [ Form ]*/
 
-
-
-
 .login100-form {
   width: 100%;
   display: -webkit-box;
@@ -262,7 +264,7 @@ iframe {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  padding: 43px 88px 93px 190px;
+  padding: 54px 100px 55px 100px;
 }
 
 
