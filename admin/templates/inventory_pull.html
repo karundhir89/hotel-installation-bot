@@ -4,6 +4,20 @@
 {% block title %}Inventory Pull Form{% endblock %}
 
 {% block content %}
+<!-- Hidden element to store Django messages as JSON -->
+<div id="django-messages" style="display: none;">
+  [
+    {% if messages %}
+      {% for message in messages %}
+        {
+          "tag": "{{ message.tags }}",
+          "text": "{{ message|escapejs }}"
+        }{% if not forloop.last %},{% endif %}
+      {% endfor %}
+    {% endif %}
+  ]
+</div>
+
 <style>
   @media (max-width: 768px) {
     input[type='checkbox'] {
@@ -212,15 +226,15 @@
                        name="product_${product.id}" 
                        id="product_${product.id}" 
                        data-product-id="${product.id}"
-                       data-available-qty="${product.available_qty}"
+                       data-available-qty="${product.hotel_warehouse_quantity}"
                        data-required-qty="${product.quantity}"
                        value="on">
-                <label class="form-check-label" for="product_${product.id}">
+                                  <label class="form-check-label" for="product_${product.id}">
                   (${product.client_id}) - ${product.description}
                   <br>
                   <small class="text-muted">
                     Required: ${product.quantity}, 
-                    Available: ${product.available_qty},
+                    Warehouse Available: ${product.hotel_warehouse_quantity},
                     Already Pulled: ${product.pulled_quantity}
                   </small>
                 </label>
@@ -231,8 +245,8 @@
               <input type="number" class="form-control requested-qty" 
                      name="requested_qty_${product.id}" 
                      min="1" 
-                     max="${Math.min(product.available_qty, product.quantity)}"
-                     value="${Math.min(product.available_qty, product.quantity)}"
+                     max="${Math.min(product.hotel_warehouse_quantity, product.quantity)}"
+                     value="${Math.min(product.hotel_warehouse_quantity, product.quantity)}"
                      data-product-id="${product.id}"
                      placeholder="Requested Qty">
               <small class="text-danger requested-error-${product.id}" style="display: none;">
@@ -244,7 +258,7 @@
               <input type="number" class="form-control received-qty" 
                      name="received_qty_${product.id}" 
                      min="0" 
-                     max="${Math.min(product.available_qty, product.quantity)}"
+                     max="${Math.min(product.hotel_warehouse_quantity, product.quantity)}"
                      value="0"
                      data-product-id="${product.id}"
                      placeholder="Received Qty"
@@ -266,12 +280,12 @@
                        id="product_received_${product.id}"
                        data-product-id="${product.id}"
                        value="on">
-                <label class="form-check-label" for="product_received_${product.id}">
+                                  <label class="form-check-label" for="product_received_${product.id}">
                   (${product.client_id}) - ${product.description}
                   <br>
                   <small class="text-muted">
                     Required: ${product.quantity}, 
-                    Available: ${product.available_qty},
+                    Warehouse Available: ${product.hotel_warehouse_quantity},
                     Already Pulled: ${product.pulled_quantity}
                   </small>
                 </label>
@@ -290,7 +304,7 @@
               <input type="number" class="form-control received-qty-edit" 
                      name="received_qty_${product.id}" 
                      min="0" 
-                     max="${Math.min(product.available_qty, product.quantity)}"
+                     max="${Math.min(product.hotel_warehouse_quantity, product.quantity)}"
                      value="0"
                      data-product-id="${product.id}"
                      placeholder="Received Qty"
@@ -349,9 +363,9 @@
       $('.requested-qty').on('input', function() {
         const productId = $(this).data('product-id');
         const productRow = $(this).closest('.product-row');
-        const availableQty = parseInt(productRow.find('.product-checkbox').data('available-qty'));
+        const warehouseQty = parseInt(productRow.find('.product-checkbox').data('available-qty'));
         const requiredQty = parseInt(productRow.find('.product-checkbox').data('required-qty'));
-        const maxQty = Math.min(availableQty, requiredQty);
+        const maxQty = Math.min(warehouseQty, requiredQty);
         const requestedValue = parseInt($(this).val()) || 0;
         
         // Update max attribute in case it was changed dynamically
@@ -409,15 +423,23 @@
       // Check if there are any products selected
       let hasSelectedProducts = false;
       
+      // Determine which tab is active
+      const isReceivedTabActive = $('#received-tab').hasClass('active');
+      
+      // Add a hidden field to indicate which tab is active
+      hiddenFields.push(`<input type="hidden" name="active_tab" value="${isReceivedTabActive ? 'received' : 'requested'}">`);
+      
       $('.product-checkbox:checked').each(function() {
         hasSelectedProducts = true;
         const productId = $(this).data('product-id');
+        const productClientId = $(this).closest('.product-row').find('.form-check-label').text().trim().match(/\(([^)]+)\)/)[1];
         const requestedQty = $(`[name="requested_qty_${productId}"]`).val();
         const receivedQty = $(`[name="received_qty_${productId}"]`).val();
         const pulledBefore = $(this).closest('.product-row').find('.text-muted').text().match(/Already Pulled: (\d+)/)[1];
         
         // Store product IDs and quantities
         hiddenFields.push(`<input type="hidden" name="selected_product_ids" value="${productId}">`);
+        hiddenFields.push(`<input type="hidden" name="client_item_ids" value="${productClientId}">`);
         hiddenFields.push(`<input type="hidden" name="requested_quantities" value="${requestedQty}">`);
         hiddenFields.push(`<input type="hidden" name="received_quantities" value="${receivedQty}">`);
         hiddenFields.push(`<input type="hidden" name="previous_pulled_quantities" value="${pulledBefore}">`);
@@ -496,20 +518,31 @@
       });
     });
 
-    {% if messages %}
+    // Process Django messages with toastr
     toastr.options = {
       "closeButton": true,
       "progressBar": true,
       "timeOut": "4000"
     };
-    {% for message in messages %}
-      {% if message.tags == "success" %}
-        toastr.success("{{ message|escapejs }}");
-      {% elif message.tags == "error" %}
-        toastr.error("{{ message|escapejs }}");
-      {% endif %}
-    {% endfor %}
-    {% endif %}
+    
+    // Handle Django messages
+    function processMessages() {
+      const messages = JSON.parse(document.getElementById('django-messages').textContent || '[]');
+      messages.forEach(function(msg) {
+        if (msg.tag === "success") {
+          toastr.success(msg.text);
+        } else if (msg.tag === "error") {
+          toastr.error(msg.text);
+        } else if (msg.tag === "warning") {
+          toastr.warning(msg.text);
+        } else if (msg.tag === "info") {
+          toastr.info(msg.text);
+        }
+      });
+    }
+    
+    // Call the function to process messages
+    processMessages();
   });
 </script>
 {% endblock %}

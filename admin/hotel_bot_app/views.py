@@ -2044,40 +2044,95 @@ def inventory_pull(request):
             user_name = user.name
         except InvitedUser.DoesNotExist:
             pass
+    
     if request.method == "POST":
         try:
-            # Get all product IDs from the form
-            product_ids = [key.split('_')[1] for key in request.POST.keys() if key.startswith('product_') and request.POST[key] == 'on']
-            print("product_ids ::", product_ids)
-
-            for product_id in product_ids:
-                # Get the product room model
-                prm = ProductData.objects.get(id=product_id)
-                print("prm ::", prm)
-                qty_pulled_value = int(request.POST.get(f'qty_pulled_{product_id}'))
-                print("qty_pulled_value ::", qty_pulled_value)
-                # Get the inventory item
-                inventory = Inventory.objects.get(client_id=prm.client_id)
-                print("inventory ::", inventory)
-                print("inventory.quantity_available ::", inventory.quantity_available, type(inventory.quantity_available))
-                print("qty_pulled_value ::", qty_pulled_value, type(qty_pulled_value))
-                # Update inventory quantity
-                inventory.quantity_available -= qty_pulled_value
-                inventory.save()
-                print("Before save ::",prm.client_id,prm.item,prm.id,qty_pulled_value,request.session.get('user_id'),request.POST.get(f'date_{product_id}'),request.POST.get('floor_number'),inventory.quantity_available,inventory.quantity_available - qty_pulled_value)
-                # Create inventory pull record
-                PullInventory.objects.create(
-                    client_id=prm.client_id,
-                    item = prm.item,
-                    qty_pulled=qty_pulled_value,
-                    pulled_by=user,
-                    pulled_date=request.POST.get(f'date_{product_id}'),
-                    floor=request.POST.get('floor_number'),
-                    available_qty=inventory.quantity_available,
-                    qty_available_after_pull=inventory.quantity_available - qty_pulled_value
-                )
+            # Get common data
+            floor_number = request.POST.get('floor_number')
+            active_tab = request.POST.get('active_tab', 'requested')
+            common_date = request.POST.get('common_date')
             
-            messages.success(request, "Inventory pull completed successfully!")
+            # Get all product IDs from the form
+            product_ids = request.POST.getlist('selected_product_ids')
+            client_item_ids = request.POST.getlist('client_item_ids')
+            requested_quantities = request.POST.getlist('requested_quantities')
+            received_quantities = request.POST.getlist('received_quantities')
+            
+            # Validate we have all necessary data
+            if not product_ids or not floor_number:
+                messages.error(request, "Missing required data")
+                return redirect('inventory_pull')
+            
+            # Process based on active tab
+            if active_tab == 'requested':
+                # Create new warehouse requests
+                for i, product_id in enumerate(product_ids):
+                    client_item = client_item_ids[i]
+                    requested_qty = int(requested_quantities[i])
+                    
+                    # Create warehouse request record
+                    WarehouseRequest.objects.create(
+                        floor_number=floor_number,
+                        client_item=client_item,
+                        requested_by=user,
+                        quantity_requested=requested_qty,
+                        quantity_received=0,  # Default 0 until received
+                        sent=False  # Default to No
+                    )
+                    
+                    # Get the product data for logging
+                    prm = ProductData.objects.get(id=product_id)
+                    
+                messages.success(request, f"Warehouse request for {len(product_ids)} items submitted successfully!")
+                
+            elif active_tab == 'received':
+                # Update existing warehouse requests
+                for i, product_id in enumerate(product_ids):
+                    client_item = client_item_ids[i]
+                    requested_qty = int(requested_quantities[i])
+                    received_qty = int(received_quantities[i])
+                    
+                    # Find existing warehouse request
+                    warehouse_request = WarehouseRequest.objects.filter(
+                        floor_number=floor_number,
+                        client_item=client_item
+                    ).first()
+                    
+                    if warehouse_request:
+                        # Update the received quantity
+                        warehouse_request.quantity_received = received_qty
+                        
+                        # Update sent status based on whether requested equals received
+                        warehouse_request.sent = (requested_qty == received_qty)
+                        warehouse_request.save()
+                        
+                        # Update inventory for received items
+                        try:
+                            # Use case-insensitive lookup for client_id
+                            inventory = Inventory.objects.filter(client_id__iexact=client_item).first()
+                            if inventory:
+                                # Update inventory with received quantity - use hotel_warehouse_quantity
+                                inventory.hotel_warehouse_quantity = (inventory.hotel_warehouse_quantity or 0) + received_qty
+                                inventory.save()
+                                
+                                # Create pull inventory record for tracking
+                                PullInventory.objects.create(
+                                    client_id=client_item,
+                                    item=inventory.item,
+                                    qty_pulled=received_qty,
+                                    pulled_by=user,
+                                    pulled_date=common_date,
+                                    floor=floor_number,
+                                    available_qty=inventory.quantity_available - received_qty,
+                                    qty_available_after_pull=inventory.quantity_available
+                                )
+                        except Exception as inv_error:
+                            messages.warning(request, f"Error updating inventory for {client_item}: {str(inv_error)}")
+                    else:
+                        messages.warning(request, f"No warehouse request found for item {client_item} on floor {floor_number}")
+                
+                messages.success(request, f"Received {len(product_ids)} items successfully!")
+            
             return redirect('inventory_pull')
             
         except Exception as e:
@@ -2093,35 +2148,133 @@ def hotel_warehouse(request):
     """
     Display warehouse inventory requests and their status.
     """
-    # Query the PullInventory table to get all pull requests grouped by floor
+    # Query the WarehouseRequest table to get all requests grouped by floor
     warehouse_requests = []
     
-    # Group pull requests by floor and date
-    pull_requests = PullInventory.objects.values(
-        'floor', 'pulled_by', 'pulled_date'
+    # Group warehouse requests by floor - only show floors with pending requests (sent=False)
+    floor_requests = WarehouseRequest.objects.filter(
+        sent=False  # Only show pending requests
+    ).values(
+        'floor_number', 'requested_by'
     ).annotate(
-        total_qty=Sum('qty_pulled')
-    ).order_by('-pulled_date')
+        total_requested=Sum('quantity_requested'),
+        total_received=Sum('quantity_received'),
+        request_count=Count('id')
+    ).order_by('-floor_number')
     
     # Convert to the format expected by the template
-    for pull_request in pull_requests:
-        # Get the user name from the pulled_by foreign key if available
+    for floor_request in floor_requests:
+        # Get the user name from the requested_by foreign key if available
         requested_by = "Unknown"
-        if pull_request['pulled_by']:
+        if floor_request['requested_by']:
             try:
-                user = InvitedUser.objects.get(id=pull_request['pulled_by'])
+                user = InvitedUser.objects.get(id=floor_request['requested_by'])
                 requested_by = user.name
             except InvitedUser.DoesNotExist:
                 pass
         
+        # Calculate if all items for this floor are sent
+        # A floor is considered "sent" if all items have quantity_received == quantity_requested
+        all_items_sent = WarehouseRequest.objects.filter(
+            floor_number=floor_request['floor_number'],
+            requested_by=floor_request['requested_by']
+        ).exclude(
+            quantity_requested=F('quantity_received')
+        ).count() == 0
+        
+        # Get the most recent request date for this floor
+        latest_request = WarehouseRequest.objects.filter(
+            floor_number=floor_request['floor_number'],
+            requested_by=floor_request['requested_by']
+        ).order_by('-id').first()
+        
+        requested_date = None
+        if latest_request:
+            # Use the auto_now_add creation date if available
+            requested_date = latest_request.id  # Using ID as a proxy for creation date
+        
         warehouse_requests.append({
-            'id': f"{pull_request['floor']}_{pull_request['pulled_date']}",  # Create a pseudo-ID
-            'floor_number': pull_request['floor'],
+            'id': f"{floor_request['floor_number']}_{floor_request['requested_by']}",  # Create a pseudo-ID
+            'floor_number': floor_request['floor_number'],
             'requested_by': requested_by,
-            'requested_date': pull_request['pulled_date'],
-            'quantity_sent': pull_request['total_qty'],
-            'sent': True  # All items in PullInventory are considered sent
+            'requested_date': requested_date,
+            'quantity_requested': floor_request['total_requested'],
+            'quantity_received': floor_request['total_received'],
+            'item_count': floor_request['request_count'],
+            'sent': all_items_sent
         })
+    
+    # Handle actions
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        floor_number = request.POST.get('floor_number')
+        
+        if action == 'mark_sent' and floor_number:
+            # Mark all items for this floor as sent
+            WarehouseRequest.objects.filter(floor_number=floor_number).update(
+                sent=True,
+                quantity_received=F('quantity_requested')  # Set received = requested
+            )
+            messages.success(request, f"All items for floor {floor_number} marked as sent.")
+            return redirect('hotel_warehouse')
+            
+        elif action == 'update_sent_qty' and floor_number:
+            sent_qty = request.POST.get('sent_qty')
+            if sent_qty and sent_qty.isdigit():
+                sent_qty = int(sent_qty)
+                
+                # Get all requests for this floor
+                requests = WarehouseRequest.objects.filter(floor_number=floor_number)
+                
+                # Calculate the total requested quantity
+                total_requested = requests.aggregate(Sum('quantity_requested'))['quantity_requested__sum'] or 0
+                
+                # Update all requests for this floor with the sent quantity
+                if sent_qty > 0:
+                    # Update all items for this floor
+                    for warehouse_request in requests:
+                        # Calculate proportional quantity for each item
+                        if total_requested > 0:
+                            item_proportion = warehouse_request.quantity_requested / total_requested
+                            item_sent_qty = int(sent_qty * item_proportion)
+                        else:
+                            item_sent_qty = 0
+                            
+                        # Update the item
+                        warehouse_request.quantity_received = item_sent_qty
+                        
+                        # Set sent status to Yes ONLY if received quantity EXACTLY matches requested quantity
+                        warehouse_request.sent = (warehouse_request.quantity_requested == item_sent_qty)
+                        warehouse_request.save()
+                        
+                        # Update inventory for received items - use hotel_warehouse_quantity
+                        try:
+                            inventory = Inventory.objects.filter(client_id__iexact=warehouse_request.client_item).first()
+                            if inventory and item_sent_qty > 0:
+                                inventory.hotel_warehouse_quantity = (inventory.hotel_warehouse_quantity or 0) - item_sent_qty
+                                if inventory.hotel_warehouse_quantity < 0:
+                                    inventory.hotel_warehouse_quantity = 0
+                                inventory.save()
+                                
+                                # Create pull inventory record for tracking
+                                PullInventory.objects.create(
+                                    client_id=warehouse_request.client_item,
+                                    item=inventory.item,
+                                    qty_pulled=item_sent_qty,
+                                    pulled_by=request.user if hasattr(request, 'user') else None,
+                                    pulled_date=now().date(),
+                                    floor=floor_number,
+                                    available_qty=inventory.hotel_warehouse_quantity + item_sent_qty,
+                                    qty_available_after_pull=inventory.hotel_warehouse_quantity
+                                )
+                        except Exception as inv_error:
+                            logger.error(f"Error updating inventory for {warehouse_request.client_item}: {inv_error}")
+                
+                messages.success(request, f"Updated sent quantities for floor {floor_number}.")
+            else:
+                messages.error(request, "Invalid sent quantity.")
+                
+            return redirect('hotel_warehouse')
     
     context = {
         'warehouse_requests': warehouse_requests,
@@ -2462,13 +2615,14 @@ def get_floor_products(request):
                    SUM(prm.quantity * rc.room_count) AS total_quantity_needed,
                    COALESCE(inv.quantity_installed, 0) AS quantity_installed,
                    COALESCE(inv.quantity_available, 0) AS available_qty,
+                   COALESCE(inv.hotel_warehouse_quantity, 0) AS hotel_warehouse_quantity,
                    COALESCE(pq.total_pulled, 0) AS pulled_quantity
             FROM product_room_model prm
             JOIN product_data pd ON prm.product_id = pd.id
             JOIN room_counts rc ON prm.room_model_id = rc.room_model_id
             LEFT JOIN inventory inv ON pd.client_id = inv.client_id
             LEFT JOIN pulled_quantities pq ON pd.client_id = pq.client_id AND pd.item = pq.item
-            GROUP BY pd.id, pd.client_id, pd.description, pd.supplier, inv.quantity_installed, inv.quantity_available, pq.total_pulled
+            GROUP BY pd.id, pd.client_id, pd.description, pd.supplier, inv.quantity_installed, inv.quantity_available, inv.hotel_warehouse_quantity, pq.total_pulled
             ORDER BY pd.client_id
         """, [floor_number])
         
@@ -2483,10 +2637,11 @@ def get_floor_products(request):
                 "description": product.description,
                 "quantity": remaining_quantity,  # Use remaining quantity instead of total
                 "available_qty": product.available_qty,
+                "hotel_warehouse_quantity": product.hotel_warehouse_quantity,  # Add hotel_warehouse_quantity
                 "supplier": product.supplier,
-                "quantity_installed": product.quantity_installed,  # Add quantity already pulled
-                "total_quantity_needed": product.total_quantity_needed,  # Keep original total for reference
-                "pulled_quantity": product.pulled_quantity  # Add pulled quantity
+                "quantity_installed": product.quantity_installed,
+                "total_quantity_needed": product.total_quantity_needed,
+                "pulled_quantity": product.pulled_quantity
             })
             
         return JsonResponse({
@@ -2559,17 +2714,18 @@ def _get_floor_products_data(floor_number):
                    SUM(prm.quantity * rc.room_count) AS total_quantity_needed,
                    COALESCE(inv.quantity_installed, 0) AS quantity_installed,
                    COALESCE(inv.quantity_available, 0) AS available_qty,
+                   COALESCE(inv.hotel_warehouse_quantity, 0) AS hotel_warehouse_quantity,
                    COALESCE(pq.total_pulled, 0) AS pulled_quantity
             FROM product_room_model prm
             JOIN product_data pd ON prm.product_id = pd.id
             JOIN room_counts rc ON prm.room_model_id = rc.room_model_id
             LEFT JOIN inventory inv ON pd.client_id = inv.client_id
             LEFT JOIN pulled_quantities pq ON pd.client_id = pq.client_id AND pd.item = pq.item
-            GROUP BY pd.id, pd.client_id, pd.description, pd.supplier, inv.quantity_installed, inv.quantity_available, pq.total_pulled
+            GROUP BY pd.id, pd.client_id, pd.description, pd.supplier, inv.quantity_installed, inv.quantity_available, inv.hotel_warehouse_quantity, pq.total_pulled
             ORDER BY pd.client_id"""
             
             print("sql_query",sql_query)
-            cursor.execute(sql_query, [floor_number]) # Pass floor_number twice
+            cursor.execute(sql_query, [floor_number])
 
             columns = [col[0] for col in cursor.description]
             products = [dict(zip(columns, row)) for row in cursor.fetchall()]
@@ -2590,6 +2746,7 @@ def _get_floor_products_data(floor_number):
                 "pulled_quantity": pulled,
                 "remaining_quantity_needed": remaining_quantity, # Renamed from 'quantity' for clarity
                 "available_qty": product.get('available_qty', 0) or 0,
+                "hotel_warehouse_quantity": product.get('hotel_warehouse_quantity', 0) or 0,
                 "quantity_installed": product.get('quantity_installed', 0) or 0,
             })
         return result_products
@@ -3664,3 +3821,49 @@ def update_inventory_warehouse_quantities():
         logger.info(f"Updated hotel_warehouse_quantity for {updated_count} inventory items")
     except Exception as e:
         logger.error(f"Error updating inventory warehouse quantities: {e}", exc_info=True)
+
+@session_login_required
+def warehouse_request_items(request):
+    """
+    API endpoint to get all warehouse request items for a specific floor
+    """
+    floor_number = request.GET.get('floor_number')
+    
+    if not floor_number:
+        return JsonResponse({'success': False, 'message': 'Floor number is required'})
+    
+    try:
+        # Get all warehouse request items for this floor that haven't been sent yet
+        items = WarehouseRequest.objects.filter(floor_number=floor_number, sent=False)
+        
+        if not items.exists():
+            return JsonResponse({'success': False, 'message': 'No items found for this floor'})
+        
+        # Format items for response
+        items_data = []
+        for item in items:
+            # Get product name from ProductData if available
+            product_name = "Unknown Product"
+            try:
+                product = ProductData.objects.get(client_id__iexact=item.client_item)
+                product_name = product.description or product.item
+            except ProductData.DoesNotExist:
+                pass
+            
+            items_data.append({
+                'id': item.id,
+                'client_item': item.client_item,
+                'product_name': product_name,
+                'quantity_requested': item.quantity_requested,
+                'quantity_received': item.quantity_received,
+                'sent': item.sent
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'items': items_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in warehouse_request_items: {e}", exc_info=True)
+        return JsonResponse({'success': False, 'message': str(e)})

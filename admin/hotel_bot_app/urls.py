@@ -69,4 +69,7 @@ urlpatterns = [
     path('hotel_warehouse/', hotel_warehouse, name='hotel_warehouse'),
     path('warehouse_receiver/', warehouse_receiver, name='warehouse_receiver'),
     path('get_warehouse_receipt_details/', get_warehouse_receipt_details, name='get_warehouse_receipt_details'),
+    
+    # API endpoint for warehouse request items
+    path('api/warehouse_request_items/', warehouse_request_items, name='warehouse_request_items'),
 ]
