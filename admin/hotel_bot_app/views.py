@@ -40,6 +40,7 @@ from django.db.models import Q
 from django.contrib.auth import get_user_model # Use this if settings.AUTH_USER_MODEL is Django's default
 from django.contrib.auth.decorators import login_required, user_passes_test # For permission checking
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger # Import Paginator
+from django.db.models import Count, Q, F, ExpressionWrapper, DecimalField, Sum, Max, Min
 
 from .models import *
 from .models import ChatSession
@@ -2043,40 +2044,185 @@ def inventory_pull(request):
             user_name = user.name
         except InvitedUser.DoesNotExist:
             pass
+    
     if request.method == "POST":
         try:
-            # Get all product IDs from the form
-            product_ids = [key.split('_')[1] for key in request.POST.keys() if key.startswith('product_') and request.POST[key] == 'on']
-            print("product_ids ::", product_ids)
-
-            for product_id in product_ids:
-                # Get the product room model
-                prm = ProductData.objects.get(id=product_id)
-                print("prm ::", prm)
-                qty_pulled_value = int(request.POST.get(f'qty_pulled_{product_id}'))
-                print("qty_pulled_value ::", qty_pulled_value)
-                # Get the inventory item
-                inventory = Inventory.objects.get(client_id=prm.client_id)
-                print("inventory ::", inventory)
-                print("inventory.quantity_available ::", inventory.quantity_available, type(inventory.quantity_available))
-                print("qty_pulled_value ::", qty_pulled_value, type(qty_pulled_value))
-                # Update inventory quantity
-                inventory.quantity_available -= qty_pulled_value
-                inventory.save()
-                print("Before save ::",prm.client_id,prm.item,prm.id,qty_pulled_value,request.session.get('user_id'),request.POST.get(f'date_{product_id}'),request.POST.get('floor_number'),inventory.quantity_available,inventory.quantity_available - qty_pulled_value)
-                # Create inventory pull record
-                PullInventory.objects.create(
-                    client_id=prm.client_id,
-                    item = prm.item,
-                    qty_pulled=qty_pulled_value,
-                    pulled_by=user,
-                    pulled_date=request.POST.get(f'date_{product_id}'),
-                    floor=request.POST.get('floor_number'),
-                    available_qty=inventory.quantity_available,
-                    qty_available_after_pull=inventory.quantity_available - qty_pulled_value
-                )
+            # Get common data
+            floor_number = request.POST.get('floor_number')
+            active_tab = request.POST.get('active_tab', 'requested')
+            common_date = request.POST.get('common_date')
             
-            messages.success(request, "Inventory pull completed successfully!")
+            # Get all product IDs from the form
+            product_ids = request.POST.getlist('selected_product_ids')
+            client_item_ids = request.POST.getlist('client_item_ids')
+            requested_quantities = request.POST.getlist('requested_quantities')
+            received_quantities = request.POST.getlist('received_quantities')
+            
+            # Validate we have all necessary data
+            if not product_ids or not floor_number:
+                messages.error(request, "Missing required data")
+                return redirect('inventory_pull')
+            
+            # Process based on active tab
+            if active_tab == 'requested':
+                # Create new warehouse requests
+                for i, product_id in enumerate(product_ids):
+                    client_item = client_item_ids[i]
+                    requested_qty = int(requested_quantities[i])
+                    
+                    # Create warehouse request record
+                    WarehouseRequest.objects.create(
+                        floor_number=floor_number,
+                        client_item=client_item,
+                        requested_by=user,
+                        quantity_requested=requested_qty,
+                        quantity_received=0,  # Default 0 until received
+                        quantity_sent=0,      # Default 0 for sent quantity
+                        sent=False  # Default to No
+                    )
+                    
+                    # Get the product data for logging
+                    prm = ProductData.objects.get(id=product_id)
+                    
+                messages.success(request, f"Warehouse request for {len(product_ids)} items submitted successfully!")
+                
+            elif active_tab == 'received':
+                # Check if we have specific request IDs
+                request_ids = request.POST.getlist('selected_request_ids')
+                
+                # Debug logs
+                print(f"Processing received tab with {len(request_ids)} request IDs")
+                print(f"Request IDs: {request_ids}")
+                print(f"Client items: {client_item_ids}")
+                print(f"Requested quantities: {requested_quantities}")
+                print(f"Received quantities: {received_quantities}")
+                
+                if request_ids:
+                    # Update specific warehouse requests by ID
+                    success_count = 0
+                    for i, request_id in enumerate(request_ids):
+                        client_item = client_item_ids[i]
+                        requested_qty = int(requested_quantities[i])
+                        received_qty = int(received_quantities[i])
+                        
+                        print(f"Processing request ID {request_id}: client_item={client_item}, requested={requested_qty}, received={received_qty}")
+                        
+                        try:
+                            # Get the specific warehouse request by ID
+                            warehouse_request = WarehouseRequest.objects.get(id=request_id)
+                            print(f"Found warehouse request: {warehouse_request}")
+                            
+                            # Calculate how much additional quantity is being received now
+                            previous_received = warehouse_request.quantity_received
+                            additional_received = received_qty - previous_received
+                            
+                            print(f"Previous received: {previous_received}, New received: {received_qty}, Additional: {additional_received}")
+                            
+                            # Update the received quantity
+                            warehouse_request.quantity_received = received_qty
+                            
+                            # Update sent status based on whether requested equals received
+                            warehouse_request.sent = (warehouse_request.quantity_received == warehouse_request.quantity_requested)
+                            warehouse_request.save()
+                            success_count += 1
+                            print(f"Updated warehouse request {request_id}: quantity_received={received_qty}, sent={warehouse_request.sent}")
+                            
+                            # Only update inventory if additional quantity is being received
+                            if additional_received > 0:
+                                print(f"Deducting {additional_received} from warehouse inventory")
+                                # Update inventory for received items
+                                try:
+                                    # Use case-insensitive lookup for client_id
+                                    inventory = Inventory.objects.filter(client_id__iexact=client_item).first()
+                                    if inventory:
+                                        # We don't need to deduct from hotel_warehouse_quantity again
+                                        # as it was already deducted when the item was sent
+                                        print(f"Recording reception for {client_item} - not deducting from warehouse again")
+                                    
+                                        # Calculate available quantity (ensure it's not negative)
+                                        available_qty = max(0, inventory.quantity_available - received_qty)
+                                        
+                                        # Create pull inventory record for tracking
+                                        PullInventory.objects.create(
+                                            client_id=client_item,
+                                            item=inventory.item,
+                                            qty_pulled=received_qty,
+                                            pulled_by=user,
+                                            pulled_date=common_date,
+                                            floor=floor_number,
+                                            available_qty=available_qty,
+                                            qty_available_after_pull=inventory.quantity_available
+                                        )
+                                except Exception as inv_error:
+                                    messages.warning(request, f"Error updating inventory for {client_item}: {str(inv_error)}")
+                        except WarehouseRequest.DoesNotExist:
+                            messages.warning(request, f"Warehouse request with ID {request_id} not found")
+                    
+                    if success_count > 0:
+                        messages.success(request, f"Updated {success_count} warehouse requests successfully!")
+                    else:
+                        messages.warning(request, "No warehouse requests were updated")
+                else:
+                    # Legacy fallback - update based on client_item and floor
+                    for i, product_id in enumerate(product_ids):
+                        client_item = client_item_ids[i]
+                        requested_qty = int(requested_quantities[i])
+                        received_qty = int(received_quantities[i])
+                        
+                        # Find existing warehouse request
+                        warehouse_request = WarehouseRequest.objects.filter(
+                            floor_number=floor_number,
+                            client_item=client_item,
+                            sent=False
+                        ).first()
+                        
+                        if warehouse_request:
+                            # Calculate how much additional quantity is being received now
+                            previous_received = warehouse_request.quantity_received
+                            additional_received = received_qty - previous_received
+                            
+                            print(f"Legacy handler - Previous received: {previous_received}, New received: {received_qty}, Additional: {additional_received}")
+                            
+                            # Update the received quantity
+                            warehouse_request.quantity_received = received_qty
+                            
+                            # Update sent status based on whether requested equals received
+                            warehouse_request.sent = (warehouse_request.quantity_received == warehouse_request.quantity_requested)
+                            warehouse_request.save()
+                            
+                            # Only update inventory if additional quantity is being received
+                            if additional_received > 0:
+                                print(f"Legacy handler - Deducting {additional_received} from warehouse inventory")
+                                # Update inventory for received items
+                                try:
+                                    # Use case-insensitive lookup for client_id
+                                    inventory = Inventory.objects.filter(client_id__iexact=client_item).first()
+                                    if inventory:
+                                        # We don't need to deduct from hotel_warehouse_quantity again
+                                        # as it was already deducted when the item was sent
+                                        print(f"Recording reception for {client_item} - not deducting from warehouse again")
+                                    
+                                        # Calculate available quantity (ensure it's not negative)
+                                        available_qty = max(0, inventory.quantity_available - received_qty)
+                                        
+                                        # Create pull inventory record for tracking
+                                        PullInventory.objects.create(
+                                            client_id=client_item,
+                                            item=inventory.item,
+                                            qty_pulled=received_qty,
+                                            pulled_by=user,
+                                            pulled_date=common_date,
+                                            floor=floor_number,
+                                            available_qty=available_qty,
+                                            qty_available_after_pull=inventory.quantity_available
+                                        )
+                                except Exception as inv_error:
+                                    messages.warning(request, f"Error updating inventory for {client_item}: {str(inv_error)}")
+                        else:
+                            messages.warning(request, f"No warehouse request found for item {client_item} on floor {floor_number}")
+                    
+                    messages.success(request, f"Received {len(product_ids)} items successfully!")
+            
             return redirect('inventory_pull')
             
         except Exception as e:
@@ -2086,6 +2232,145 @@ def inventory_pull(request):
     return render(request, "inventory_pull.html", {
         "user_name": user_name
     })
+
+@session_login_required
+def hotel_warehouse(request):
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        floor_number = request.POST.get('floor_number')
+        
+        if action == 'update_sent_qty':
+            try:
+                # Check if we need to process multiple items
+                if 'items' in request.POST:
+                    # Handle modal submission with individual item quantities
+                    items_data = json.loads(request.POST.get('items'))
+                    
+                    for item_data in items_data:
+                        client_item = item_data['client_item']
+                        item_id = item_data.get('id')  # Get the specific item ID
+                        quantity_sent = int(item_data['quantity_sent'])
+                        
+                        # Update the warehouse request by ID if provided
+                        if item_id:
+                            request_item = WarehouseRequest.objects.filter(id=item_id).first()
+                        else:
+                            # Fallback to the old method if ID is not provided
+                            request_item = WarehouseRequest.objects.filter(
+                                floor_number=floor_number,
+                                client_item=client_item
+                            ).first()
+                        
+                        if request_item:
+                            # Calculate how much additional quantity is being sent now
+                            previous_sent = request_item.quantity_sent
+                            additional_sent = quantity_sent - previous_sent
+                            
+                            print(f"Previous sent: {previous_sent}, New sent: {quantity_sent}, Additional: {additional_sent}")
+                            
+                            # Update the sent quantity
+                            request_item.quantity_sent = quantity_sent
+                            # Update sent status based on quantity_received
+                            request_item.sent = (request_item.quantity_received == request_item.quantity_requested)
+                            request_item.save()
+                            
+                            # Only update inventory if additional quantity is being sent
+                            if additional_sent > 0:
+                                print(f"Deducting {additional_sent} from warehouse inventory")
+                                # Update inventory for sent items
+                                try:
+                                    # Use case-insensitive lookup for client_id
+                                    inventory = Inventory.objects.filter(client_id__iexact=client_item).first()
+                                    if inventory:
+                                        # Update inventory with additional sent quantity - use hotel_warehouse_quantity
+                                        current_warehouse_qty = inventory.hotel_warehouse_quantity or 0
+                                        inventory.hotel_warehouse_quantity = max(0, current_warehouse_qty - additional_sent)
+                                        inventory.save()
+                                        print(f"Updated inventory for {client_item}: warehouse quantity from {current_warehouse_qty} to {inventory.hotel_warehouse_quantity}")
+                                except Exception as inv_error:
+                                    messages.warning(request, f"Error updating inventory for {client_item}: {str(inv_error)}")
+                    
+                    messages.success(request, f"Updated quantities for floor {floor_number} successfully!")
+                else:
+                    # Handle table row update - single floor total
+                    sent_qty = int(request.POST.get('sent_qty', 0))
+                    sent_status = request.POST.get('sent_status', '') == 'Yes'
+                    
+                    # Update all requests for this floor with quantity_sent,
+                    # but determine sent status based on quantity_received in the database
+                    requests = WarehouseRequest.objects.filter(floor_number=floor_number)
+                    for req in requests:
+                        # Calculate how much additional quantity is being sent now
+                        previous_sent = req.quantity_sent
+                        additional_sent = sent_qty - previous_sent
+                        
+                        req.quantity_sent = sent_qty
+                        # Use quantity_received for status determination
+                        req.sent = (req.quantity_received == req.quantity_requested)
+                        req.save()
+                        
+                        # Only update inventory if additional quantity is being sent
+                        if additional_sent > 0:
+                            try:
+                                # Use case-insensitive lookup for client_id
+                                inventory = Inventory.objects.filter(client_id__iexact=req.client_item).first()
+                                if inventory:
+                                    # Update inventory with additional sent quantity - use hotel_warehouse_quantity
+                                    current_warehouse_qty = inventory.hotel_warehouse_quantity or 0
+                                    inventory.hotel_warehouse_quantity = max(0, current_warehouse_qty - additional_sent)
+                                    inventory.save()
+                                    print(f"Updated inventory for {req.client_item}: warehouse quantity from {current_warehouse_qty} to {inventory.hotel_warehouse_quantity}")
+                            except Exception as inv_error:
+                                messages.warning(request, f"Error updating inventory for {req.client_item}: {str(inv_error)}")
+                    
+                    requests_updated = len(requests)
+                    
+                    if requests_updated > 0:
+                        messages.success(request, f"Updated {requests_updated} items for floor {floor_number}!")
+                    else:
+                        messages.warning(request, f"No items found for floor {floor_number}")
+                        
+            except Exception as e:
+                messages.error(request, f"Error updating quantities: {str(e)}")
+            
+            return redirect('hotel_warehouse')
+    
+    # Get warehouse requests grouped by floor
+    warehouse_data = []
+    
+    # Get unique floor numbers
+    floor_numbers = WarehouseRequest.objects.filter(sent=False).values_list('floor_number', flat=True).distinct()
+    
+    for floor_number in floor_numbers:
+        # Get all requests for this floor
+        floor_requests = WarehouseRequest.objects.filter(floor_number=floor_number)
+        
+        # Skip empty floors
+        if not floor_requests.exists():
+            continue
+            
+        # Get the first request to use for requested_by
+        first_request = floor_requests.first()
+        requested_by_name = first_request.requested_by.name if first_request.requested_by else 'Unknown'
+        
+        # Calculate totals
+        item_count = floor_requests.count()
+        quantity_requested = sum(req.quantity_requested for req in floor_requests)
+        quantity_sent = sum(req.quantity_sent for req in floor_requests)
+        
+        # A floor is sent only if all items have quantity_received matching quantity_requested
+        all_sent = all(req.quantity_received == req.quantity_requested for req in floor_requests)
+        
+        warehouse_data.append({
+            'floor_number': floor_number,
+            'requested_by': requested_by_name,
+            'item_count': item_count,
+            'quantity_requested': quantity_requested,
+            'quantity_sent': quantity_sent,
+            'sent': True if all_sent else False
+        })
+    
+    return render(request, 'hotel_warehouse.html', {'warehouse_requests': warehouse_data})
 
 @session_login_required
 def inventory_received_item_num(request):
@@ -2401,7 +2686,12 @@ def delete_product_room_model(request):
 @session_login_required
 def get_floor_products(request):
     floor_number = request.GET.get("floor_number")
+    user_id = request.session.get("user_id")
+    
     try:
+        # Get the current user
+        user = get_object_or_404(InvitedUser, id=user_id) if user_id else None
+        
         # Use raw SQL query to get products with total quantity needed
         products = ProductData.objects.raw("""
             WITH room_counts AS (
@@ -2415,25 +2705,111 @@ def get_floor_products(request):
                 SELECT client_id, item, SUM(qty_pulled) as total_pulled
                 FROM pull_inventory
                 GROUP BY client_id, item
+            ),
+            warehouse_requests AS (
+                SELECT client_item, SUM(quantity_requested) as total_requested, 
+                       SUM(quantity_received) as total_received
+                FROM warehouse_request
+                WHERE floor_number = %s
+                GROUP BY client_item
             )
             SELECT pd.id, pd.item, pd.client_id, pd.description, pd.supplier,
                    SUM(prm.quantity * rc.room_count) AS total_quantity_needed,
                    COALESCE(inv.quantity_installed, 0) AS quantity_installed,
                    COALESCE(inv.quantity_available, 0) AS available_qty,
-                   COALESCE(pq.total_pulled, 0) AS pulled_quantity
+                   COALESCE(inv.hotel_warehouse_quantity, 0) AS hotel_warehouse_quantity,
+                   COALESCE(pq.total_pulled, 0) AS pulled_quantity,
+                   COALESCE(wr.total_requested, 0) AS requested_quantity,
+                   COALESCE(wr.total_received, 0) AS received_quantity
             FROM product_room_model prm
             JOIN product_data pd ON prm.product_id = pd.id
             JOIN room_counts rc ON prm.room_model_id = rc.room_model_id
             LEFT JOIN inventory inv ON pd.client_id = inv.client_id
             LEFT JOIN pulled_quantities pq ON pd.client_id = pq.client_id AND pd.item = pq.item
-            GROUP BY pd.id, pd.client_id, pd.description, pd.supplier, inv.quantity_installed, inv.quantity_available, pq.total_pulled
+            LEFT JOIN warehouse_requests wr ON pd.client_id = wr.client_item
+            GROUP BY pd.id, pd.client_id, pd.description, pd.supplier, inv.quantity_installed, 
+                     inv.quantity_available, inv.hotel_warehouse_quantity, pq.total_pulled,
+                     wr.total_requested, wr.total_received
             ORDER BY pd.client_id
-        """, [floor_number])
+        """, [floor_number, floor_number])
+        
+        # Also get specific warehouse request items for this floor
+        # Also get specific warehouse request items for this floor - try both string and int matching
+        # First try with string comparison
+        warehouse_requests_str = WarehouseRequest.objects.filter(
+            floor_number=str(floor_number),
+            sent=False
+        ).select_related('requested_by')
+        
+        # Then try with integer comparison
+        try:
+            floor_number_int = int(floor_number)
+            warehouse_requests_int = WarehouseRequest.objects.filter(
+                floor_number=floor_number_int,
+                sent=False
+            ).select_related('requested_by')
+            
+            # Combine both querysets
+            warehouse_requests = warehouse_requests_str | warehouse_requests_int
+            warehouse_requests = warehouse_requests.distinct()
+        except ValueError:
+            # If floor_number can't be converted to int, just use the string results
+            warehouse_requests = warehouse_requests_str
+        
+        # Debug info
+        print(f"Found {warehouse_requests.count()} warehouse requests for floor {floor_number}")
+        
+        # If no requests were found, log more information for debugging
+        if warehouse_requests.count() == 0:
+                
+            # Print all unsent warehouse requests for debugging
+            all_unsent = WarehouseRequest.objects.filter(sent=False)
+            print(f"Total unsent warehouse requests in system: {all_unsent.count()}")
+            for req in all_unsent:
+                print(f"Unsent request: floor={req.floor_number}, client_item={req.client_item}, requested={req.quantity_requested}")
+                
+        # Print details of each warehouse request
+        for i, req in enumerate(warehouse_requests):
+            print(f"  Request #{i+1}: ID={req.id}, floor={req.floor_number}, client_item={req.client_item}, quantity_requested={req.quantity_requested}, quantity_received={req.quantity_received}")
+        
+        # Create lists to store all warehouse requests and a mapping dictionary 
+        all_warehouse_requests = []
+        warehouse_requests_dict = {}
+        
+        for req in warehouse_requests:
+            # Try to find the matching product for this client item
+            product = ProductData.objects.filter(client_id__iexact=req.client_item).first()
+            
+            request_data = {
+                'id': req.id,
+                'client_item': req.client_item,
+                'product_id': product.id if product else None,
+                'description': product.description if product else f"Unknown Product ({req.client_item})",
+                'quantity_requested': req.quantity_requested,
+                'quantity_received': req.quantity_received,
+                'requested_by': req.requested_by.name if req.requested_by else 'Unknown',
+                'sent': req.sent
+            }
+            
+            # Add to the all_warehouse_requests list
+            all_warehouse_requests.append(request_data)
+            
+            # If we found a product, add to the product-specific dictionary too
+            if product:
+                key = f"{product.id}_{req.client_item}"
+                if key not in warehouse_requests_dict:
+                    warehouse_requests_dict[key] = []
+                
+                warehouse_requests_dict[key].append(request_data)
         
         result_products = []
         for product in products:
             # Calculate remaining quantity needed after subtracting already pulled quantity
             remaining_quantity = max(0, product.total_quantity_needed - product.pulled_quantity)
+            
+            # Get warehouse requests for this product using the product_id+client_id key
+            key = f"{product.id}_{product.client_id}"
+            product_requests = warehouse_requests_dict.get(key, [])
             
             result_products.append({
                 "id": product.id,
@@ -2441,15 +2817,40 @@ def get_floor_products(request):
                 "description": product.description,
                 "quantity": remaining_quantity,  # Use remaining quantity instead of total
                 "available_qty": product.available_qty,
+                "hotel_warehouse_quantity": product.hotel_warehouse_quantity,
                 "supplier": product.supplier,
-                "quantity_installed": product.quantity_installed,  # Add quantity already pulled
-                "total_quantity_needed": product.total_quantity_needed,  # Keep original total for reference
-                "pulled_quantity": product.pulled_quantity  # Add pulled quantity
+                "quantity_installed": product.quantity_installed,
+                "total_quantity_needed": product.total_quantity_needed,
+                "pulled_quantity": product.pulled_quantity,
+                "requested_quantity": getattr(product, 'requested_quantity', 0),
+                "received_quantity": getattr(product, 'received_quantity', 0),
+                "warehouse_requests": product_requests  # Add specific request items
             })
             
+        # Add standalone warehouse requests for items without matching products
+        for request in all_warehouse_requests:
+            if request['product_id'] is None:
+                # Create a dummy product entry for this request
+                result_products.append({
+                    "id": f"dummy_{request['id']}",  # Create a unique ID
+                    "client_id": request['client_item'],
+                    "description": request['description'],
+                    "quantity": 0,
+                    "available_qty": 0,
+                    "hotel_warehouse_quantity": 0,
+                    "supplier": "",
+                    "quantity_installed": 0,
+                    "total_quantity_needed": 0,
+                    "pulled_quantity": 0,
+                    "requested_quantity": request['quantity_requested'],
+                    "received_quantity": request['quantity_received'],
+                    "warehouse_requests": [request]  # Include this single request
+                })
+        
         return JsonResponse({
             "success": True,
-            "products": result_products
+            "products": result_products,
+            "all_warehouse_requests": all_warehouse_requests
         })
     except Exception as e:
         return JsonResponse({
@@ -2517,17 +2918,18 @@ def _get_floor_products_data(floor_number):
                    SUM(prm.quantity * rc.room_count) AS total_quantity_needed,
                    COALESCE(inv.quantity_installed, 0) AS quantity_installed,
                    COALESCE(inv.quantity_available, 0) AS available_qty,
+                   COALESCE(inv.hotel_warehouse_quantity, 0) AS hotel_warehouse_quantity,
                    COALESCE(pq.total_pulled, 0) AS pulled_quantity
             FROM product_room_model prm
             JOIN product_data pd ON prm.product_id = pd.id
             JOIN room_counts rc ON prm.room_model_id = rc.room_model_id
             LEFT JOIN inventory inv ON pd.client_id = inv.client_id
             LEFT JOIN pulled_quantities pq ON pd.client_id = pq.client_id AND pd.item = pq.item
-            GROUP BY pd.id, pd.client_id, pd.description, pd.supplier, inv.quantity_installed, inv.quantity_available, pq.total_pulled
+            GROUP BY pd.id, pd.client_id, pd.description, pd.supplier, inv.quantity_installed, inv.quantity_available, inv.hotel_warehouse_quantity, pq.total_pulled
             ORDER BY pd.client_id"""
             
             print("sql_query",sql_query)
-            cursor.execute(sql_query, [floor_number]) # Pass floor_number twice
+            cursor.execute(sql_query, [floor_number])
 
             columns = [col[0] for col in cursor.description]
             products = [dict(zip(columns, row)) for row in cursor.fetchall()]
@@ -2548,6 +2950,7 @@ def _get_floor_products_data(floor_number):
                 "pulled_quantity": pulled,
                 "remaining_quantity_needed": remaining_quantity, # Renamed from 'quantity' for clarity
                 "available_qty": product.get('available_qty', 0) or 0,
+                "hotel_warehouse_quantity": product.get('hotel_warehouse_quantity', 0) or 0,
                 "quantity_installed": product.get('quantity_installed', 0) or 0,
             })
         return result_products
@@ -3391,3 +3794,357 @@ def get_container_received_items(request):
         import traceback
         traceback.print_exc()
         return JsonResponse({'success': False, 'message': str(e)})
+
+@session_login_required
+def warehouse_receiver(request):
+    """
+    View for receiving warehouse shipments.
+    """
+    # Only update inventory quantities when submitting form, not on every page load
+    
+    user_id = request.session.get("user_id")
+    user = None
+    
+    if user_id:
+        try:
+            user = InvitedUser.objects.get(id=user_id)
+        except InvitedUser.DoesNotExist:
+            pass
+    
+    if request.method == "POST":
+        try:
+            # Get form data
+            reference_id = request.POST.get("reference_id")
+            received_date_str = request.POST.get("received_date")
+            
+            # Parse the received date
+            received_date = parse_date(received_date_str) if received_date_str else now().date()
+            
+            # Get the arrays of data
+            client_items = request.POST.getlist("client_items[]")
+            quantities = request.POST.getlist("quantities[]")
+            product_names = request.POST.getlist("product_names[]")
+            
+            # Validate input
+            if not reference_id:
+                messages.error(request, "Reference ID is required")
+                return redirect("warehouse_receiver")
+            
+            if not client_items:
+                messages.error(request, "No items added to receipt")
+                return redirect("warehouse_receiver")
+            
+            # Create receipt items
+            for i in range(len(client_items)):
+                client_id = client_items[i]
+                quantity = int(quantities[i]) if i < len(quantities) and quantities[i] else 1
+                
+                # Create the warehouse receipt item
+                HotelWarehouse.objects.create(
+                    reference_id=reference_id,
+                    client_item=client_id,
+                    quantity_received=quantity,
+                    checked_by=user,  # Store the current user
+                    received_date=received_date  # Store the received date
+                )
+                
+                # Update inventory if needed
+                try:
+                    # Use case-insensitive lookup for client_id
+                    inventory = Inventory.objects.filter(client_id__iexact=client_id).first()
+                    if not inventory:
+                        # If not found with case-insensitive lookup, log warning
+                        logger.warning(f"Inventory not found for client_id: {client_id}")
+                        continue
+                        
+                    # Don't update quantity_available, it should be managed separately
+                    # inventory.quantity_available = (inventory.quantity_available or 0) + quantity
+                    
+                    # Calculate the total quantity from HotelWarehouse for this client item (case-insensitive)
+                    # First get all possible case variations of this client_id from HotelWarehouse
+                    client_item_variations = HotelWarehouse.objects.filter(
+                        client_item__iexact=client_id
+                    ).values_list('client_item', flat=True).distinct()
+                    
+                    # Then sum quantities for all variations
+                    total_warehouse_qty = HotelWarehouse.objects.filter(
+                        client_item__in=list(client_item_variations)
+                    ).aggregate(total=Sum('quantity_received'))['total'] or 0
+                    
+                    # Update hotel_warehouse_quantity field with the total from HotelWarehouse
+                    inventory.hotel_warehouse_quantity = total_warehouse_qty
+                    inventory.save()
+                except Exception as e:
+                    # Log any other errors
+                    logger.error(f"Error updating inventory for client_id {client_id}: {e}")
+            
+            # Update all inventory warehouse quantities to ensure consistency only after form submission
+            update_inventory_warehouse_quantities()
+            
+            messages.success(request, f"Warehouse receipt with {len(client_items)} items created successfully")
+            return redirect("warehouse_receiver")
+            
+        except Exception as e:
+            logger.error(f"Error in warehouse_receiver POST: {e}", exc_info=True)
+            messages.error(request, f"Error processing warehouse receipt: {str(e)}")
+            return redirect("warehouse_receiver")
+    
+    # No need to fetch previous receipts here anymore as they'll be loaded via AJAX
+    context = {
+        'user_name': user.name if user else ""
+    }
+    
+    return render(request, "warehouse_receiver.html", context)
+
+@session_login_required
+def get_warehouse_receipt_details(request):
+    """
+    API endpoint to get details of a specific warehouse receipt
+    """
+    reference_id = request.GET.get('receipt_id')
+    
+    if not reference_id:
+        return JsonResponse({'success': False, 'message': 'Reference ID is required'})
+    
+    try:
+        # Get all items with this reference ID
+        items = HotelWarehouse.objects.filter(reference_id=reference_id)
+        
+        if not items.exists():
+            return JsonResponse({'success': False, 'message': 'Receipt not found'})
+        
+        # Format receipt data
+        receipt_data = {
+            'id': reference_id,
+            'reference_id': reference_id,
+            'received_date': now().strftime('%Y-%m-%d'),  # Default to current date
+            'received_by': "System"  # Default value
+        }
+        
+        # Get the first item to get more details
+        first_item = items.first()
+        if first_item:
+            # Get user name if available
+            if first_item.checked_by:
+                receipt_data['received_by'] = first_item.checked_by.name
+            
+            # Get received date if available
+            if first_item.received_date:
+                receipt_data['received_date'] = first_item.received_date.strftime('%Y-%m-%d')
+        
+        # Format items data
+        items_data = []
+        for item in items:
+            # Get product name from ProductData or Inventory tables
+            product_name = "Unknown Product"
+            try:
+                # First try to get from ProductData by client_id
+                product = ProductData.objects.filter(client_id__iexact=item.client_item).first()
+                if product and product.description:
+                    product_name = product.description
+                elif product and product.item:
+                    product_name = product.item
+                else:
+                    # If not found, try to get from Inventory
+                    inventory = Inventory.objects.filter(client_id__iexact=item.client_item).first()
+                    if inventory and inventory.item:
+                        # Try to get the description from ProductData using item
+                        prod_from_item = ProductData.objects.filter(item__iexact=inventory.item).first()
+                        if prod_from_item and prod_from_item.description:
+                            product_name = prod_from_item.description
+                        else:
+                            product_name = inventory.item
+            except Exception as e:
+                logger.warning(f"Error looking up product name for {item.client_item}: {e}")
+            
+            items_data.append({
+                'id': item.id,
+                'client_id': item.client_item,
+                'product_name': product_name,
+                'quantity': item.quantity_received
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'receipt': receipt_data,
+            'items': items_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in get_warehouse_receipt_details: {e}", exc_info=True)
+        return JsonResponse({'success': False, 'message': str(e)})
+
+def update_inventory_warehouse_quantities():
+    """
+    Update all inventory hotel_warehouse_quantity values based on the sum of quantities in HotelWarehouse.
+    Uses case-insensitive matching for client IDs.
+    """
+    try:
+        # Get all unique client items from Inventory
+        inventory_items = Inventory.objects.values_list('client_id', flat=True).distinct()
+        updated_count = 0
+        
+        for inv_client_id in inventory_items:
+            try:
+                # Find all case variations of this client_id in HotelWarehouse
+                warehouse_items = HotelWarehouse.objects.filter(
+                    client_item__iexact=inv_client_id
+                )
+                
+                if warehouse_items.exists():
+                    # Calculate total quantity for all case variations
+                    total_qty = warehouse_items.aggregate(
+                        total=Sum('quantity_received')
+                    )['total'] or 0
+                    
+                    # Update inventory record
+                    Inventory.objects.filter(client_id=inv_client_id).update(hotel_warehouse_quantity=total_qty)
+                    updated_count += 1
+                else:
+                    # If no warehouse items found for this inventory item, set quantity to 0
+                    Inventory.objects.filter(client_id=inv_client_id).update(hotel_warehouse_quantity=0)
+            except Exception as item_error:
+                logger.error(f"Error updating warehouse quantity for {inv_client_id}: {item_error}")
+        
+        logger.info(f"Updated hotel_warehouse_quantity for {updated_count} inventory items")
+    except Exception as e:
+        logger.error(f"Error updating inventory warehouse quantities: {e}", exc_info=True)
+
+@session_login_required
+def warehouse_request_items(request):
+    """
+    API endpoint to get all warehouse request items for a specific floor
+    """
+    floor_number = request.GET.get('floor_number')
+    
+    if not floor_number:
+        return JsonResponse({'success': False, 'message': 'Floor number is required'})
+    
+    try:
+        # Get all warehouse request items for this floor that haven't been sent yet
+        items = WarehouseRequest.objects.filter(floor_number=floor_number, sent=False)
+        
+        if not items.exists():
+            return JsonResponse({'success': False, 'message': 'No items found for this floor'})
+        
+        # Format items for response
+        items_data = []
+        for item in items:
+            # Get product name from ProductData or Inventory tables
+            product_name = "Unknown Product"
+            try:
+                # First try to get from ProductData by client_id
+                product = ProductData.objects.filter(client_id__iexact=item.client_item).first()
+                if product and product.description:
+                    product_name = product.description
+                elif product and product.item:
+                    product_name = product.item
+                else:
+                    # If not found, try to get from Inventory
+                    inventory = Inventory.objects.filter(client_id__iexact=item.client_item).first()
+                    if inventory and inventory.item:
+                        # Try to get the description from ProductData using item
+                        prod_from_item = ProductData.objects.filter(item__iexact=inventory.item).first()
+                        if prod_from_item and prod_from_item.description:
+                            product_name = prod_from_item.description
+                        else:
+                            product_name = inventory.item
+            except Exception as e:
+                logger.warning(f"Error looking up product name for {item.client_item}: {e}")
+            
+            items_data.append({
+                'id': item.id,  # Include the specific item ID for accurate updates
+                'client_item': item.client_item,
+                'product_name': product_name,
+                'quantity_requested': item.quantity_requested,
+                'quantity_sent': item.quantity_sent,
+                'sent': True if item.sent else False
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'items': items_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in warehouse_request_items: {e}", exc_info=True)
+        return JsonResponse({'success': False, 'message': str(e)})
+
+@session_login_required
+def get_warehouse_receipts(request):
+    """
+    API endpoint to get paginated warehouse receipts for AJAX loading
+    """
+    page = request.GET.get('page', 1)
+    
+    try:
+        # More efficient query: Get the most recent receipts first with date ordering
+        recent_receipts = (
+            HotelWarehouse.objects
+            .values('reference_id')
+            .annotate(
+                latest_date=Max('received_date'),
+                items_count=Count('id'),
+                total_quantity=Sum('quantity_received'),
+                first_id=Min('id')
+            )
+            .order_by('-latest_date')
+        )
+        
+        # Get the prefetched items in a single query
+        receipt_ids = [r['first_id'] for r in recent_receipts]
+        receipt_items = HotelWarehouse.objects.filter(id__in=receipt_ids).select_related('checked_by')
+        receipt_dict = {item.id: item for item in receipt_items}
+        
+        # Process the results without additional queries
+        receipts_list = []
+        for receipt in recent_receipts:
+            ref_id = receipt['reference_id']
+            first_item = receipt_dict.get(receipt['first_id'])
+            
+            if first_item:
+                # Get received date
+                received_date = receipt['latest_date'].strftime('%Y-%m-%d') if receipt['latest_date'] else now().strftime('%Y-%m-%d')
+                
+                # Get user name if available
+                received_by = "System"  # Default value
+                if first_item.checked_by:
+                    received_by = first_item.checked_by.name
+                
+                receipts_list.append({
+                    'id': ref_id,  # Use reference_id as the ID for the receipt
+                    'reference_id': ref_id,
+                    'received_date': received_date,
+                    'items_count': receipt['items_count'],
+                    'total_quantity': receipt['total_quantity'] or 0,
+                    'received_by': received_by
+                })
+        
+        # Create paginator
+        paginator = Paginator(receipts_list, 10)  # 10 receipts per page
+        
+        try:
+            receipts_page = paginator.page(page)
+        except PageNotAnInteger:
+            receipts_page = paginator.page(1)
+        except EmptyPage:
+            receipts_page = paginator.page(paginator.num_pages)
+        
+        # Return paginated data as JSON
+        return JsonResponse({
+            'success': True,
+            'receipts': list(receipts_page),
+            'page': receipts_page.number,
+            'total_pages': paginator.num_pages,
+            'has_previous': receipts_page.has_previous(),
+            'previous_page': receipts_page.previous_page_number() if receipts_page.has_previous() else None,
+            'has_next': receipts_page.has_next(),
+            'next_page': receipts_page.next_page_number() if receipts_page.has_next() else None
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in get_warehouse_receipts: {e}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'message': str(e)
+        })

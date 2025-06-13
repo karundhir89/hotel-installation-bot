@@ -6,14 +6,87 @@
 {% block content %}
 
 <style>
-@media (max-width: 768px) {
-  .form-label{
-    font-size: 20px;
+  @media (max-width: 768px) {
+    input[type='checkbox'] {
+      width: 25px;
+      height: 25px;
+    }
+    .product_item_class{
+      margin-top: 10px;
+    }
+    .form-label{
+      font-size: 16px;
+    }
+    .fw-bold{
+      font-size: 16px;
+    }
+    .container-lg {
+      padding-left: 5px;
+      padding-right: 5px;
+    }
+    .card-body {
+      padding: 10px 5px;
+    }
+    h3 {
+      font-size: 20px;
+    }
+    h4 {
+      font-size: 18px;
+    }
+    
+    /* Table optimizations for mobile */
+    .table-responsive {
+      overflow-x: auto;
+    }
+    .table {
+      font-size: 12px;
+    }
+    .table th, .table td {
+      padding: 5px;
+    }
+    .table input {
+      padding: 4px;
+      font-size: 13px;
+      height: 32px;
+    }
+    
+    /* Button optimizations for mobile */
+    .btn {
+      padding: 6px 10px;
+      font-size: 14px;
+      margin-bottom: 8px;
+      height: auto;
+      white-space: normal;
+    }
+    .btn-lg {
+      padding: 8px 12px;
+      font-size: 14px;
+    }
+    
+    /* Stack buttons on mobile */
+    .text-center .gap-3 {
+      flex-direction: column;
+      width: 100%;
+    }
+    .text-center .gap-3 .btn, 
+    .text-center .gap-3 a.btn {
+      width: 100%;
+      margin-bottom: 10px;
+      margin-right: 0 !important;
+      margin-left: 0 !important;
+    }
   }
 
-}
-/* style="font-size: 20px" */
-
+  /* General responsive improvements */
+  .table-responsive {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  input.form-control, select.form-control {
+    height: 38px;
+    font-size: 16px; /* Prevents iOS zoom on focus */
+  }
 </style>
 
 <div class="container-lg my-5">
@@ -74,8 +147,8 @@
           </div>
 
         </div>
-        <div class=""row mb-4">
-          <div class=""col-12">
+        <div class="row mb-4">
+          <div class="col-12" id="item_table_section" style="display: none;">
             <table class="table table-bordered table-striped" id="item_table">
               <thead>
                 <tr>
@@ -111,62 +184,68 @@
           </div>
         </div>
       </form>
-      <hr class="my-5" style="border-top: 1px solid #9b9b9b;">
-
-<h4 class="mb-3">Previous Shipments</h4>
-<div class="row mb-4">
-  <div class="col-12">
-    <table class="table table-bordered table-striped">
-      <thead>
-        <tr>
-          <th>Container ID</th>
-          <th>Ship Date</th>
-          <th>Expected Arrival</th>
-          <th>Product Count</th>
-          <th>Checked By</th>
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for submission in previous_submissions %}
-        <tr>
-          <td>{{ submission.container_id }}</td>
-          <td>{{ submission.ship_date }}</td>
-          <td>{{ submission.expected_arrival }}</td>
-          <td>{{ submission.product_count }}</td>
-          <td>{{ submission.checked_by }}</td>
-          <td>
-            <button type="button" class="btn btn-primary btn-sm edit-submission" data-id="{{ submission.id }}">Edit</button>
-          </td>
-        </tr>
-        {% empty %}
-        <tr>
-          <td colspan="6" class="text-center">No previous submissions found.</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% if is_paginated %}
-  <nav>
-    <ul class="pagination justify-content-center">
-     {% if page_obj.has_previous %}
-       <li class="page-item">
-          <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
-        </li>
-     {% endif %}
-     <li class="page-item disabled">
-       <span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
-     </li>
-      {% if page_obj.has_next %}
-       <li class="page-item">
-          <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
-        </li>
-      {% endif %}
-    </ul>
-  </nav>
-  {% endif %}
+    </div>
   </div>
-</div>
+
+  <!-- Second Card: Previous Shipments -->
+  <div class="card shadow-sm rounded-4 mt-4">
+    <div class="card-body p-4">
+      <h4 class="mb-3">Previous Shipments</h4>
+      <div class="row">
+        <div class="col-12">
+          <div class="table-responsive">
+            <table class="table table-bordered table-striped">
+              <thead>
+                <tr>
+                  <th>Container ID</th>
+                  <th>Ship Date</th>
+                  <th>Expected Arrival</th>
+                  <th>Product Count</th>
+                  <th>Checked By</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for submission in previous_submissions %}
+                <tr>
+                  <td>{{ submission.container_id }}</td>
+                  <td>{{ submission.ship_date }}</td>
+                  <td>{{ submission.expected_arrival }}</td>
+                  <td>{{ submission.product_count }}</td>
+                  <td>{{ submission.checked_by }}</td>
+                  <td>
+                    <button type="button" class="btn btn-secondary btn-sm w-100 edit-submission" data-id="{{ submission.id }}">Edit</button>
+                  </td>
+                </tr>
+                {% empty %}
+                <tr>
+                  <td colspan="6" class="text-center">No previous submissions found.</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% if is_paginated %}
+            <nav>
+              <ul class="pagination justify-content-center">
+               {% if page_obj.has_previous %}
+                 <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
+                  </li>
+               {% endif %}
+               <li class="page-item disabled">
+                 <span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+               </li>
+                {% if page_obj.has_next %}
+                 <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
+                  </li>
+                {% endif %}
+              </ul>
+            </nav>
+            {% endif %}
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -182,6 +261,9 @@
   $(document).ready(function () {
     const userName = "{{ user_name }}";
 
+    // Ensure table is hidden on page load
+    $('#item_table_section').hide();
+    
     // Helper function for loading states
     function setLoading(action, isLoading) {
       if (action === 'search_client') {
@@ -279,6 +361,10 @@
                 </td>
               </tr>
             `);
+            
+            // Show the table since we now have items
+            $('#item_table_section').show();
+            
             $('#room_number').val('');
             $('#product_name_preview').val('');
           } else {
@@ -365,6 +451,11 @@
 
     $('#item_list').on('click', '.delete-row', function () {
       $(this).closest('tr').remove();
+      
+      // Hide table if no items left
+      if ($('#item_list tr').length === 0) {
+        $('#item_table_section').hide();
+      }
     });
     // Toastr for Django messages
     {% if messages %}
@@ -386,6 +477,9 @@
     function resetForm() {
       // Clear the item table
       $('#item_list').empty();
+      
+      // Hide the table
+      $('#item_table_section').hide();
       
       // Reset form fields
       $('#shipment-form')[0].reset();
@@ -489,6 +583,11 @@
                 </tr>
               `);
             });
+            
+            // Show table if there are items
+            if (data.items.length > 0) {
+              $('#item_table_section').show();
+            }
             
             toastr.success("Container data loaded successfully!");
           } else {

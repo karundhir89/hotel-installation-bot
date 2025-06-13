@@ -139,7 +139,7 @@
  
             <h4 class="mb-3 px-2">Items in Container</h4>
   
-            <div class="table-responsive">
+            <div class="table-responsive" id="container_table_section" style="display: none;">
               <table class="table table-bordered table-striped" id="container_table">
                 <thead>
                   <tr>
@@ -176,6 +176,7 @@
           </div>
         </div>
       </form>
+      <hr class="my-5" style="border-top: 1px solid #9b9b9b;">
     </div>
   </div>
 
@@ -253,6 +254,9 @@
 <script>
   $(document).ready(function() {
     const userName = "{{ user_name }}";
+    
+    // Ensure table is hidden on page load
+    $('#container_table_section').hide();
     
     // Helper function for loading states
     function setLoading(action, isLoading) {
@@ -345,6 +349,9 @@
                   );
                 });
                 
+                // Show the table since we have items
+                $('#container_table_section').show();
+                
                 // Set the hidden product count
                 $('#hidden_product_count').html('<input type="hidden" name="product_count" value="' + receivedData.items.length + '">');
                 
@@ -353,7 +360,12 @@
                   $('input[name="received_date"]').val(receivedData.received_date);
                 }
                 
-                toastr.success("Loaded existing record with " + receivedData.items.length + " items");
+                // Scroll to the form
+                $('html, body').animate({
+                  scrollTop: $("#container_id").offset().top - 100
+                }, 500);
+                
+                toastr.success("Loaded " + receivedData.items.length + " items for editing");
               },
               error: function() {
                 setLoading('search_container', false);
@@ -380,12 +392,12 @@
                   $('.form-title').text('Process Received Shipment');
                   
                   if (data.items.length === 0) {
-                    $('#container_items').append(
-                      '<tr class="no-items">' +
-                        '<td colspan="5" class="text-center">No items found in this container</td>' +
-                      '</tr>'
-                    );
+                    $('#container_table_section').hide();
+                    toastr.warning('No items found in this container');
                   } else {
+                    // Show the table when items are found
+                    $('#container_table_section').show();
+                    
                     data.items.forEach(function(item, index) {
                       $('#container_items').append(
                         '<tr>' +
@@ -468,6 +480,9 @@
       // Hide the item form
       $('#selected_item_form').hide();
       
+      // Hide the container table
+      $('#container_table_section').hide();
+      
       // Clear the container items
       $('#container_items').html(
         '<tr class="no-items">' +
@@ -543,40 +558,29 @@
                   $('#container_items').empty();
                   
                   // Create table rows for each received item with actual values
-                  receivedData.items.forEach(function(item, index) {
-                    // Get the shipped quantity from our map, default to "N/A" if not found
-                    const shippedQty = shippedQtyMap[item.client_id] || "N/A";
+                  if (receivedData.items && receivedData.items.length > 0) {
+                    // Show the table when items exist
+                    $('#container_table_section').show();
                     
-                    $('#container_items').append(
-                      '<tr>' +
-                        '<td class="client-item">' + item.client_id + '</td>' +
-                        '<td class="product-name">' + item.product_name + '</td>' +
-                        '<td class="qty-shipped">' + shippedQty + '</td>' +
-                        '<td>' +
-                          '<input type="number" class="form-control" name="received_qty_' + index + '" min="0" value="' + item.received_qty + '" required>' +
-                          '<input type="hidden" name="client_item_' + index + '" value="' + item.client_id + '">' +
-                        '</td>' +
-                        '<td>' +
-                          '<input type="number" class="form-control" name="damaged_qty_' + index + '" min="0" value="' + item.damaged_qty + '">' +
-                        '</td>' +
-                      '</tr>'
-                    );
-                                    });
-              
-                  // Set the product count
-                  if (receivedData.items.length > 0) {
-                    // Set the hidden product count
-                    $('#hidden_product_count').html('<input type="hidden" name="product_count" value="' + receivedData.items.length + '">');
-                    
-                    // Set the received date
-                    $('input[name="received_date"]').val(receivedData.received_date);
-                    
-                    // Scroll to the form
-                    $('html, body').animate({
-                      scrollTop: $("#container_id").offset().top - 100
-                    }, 500);
-                    
-                    toastr.success("Loaded " + receivedData.items.length + " items for editing");
+                    receivedData.items.forEach(function(item, index) {
+                      // Get the shipped quantity from our map, default to "N/A" if not found
+                      const shippedQty = shippedQtyMap[item.client_id] || "N/A";
+                      
+                      $('#container_items').append(
+                        '<tr>' +
+                          '<td class="client-item">' + item.client_id + '</td>' +
+                          '<td class="product-name">' + item.product_name + '</td>' +
+                          '<td class="qty-shipped">' + shippedQty + '</td>' +
+                          '<td>' +
+                            '<input type="number" class="form-control" name="received_qty_' + index + '" min="0" value="' + item.received_qty + '" required>' +
+                            '<input type="hidden" name="client_item_' + index + '" value="' + item.client_id + '">' +
+                          '</td>' +
+                          '<td>' +
+                            '<input type="number" class="form-control" name="damaged_qty_' + index + '" min="0" value="' + item.damaged_qty + '">' +
+                          '</td>' +
+                        '</tr>'
+                      );
+                    });
                   } else {
                     toastr.error("No received items found for this container");
                   }
