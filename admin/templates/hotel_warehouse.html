@@ -109,12 +109,14 @@
   }
 </style>
 
+<!-- Ensure Bootstrap JS is loaded -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+
 <div class="container-lg my-5">
   <div class="card shadow-sm rounded-4">
     <div class="card-body p-4">
       <h3 class="mb-2 text-center text-secondary py-4">Warehouse</h3>
       <h4 class="mb-4 text-secondary">Pending Requests</h4>
-      <p class="text-muted mb-4">Showing only requests that haven't been fully sent yet.</p>
       
       <div class="row mb-4">
         <div class="col-md-6">
@@ -124,9 +126,7 @@
           </div>
         </div>
         <div class="col-md-6 text-md-end mt-3 mt-md-0">
-          <button class="btn btn-outline-secondary" id="refresh-button">
-            <i class="material-icons align-middle">refresh</i> Refresh
-          </button>
+          <!-- Refresh button removed -->
         </div>
       </div>
       
@@ -139,6 +139,7 @@
               <th>Items</th>
               <th>Requested Qty</th>
               <th>Sent Qty</th>
+              <!-- Status column removed -->
               <th>Actions</th>
             </tr>
           </thead>
@@ -149,16 +150,10 @@
               <td>{{ request.requested_by }}</td>
               <td>{{ request.item_count }}</td>
               <td>{{ request.quantity_requested }}</td>
+              <td>{{ request.quantity_sent }}</td>
+              <!-- Status column removed -->
               <td>
-                <input type="number" class="form-control sent-qty-input" 
-                       data-floor="{{ request.floor_number }}" 
-                       value="{{ request.quantity_received }}" 
-                       min="0" 
-                       max="{{ request.quantity_requested }}">
-              </td>
-              <td>
-                <button type="button" class="btn btn-primary btn-sm view-details" data-id="{{ request.id }}" data-floor="{{ request.floor_number }}">View Details</button>
-                <button type="button" class="btn btn-success btn-sm update-sent-qty" data-floor="{{ request.floor_number }}">Update Sent</button>
+                <button type="button" class="btn btn-secondary btn-sm view-details" data-floor="{{ request.floor_number }}">View Details</button>
               </td>
             </tr>
             {% empty %}
@@ -170,8 +165,10 @@
         </table>
       </div>
       
+
+      
       {% if is_paginated %}
-      <nav>
+      <nav class="mt-4">
         <ul class="pagination justify-content-center">
           {% if page_obj.has_previous %}
           <li class="page-item">
@@ -199,7 +196,7 @@
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title" id="requestDetailsModalLabel">Pending Request Details</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" onclick="$('#requestDetailsModal').modal('hide');"></button>
       </div>
       <div class="modal-body">
         <div class="row mb-3">
@@ -230,29 +227,40 @@
             </tbody>
           </table>
         </div>
-        
-        <div class="row mt-4">
-          <div class="col-md-6">
-            <div class="form-group">
-              <label for="modal-total-sent" class="form-label">Total Sent Quantity:</label>
-              <input type="number" id="modal-total-sent" class="form-control" min="0">
-              <small class="form-text text-muted">This will be distributed proportionally across all items.</small>
-            </div>
-          </div>
-        </div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-        <button type="button" class="btn btn-success" id="modal-mark-sent" style="display: none;">Mark as Sent</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" onclick="$('#requestDetailsModal').modal('hide');">Close</button>
+        <button type="button" class="btn btn-success" id="modal-update-quantities" data-bs-dismiss="modal" onclick="$('#requestDetailsModal').modal('hide');">Update Quantities</button>
       </div>
     </div>
   </div>
 </div>
+
+<!-- Hidden form for CSRF token and submissions -->
+<form id="csrf-form" method="post" style="display: none;">
+  {% csrf_token %}
+</form>
 {% endblock %}
 
 {% block extra_js %}
 <script>
   $(document).ready(function() {
+    // Make sure Bootstrap JS is properly loaded and initialized
+    if (typeof bootstrap !== 'undefined') {
+      console.log('Bootstrap is loaded');
+    } else {
+      console.log('Bootstrap is not loaded properly');
+      // Load Bootstrap JS dynamically if not available
+      const bootstrapScript = document.createElement('script');
+      bootstrapScript.src = 'https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js';
+      document.head.appendChild(bootstrapScript);
+    }
+
+    // Add explicit handler for modal close button
+    $('.btn-close, [data-bs-dismiss="modal"]').on('click', function() {
+      $('#requestDetailsModal').modal('hide');
+    });
+    
     // View details button click
     $('.view-details').on('click', function() {
       const requestId = $(this).data('id');
@@ -262,7 +270,7 @@
       const requestedBy = $(this).closest('tr').find('td:eq(1)').text();
       const itemCount = $(this).closest('tr').find('td:eq(2)').text();
       const requestedQty = $(this).closest('tr').find('td:eq(3)').text();
-      const receivedQty = $(this).closest('tr').find('td:eq(4) input').val();
+      const receivedQty = $(this).closest('tr').find('td:eq(4)').text();
       
       // Populate the modal
       $('#modal-floor').text(floorNumber);
@@ -289,40 +297,25 @@
             let totalRequested = 0;
             let totalReceived = 0;
             
-            response.items.forEach(item => {
+                          response.items.forEach(item => {
               totalRequested += parseInt(item.quantity_requested) || 0;
-              totalReceived += parseInt(item.quantity_received) || 0;
+              totalReceived += parseInt(item.quantity_sent) || 0;
               
               itemsList.append(`
-                <tr data-client-item="${item.client_item}" data-requested="${item.quantity_requested}">
+                <tr data-client-item="${item.client_item}" data-requested="${item.quantity_requested}" data-id="${item.id}">
                   <td>${item.client_item}</td>
                   <td>${item.product_name || 'Unknown'}</td>
                   <td>${item.quantity_requested}</td>
-                  <td class="item-received-qty">${item.quantity_received}</td>
+                  <td>
+                    <input type="number" class="form-control item-sent-qty" 
+                           data-client-item="${item.client_item}"
+                           data-id="${item.id}"
+                           value="${item.quantity_sent || 0}" 
+                           min="0" 
+                           max="${item.quantity_requested}">
+                  </td>
                 </tr>
               `);
-            });
-            
-            // Set the total sent quantity input value
-            $('#modal-total-sent').val(totalReceived);
-            
-            // Add event listener for the total sent quantity input
-            $('#modal-total-sent').off('change').on('change', function() {
-              const totalSent = parseInt($(this).val()) || 0;
-              
-              // Distribute proportionally
-              if (totalRequested > 0 && totalSent > 0) {
-                response.items.forEach(item => {
-                  const proportion = item.quantity_requested / totalRequested;
-                  const itemSent = Math.round(totalSent * proportion);
-                  
-                  // Update the table cell
-                  $(`tr[data-client-item="${item.client_item}"] .item-received-qty`).text(itemSent);
-                });
-              } else {
-                // If total is 0, set all to 0
-                $('.item-received-qty').text('0');
-              }
             });
           } else {
             // If API fails, show placeholder data
@@ -355,47 +348,44 @@
       $('#requestDetailsModal').modal('show');
     });
     
-    // Mark as sent button click (in modal)
-    $('#modal-mark-sent').on('click', function() {
-      const floorNumber = $(this).data('floor');
+    // Update quantities button click (in modal)
+    $('#modal-update-quantities').on('click', function() {
+      const floorNumber = $('#modal-floor').text();
       
-      // Get the total sent quantity from the modal input
-      const sentQty = $('#modal-total-sent').val();
+      // Collect all item quantities
+      const items = [];
+      $('#modal-items-list tr').each(function() {
+        const clientItem = $(this).data('client-item');
+        const requested = $(this).data('requested');
+        const itemId = $(this).data('id');
+        const sent = $(this).find('.item-sent-qty').val();
+        
+        if (clientItem) {
+          items.push({
+            id: itemId,  // Include the specific item ID for accurate updates
+            client_item: clientItem,
+            quantity_requested: requested,
+            quantity_sent: sent  // Using quantity_sent to match backend expectation
+          });
+        }
+      });
       
       // Create a form and submit it to perform the server-side action
       const form = $('<form method="post"></form>');
-      form.append(`<input type="hidden" name="csrfmiddlewaretoken" value="${$('input[name=csrfmiddlewaretoken]').val()}">`);
+      // Get CSRF token from the hidden form
+      const csrfToken = $('#csrf-form input[name="csrfmiddlewaretoken"]').val();
+      form.append(`<input type="hidden" name="csrfmiddlewaretoken" value="${csrfToken}">`);
       form.append(`<input type="hidden" name="action" value="update_sent_qty">`);
       form.append(`<input type="hidden" name="floor_number" value="${floorNumber}">`);
-      form.append(`<input type="hidden" name="sent_qty" value="${sentQty}">`);
+      form.append(`<input type="hidden" name="items" value='${JSON.stringify(items)}'>`);
       
       // Append to body, submit, and remove
       $('body').append(form);
       form.submit();
       form.remove();
-      
-      // Close the modal
-      $('#requestDetailsModal').modal('hide');
     });
     
-    // Update sent quantity button click (in table)
-    $('.update-sent-qty').on('click', function() {
-      const floorNumber = $(this).data('floor');
-      const sentQtyInput = $(`.sent-qty-input[data-floor="${floorNumber}"]`);
-      const sentQty = sentQtyInput.val();
-      
-      // Create a form and submit it to perform the server-side action
-      const form = $('<form method="post"></form>');
-      form.append(`<input type="hidden" name="csrfmiddlewaretoken" value="${$('input[name=csrfmiddlewaretoken]').val()}">`);
-      form.append(`<input type="hidden" name="action" value="update_sent_qty">`);
-      form.append(`<input type="hidden" name="floor_number" value="${floorNumber}">`);
-      form.append(`<input type="hidden" name="sent_qty" value="${sentQty}">`);
-      
-      // Append to body, submit, and remove
-      $('body').append(form);
-      form.submit();
-      form.remove();
-    });
+
     
     // Search functionality
     $('#search-button').on('click', function() {
@@ -416,15 +406,6 @@
           $(this).hide();
         }
       });
-    });
-    
-    // Refresh button click
-    $('#refresh-button').on('click', function() {
-      // In a real implementation, you would reload the data from the server
-      // For now, we'll just reset the search and show all rows
-      $('#search-input').val('');
-      $('#requests-table tr').show();
-      toastr.info('Data refreshed');
     });
     
     // Initialize toastr options

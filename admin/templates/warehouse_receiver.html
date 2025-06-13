@@ -86,7 +86,19 @@
     height: 38px;
     font-size: 16px; /* Prevents iOS zoom on focus */
   }
+  
+  /* Auto-search loading indicator styles */
+  .client-item.searching {
+    background-image: url('data:image/gif;base64,R0lGODlhEAAQAPIAAP///wAAAMLCwkJCQgAAAGJiYoKCgpKSkiH/C05FVFNDQVBFMi4wAwEAAAAh/hpDcmVhdGVkIHdpdGggYWpheGxvYWQuaW5mbwAh+QQJCgAAACwAAAAAEAAQAAADMwi63P4wyklrE2MIOggZnAdOmGYJRbExwroUmcG2LmDEwnHQLVsYOd2mBzkYDAdKa+dIAAAh+QQJCgAAACwAAAAAEAAQAAADNAi63P5OjCEgG4QMu7DmikRxQlFUYDEZIGBMRVsaqHwctXXf7WEYB4Ag1xjihkMZsiUkKhIAIfkECQoAAAAsAAAAABAAEAAAAzYIujIjK8pByJDMlFYvBoVjHA70GU7xSUJhmKtwHPAKzLO9HMaoKwJZ7Rf8AYPDDzKpZBqfvwQAIfkECQoAAAAsAAAAABAAEAAAAzMIumIlK8oyhpHsnFZfhYumCYUhDAQxRIdhHBGqRoKw0R8DYlJd8z0fMDgsGo/IpHI5TAAAIfkECQoAAAAsAAAAABAAEAAAAzIIunInK0rnZBTwGPNMgQwmdsNgXGJUlIWEuR5oWUIpz8pAEAMe6TwfwyYsGo/IpFKSAAAh+QQJCgAAACwAAAAAEAAQAAADMwi6IMKQORfjdOe82p4wGccc4CEuQradylesojEMBgsUc2G7sDX3lQGBMLAJibufbSlKAAAh+QQJCgAAACwAAAAAEAAQAAADMgi63P7wCRHZnFVdmgHu2nFwlWCI3WGc3TSWhUFGxTAUkGCbtgENBMJAEJsxgMLWzpEAACH5BAkKAAAALAAAAAAQABAAAAMyCLrc/jDKSatlQtScKdceCAjDII7HcQ4EMTCpyrCuUBjCYRgHVtqlAiB1YhiCnlsRkAAAOwAAAAAAAAAAAA==');
+    background-position: right 10px center;
+    background-repeat: no-repeat;
+    background-size: 16px 16px;
+    padding-right: 30px;
+  }
 </style>
+
+<!-- Ensure Bootstrap JS is loaded -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" defer></script>
 
 <div class="container-lg my-5">
   <!-- First Card: Receiving Form -->
@@ -120,12 +132,7 @@
               <div class="row mb-3 item-row">
                 <div class="col-md-4">
                   <label class="form-label">Client Item #</label>
-                  <div class="input-group">
-                    <input type="text" class="form-control client-item" name="client_items[]" placeholder="Enter Client Item #" required>
-                    <button type="button" class="btn btn-outline-secondary lookup-item">
-                      <span class="material-icons">search</span>
-                    </button>
-                  </div>
+                  <input type="text" class="form-control client-item" name="client_items[]" placeholder="Enter Client Item #" required>
                 </div>
                 <div class="col-md-5">
                   <label class="form-label">Product Name</label>
@@ -166,60 +173,41 @@
   <div class="card shadow-sm rounded-4">
     <div class="card-body p-4">
       <h4 class="mb-3">Previous Warehouse Receipts</h4>
-      <div class="row">
-        <div class="col-12">
-          <div class="table-responsive">
-            <table class="table table-bordered table-striped">
-              <thead>
-                <tr>
-                  <th>Reference ID</th>
-                  <th>Received Date</th>
-                  <th>Items Count</th>
-                  <th>Total Quantity</th>
-                  <th>Received By</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for receipt in previous_receipts %}
-                <tr>
-                  <td>{{ receipt.reference_id }}</td>
-                  <td>{{ receipt.received_date }}</td>
-                  <td>{{ receipt.items_count }}</td>
-                  <td>{{ receipt.total_quantity }}</td>
-                  <td>{{ receipt.received_by }}</td>
-                  <td>
-                    <button type="button" class="btn btn-primary btn-sm view-details" data-id="{{ receipt.id }}">View Details</button>
-                  </td>
-                </tr>
-                {% empty %}
-                <tr>
-                  <td colspan="5" class="text-center">No previous receipts found.</td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
+      
+      <!-- Lazy loading spinner - shown while loading -->
+      <div id="receipts-loading" class="text-center py-4">
+        <div class="spinner-border text-secondary" role="status">
+        </div>
+      </div>
+      
+      <!-- Content loaded via AJAX -->
+      <div id="receipts-container" class="d-none">
+        <div class="row">
+          <div class="col-12">
+            <div class="table-responsive">
+              <table class="table table-bordered table-striped">
+                <thead>
+                  <tr>
+                    <th>Reference ID</th>
+                    <th>Received Date</th>
+                    <th>Items Count</th>
+                    <th>Total Quantity</th>
+                    <th>Received By</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="receipts-table-body">
+                  <!-- Will be populated via JavaScript -->
+                </tbody>
+              </table>
+            </div>
+            
+            <nav id="pagination-container" class="mt-3">
+              <ul class="pagination justify-content-center">
+                <!-- Will be populated via JavaScript -->
+              </ul>
+            </nav>
           </div>
-          
-          {% if is_paginated %}
-          <nav>
-            <ul class="pagination justify-content-center">
-              {% if page_obj.has_previous %}
-              <li class="page-item">
-                <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
-              </li>
-              {% endif %}
-              <li class="page-item disabled">
-                <span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
-              </li>
-              {% if page_obj.has_next %}
-              <li class="page-item">
-                <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
-              </li>
-              {% endif %}
-            </ul>
-          </nav>
-          {% endif %}
         </div>
       </div>
     </div>
@@ -232,7 +220,7 @@
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title" id="receiptDetailsModalLabel">Receipt Details</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" onclick="$('#receiptDetailsModal').modal('hide');"></button>
       </div>
       <div class="modal-body">
         <div class="row mb-3">
@@ -262,7 +250,7 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" onclick="$('#receiptDetailsModal').modal('hide');">Close</button>
       </div>
     </div>
   </div>
@@ -272,6 +260,22 @@
 {% block extra_js %}
 <script>
   $(document).ready(function() {
+    // Make sure Bootstrap JS is properly loaded and initialized
+    if (typeof bootstrap !== 'undefined') {
+      console.log('Bootstrap is loaded');
+    } else {
+      console.log('Bootstrap is not loaded properly');
+      // Load Bootstrap JS dynamically if not available
+      const bootstrapScript = document.createElement('script');
+      bootstrapScript.src = 'https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js';
+      document.head.appendChild(bootstrapScript);
+    }
+
+    // Add explicit handler for modal close button
+    $('.btn-close, [data-bs-dismiss="modal"]').on('click', function() {
+      $('#receiptDetailsModal').modal('hide');
+    });
+    
     // Set current date for received date field
     const today = new Date().toISOString().split('T')[0];
     $('#received_date').val(today);
@@ -311,49 +315,170 @@
       toastr.info('Form has been cleared.');
     });
     
-    // Lookup item
-    $('#items-container').on('click', '.lookup-item', function() {
+    // Variable to store timeout for auto-search
+    let searchTimeout;
+    
+    // Auto-search after typing stops for 3 seconds
+    $('#items-container').on('input', '.client-item', function() {
       const row = $(this).closest('.item-row');
-      const clientItem = row.find('.client-item').val().trim();
+      const clientItem = $(this).val().trim();
+      const $input = $(this); // Store input element reference
       
-      if (!clientItem) {
-        toastr.error('Please enter a Client Item # first');
-        return;
+      // Clear any existing timeout
+      clearTimeout(searchTimeout);
+      
+      // Remove searching class initially
+      $input.removeClass('searching');
+      
+      if (clientItem) {
+        // Add searching class to show we're waiting
+        $input.addClass('searching');
+        
+        // Set a new timeout for 3 seconds
+        searchTimeout = setTimeout(function() {
+          // Trigger product search
+          if (clientItem) {
+            // Make AJAX request to get product details
+            $.ajax({
+              url: "{% url 'get_product_item_num' %}",
+              type: "GET",
+              data: { room_number: clientItem },
+              success: function(data) {
+                // Remove searching class when done
+                $input.removeClass('searching');
+                
+                if (data.success) {
+                  // Fill product name
+                  row.find('.product-name').val(data.product_name || data.room_type);
+                  toastr.success('Product found');
+                } else {
+                  row.find('.product-name').val('');
+                  // Don't show error toast on auto-search
+                }
+              },
+              error: function() {
+                // Remove searching class when done
+                $input.removeClass('searching');
+                // Don't show error toast on auto-search
+              }
+            });
+          }
+        }, 3000); // 3 seconds delay
       }
-      
+    });
+    
+    // Initialize toastr options
+    toastr.options = {
+      "closeButton": true,
+      "progressBar": true,
+      "timeOut": "3000"
+    };
+    
+    // Load previous receipts via AJAX
+    let currentPage = 1;
+    
+    function loadReceipts(page = 1) {
       // Show loading indicator
-      $(this).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>');
+      $('#receipts-loading').removeClass('d-none');
+      $('#receipts-container').addClass('d-none');
       
-      // Make AJAX request to get product details
+      // Make AJAX request to get receipts
       $.ajax({
-        url: "{% url 'get_product_item_num' %}",
+        url: "{% url 'get_warehouse_receipts' %}",
         type: "GET",
-        data: { room_number: clientItem },
+        data: { page: page },
         success: function(data) {
-          // Reset button
-          row.find('.lookup-item').html('<span class="material-icons">search</span>');
-          
           if (data.success) {
-            // Fill product name
-            row.find('.product-name').val(data.product_name || data.room_type);
-            toastr.success('Product found');
+            // Update current page
+            currentPage = data.page;
+            
+            // Populate table with receipts
+            const tableBody = $('#receipts-table-body');
+            tableBody.empty();
+            
+            if (data.receipts.length === 0) {
+              tableBody.append(`
+                <tr>
+                  <td colspan="6" class="text-center">No previous receipts found.</td>
+                </tr>
+              `);
+            } else {
+              data.receipts.forEach(function(receipt) {
+                tableBody.append(`
+                  <tr>
+                    <td>${receipt.reference_id}</td>
+                    <td>${receipt.received_date}</td>
+                    <td>${receipt.items_count}</td>
+                    <td>${receipt.total_quantity}</td>
+                    <td>${receipt.received_by}</td>
+                    <td>
+                      <button type="button" class="btn btn-secondary btn-sm view-details" data-id="${receipt.id}">View Details</button>
+                    </td>
+                  </tr>
+                `);
+              });
+            }
+            
+            // Update pagination
+            const paginationContainer = $('#pagination-container ul');
+            paginationContainer.empty();
+            
+            // Previous button
+            if (data.has_previous) {
+              paginationContainer.append(`
+                <li class="page-item">
+                  <a class="page-link page-nav" href="#" data-page="${data.previous_page}">Previous</a>
+                </li>
+              `);
+            }
+            
+            // Current page info
+            paginationContainer.append(`
+              <li class="page-item disabled">
+                <span class="page-link">Page ${data.page} of ${data.total_pages}</span>
+              </li>
+            `);
+            
+            // Next button
+            if (data.has_next) {
+              paginationContainer.append(`
+                <li class="page-item">
+                  <a class="page-link page-nav" href="#" data-page="${data.next_page}">Next</a>
+                </li>
+              `);
+            }
+            
+            // Show receipts container, hide loading indicator
+            $('#receipts-loading').addClass('d-none');
+            $('#receipts-container').removeClass('d-none');
+            
+            // Re-bind click handlers for view details buttons
+            $('.view-details').on('click', function() {
+              const receiptId = $(this).data('id');
+              loadReceiptDetails(receiptId);
+            });
           } else {
-            toastr.error('Product not found');
-            row.find('.product-name').val('');
+            // Show error
+            toastr.error(data.message || 'Failed to load receipts');
+            $('#receipts-loading').addClass('d-none');
           }
         },
         error: function() {
-          // Reset button
-          row.find('.lookup-item').html('<span class="material-icons">search</span>');
-          toastr.error('Error looking up product');
+          toastr.error('Error loading receipts');
+          $('#receipts-loading').addClass('d-none');
         }
       });
+    }
+    
+    // Handle pagination clicks
+    $(document).on('click', '.page-nav', function(e) {
+      e.preventDefault();
+      const page = $(this).data('page');
+      loadReceipts(page);
     });
     
-    // View receipt details
-    $('.view-details').on('click', function() {
-      const receiptId = $(this).data('id');
-      
+    // Function to load receipt details
+    function loadReceiptDetails(receiptId) {
       // Make AJAX request to get receipt details
       $.ajax({
         url: "{% url 'get_warehouse_receipt_details' %}",
@@ -390,14 +515,10 @@
           toastr.error('Error loading receipt details');
         }
       });
-    });
+    }
     
-    // Initialize toastr options
-    toastr.options = {
-      "closeButton": true,
-      "progressBar": true,
-      "timeOut": "3000"
-    };
+    // Load receipts when page loads
+    loadReceipts();
     
     // Process Django messages with toastr
     // We use JS-safe approach to handle Django template tags

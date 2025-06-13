@@ -78,6 +78,8 @@ class HotelWarehouse(models.Model):
     reference_id = models.CharField(max_length=255)  # Warehouse Container ID 
     client_item = models.CharField(max_length=255)
     quantity_received = models.PositiveIntegerField(default=0)
+    checked_by = models.ForeignKey('InvitedUser', on_delete=models.SET_NULL, null=True, blank=True)
+    received_date = models.DateField(null=True, blank=True)
 
     def __str__(self):
         return f"{self.reference_id} - {self.client_item} ({self.quantity_received})"
