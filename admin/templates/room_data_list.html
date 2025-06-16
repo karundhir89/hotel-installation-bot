@@ -110,9 +110,7 @@
                                     <tr>
                                         <th>Room</th>
                                         <th>Floor</th>
-                                        <th>King</th>
-                                        <th>Double</th>
-                                        <th>Exec King</th>
+                                        <th>Bed</th>
                                         <th>Bath Screen</th>
                                         <th>Room Model</th>
                                         <th>Description</th>
@@ -127,9 +125,7 @@
                                     <tr>
                                         <td>{{ room.room }}</td>
                                         <td>{{ room.floor }}</td>
-                                        <td>{{ room.king }}</td>
-                                        <td>{{ room.double }}</td>
-                                        <td>{{ room.exec_king }}</td>
+                                        <td>{{ room.bed }}</td>
                                         <td>{{ room.bath_screen }}</td>
                                         <td>{{ room.room_model }}</td>
                                         <td>{{ room.description }}</td>
@@ -141,9 +137,7 @@
                                                     data-id="{{ room.id }}" 
                                                     data-room-no="{{ room.room }}" 
                                                     data-floor="{{ room.floor }}" 
-                                                    data-king="{{ room.king }}" 
-                                                    data-double="{{ room.double }}" 
-                                                    data-exec_king="{{ room.exec_king }}" 
+                                                    data-bed="{{ room.bed }}" 
                                                     data-bath_screen="{{ room.bath_screen }}" 
                                                     data-room_model="{{ room.room_model_id.id }}" 
                                                     data-description="{{ room.description }}" 
@@ -198,24 +192,13 @@
                 <input type="text" id="floor" name="floor" class="form-control" required>
             </div>
             <div class="form-group">
-                <label for="king">King:</label>
-                <select id="king" name="king" class="form-control" required>
-                    <option value="YES">YES</option>
-                    <option value="NO">NO</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label for="double">Double:</label>
-                <select id="double" name="double" class="form-control" required>
-                    <option value="YES">YES</option>
-                    <option value="NO">NO</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label for="exec_king">Exec King:</label>
-                <select id="exec_king" name="exec_king" class="form-control" required>
-                    <option value="YES">YES</option>
-                    <option value="NO">NO</option>
+                <label for="bed">Bed Type:</label>
+                <select id="bed" name="bed" class="form-control" required>
+                    <option value="">Select Bed Type</option>
+                    <option value="king">King</option>
+                    <option value="double">Double</option>
+                    <option value="exec_king">Executive King</option>
+                    <option value="grand_suite_double">Grand Suite Double</option>
                 </select>
             </div>
             <div class="form-group">
@@ -294,9 +277,7 @@
             $('#room-no').prop('readonly', false)
             $('#room-no').val("");
             $('#floor').val("");
-            $('#king').val("");
-            $('#double').val("");
-            $('#exec_king').val("");
+            $('#bed').val("");
             $('#bath_screen').val("");
             $('#room_model').val("");
             $('#description').val("");
@@ -352,9 +333,7 @@
             $('#room-no').val(roomNo.toString()).trigger('change');
             $('#room-no').prop('readonly', true);
             $('#floor').val($(this).data('floor'));
-            $('#king').val($(this).data('king'));
-            $('#double').val($(this).data('double'));
-            $('#exec_king').val($(this).data('exec_king'));
+            $('#bed').val($(this).data('bed'));
             $('#bath_screen').val($(this).data('bath_screen'));
             $('#description').val($(this).data('description'));
             $('#left_desk').val($(this).data('left_desk'));

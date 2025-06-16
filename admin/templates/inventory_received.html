@@ -280,7 +280,7 @@
     // Auto-fill the date field with current date
     $('input[name="received_date"]').val(isoDate);
     
-          // Search for container
+    // Search for container
     $('#search_container').on('click', function() {
       const containerId = $('#container_id').val().trim();
       if (!containerId) {
@@ -305,6 +305,10 @@
             
             // Set edit mode flags
             $('#is_editing').val('1');
+            // Set the first record's ID as the editing record ID
+            if (receivedData.items.length > 0) {
+              $('#editing_record_id').val(receivedData.items[0].id);
+            }
             
             // Update form title
             $('.form-title').text('Editing Receiving Record: Container ID ' + containerId);
@@ -341,6 +345,7 @@
                       '<td>' +
                         '<input type="number" class="form-control" name="received_qty_' + index + '" min="0" value="' + item.received_qty + '" required>' +
                         '<input type="hidden" name="client_item_' + index + '" value="' + item.client_id + '">' +
+                        '<input type="hidden" name="record_id_' + index + '" value="' + item.id + '">' +
                       '</td>' +
                       '<td>' +
                         '<input type="number" class="form-control" name="damaged_qty_' + index + '" min="0" value="' + item.damaged_qty + '">' +
@@ -387,6 +392,7 @@
                   
                   // Reset edit mode flags
                   $('#is_editing').val('0');
+                  $('#editing_record_id').val('');
                   
                   // Update form title
                   $('.form-title').text('Process Received Shipment');
@@ -414,8 +420,6 @@
                         '</tr>'
                       );
                     });
-                    
-                    // Date is already set by default
                     
                     // Add a hidden field to track the number of products
                     $('#hidden_product_count').html('<input type="hidden" name="product_count" value="' + data.items.length + '">');
@@ -574,6 +578,7 @@
                           '<td>' +
                             '<input type="number" class="form-control" name="received_qty_' + index + '" min="0" value="' + item.received_qty + '" required>' +
                             '<input type="hidden" name="client_item_' + index + '" value="' + item.client_id + '">' +
+                            '<input type="hidden" name="record_id_' + index + '" value="' + item.id + '">' +
                           '</td>' +
                           '<td>' +
                             '<input type="number" class="form-control" name="damaged_qty_' + index + '" min="0" value="' + item.damaged_qty + '">' +
@@ -600,6 +605,87 @@
       } else {
         toastr.error("Could not determine container ID from the table row.");
       }
+    });
+
+    // Handle form submission
+    $('#receiving-form').on('submit', function(e) {
+      e.preventDefault();
+      
+      // Get the form data
+      const formData = new FormData(this);
+      
+      // Add edit mode flags to form data
+      formData.append('is_editing', $('#is_editing').val());
+      formData.append('editing_record_id', $('#editing_record_id').val());
+      
+      // Add container ID
+      formData.append('container_id', $('#container_id_field').val());
+      
+      // Add all received and damaged quantities
+      let productCount = 0;
+      $('#container_items tr').each(function(index) {
+        const receivedQty = $(this).find('input[name^="received_qty_"]').val();
+        const damagedQty = $(this).find('input[name^="damaged_qty_"]').val();
+        const clientItem = $(this).find('.client-item').text().trim();
+        
+        if (receivedQty && receivedQty !== "0") {
+          formData.append('received_qty_' + productCount, receivedQty);
+          formData.append('damaged_qty_' + productCount, damagedQty || "0");
+          formData.append('client_item_' + productCount, clientItem);
+          productCount++;
+        }
+      });
+      
+      // Add the product count
+      formData.append('product_count', productCount);
+      
+      // Add CSRF token
+      formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+      
+      console.log('Submitting form with data:', {
+        is_editing: $('#is_editing').val(),
+        editing_record_id: $('#editing_record_id').val(),
+        container_id: $('#container_id_field').val(),
+        product_count: productCount
+      });
+      
+      // Send AJAX request
+      $.ajax({
+        url: $(this).attr('action'),
+        type: 'POST',
+        data: formData,
+        processData: false,
+        contentType: false,
+        success: function(response) {
+          console.log('Server response:', response);
+          if (response.success) {
+            toastr.success(response.message || "Record updated successfully!");
+            // Reload the page after a short delay
+            setTimeout(function() {
+              window.location.reload();
+            }, 1500);
+          } else {
+            toastr.error(response.message || "Error updating record");
+          }
+        },
+        error: function(xhr, status, error) {
+          console.error('Error details:', {
+            status: status,
+            error: error,
+            response: xhr.responseText
+          });
+          
+          let errorMessage = "Failed to update record";
+          try {
+            const response = JSON.parse(xhr.responseText);
+            errorMessage = response.message || errorMessage;
+          } catch (e) {
+            errorMessage = xhr.responseText || errorMessage;
+          }
+          
+          toastr.error("Error: " + errorMessage);
+        }
+      });
     });
 
     // Toastr for Django messages

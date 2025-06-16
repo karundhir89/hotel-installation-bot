@@ -62,11 +62,12 @@ class Inventory(models.Model):
     item = models.TextField(null=True, blank=True)
     client_id = models.TextField(null=True, blank=True)
     qty_ordered = models.IntegerField(null=True, blank=True)
+    quantity_shipped = models.IntegerField(null=True, blank=True, default=0)
     qty_received = models.IntegerField(null=True, blank=True)
-    quantity_installed = models.IntegerField(null=True, blank=True)
     quantity_available = models.IntegerField(null=True, blank=True)
     hotel_warehouse_quantity = models.IntegerField(null=True, blank=True, default=0)
-
+    floor_quantity = models.IntegerField(null=True, blank=True, default=0)
+    quantity_installed = models.IntegerField(null=True, blank=True)
     class Meta:
         db_table = 'inventory'  # Ensure this matches the actual table name in PostgreSQL
 
@@ -118,9 +119,9 @@ class RoomData(models.Model):
     id = models.AutoField(primary_key=True)  # Serial (Auto-increment)
     room = models.IntegerField(null=True, blank=True)
     floor = models.IntegerField(null=True, blank=True)
-    king = models.TextField(null=True, blank=True)
-    double = models.TextField(null=True, blank=True)
-    exec_king = models.TextField(null=True, blank=True)
+    # king = models.TextField(null=True, blank=True)
+    # double = models.TextField(null=True, blank=True)
+    # exec_king = models.TextField(null=True, blank=True)
     bath_screen = models.TextField(null=True, blank=True)
     room_model = models.TextField(null=True, blank=True)
     room_model_id = models.ForeignKey(RoomModel, on_delete=models.SET_NULL, null=True, blank=True,db_column='room_model_id')
@@ -128,6 +129,7 @@ class RoomData(models.Model):
     right_desk = models.TextField(null=True, blank=True)
     to_be_renovated = models.TextField(null=True, blank=True)
     description = models.TextField(null=True, blank=True)  # Fixed column name typo from "descripton"
+    bed = models.CharField(max_length=100, null=True, blank=True)  # Add this field if not present
 
     class Meta:
         db_table = 'room_data'  # Ensure this matches the actual table name in PostgreSQL

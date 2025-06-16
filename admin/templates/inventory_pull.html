@@ -188,9 +188,9 @@
             <div class="input-group">
               <span class="input-group-text"><span class="material-icons">person</span></span>
               <input type="text" class="form-control" id="common-checked-by" name="common_checked_by" value="{{ user_name }}" readonly>
-            </div>
           </div>
         </div>
+      </div>
 
       <hr class="my-4">
 
@@ -216,8 +216,8 @@
           <!-- Tab content -->
           <div class="tab-content" id="pullTabContent">
             <div class="tab-pane fade show active" id="requested" role="tabpanel" aria-labelledby="requested-tab">
-              <!-- Dynamic Product List Render Here -->
-              <div id="products-wrapper"></div>
+      <!-- Dynamic Product List Render Here -->
+      <div id="products-wrapper"></div>
             </div>
             <div class="tab-pane fade" id="received" role="tabpanel" aria-labelledby="received-tab">
               <!-- This will contain the same content but with different editability -->
@@ -258,7 +258,7 @@
           </div>
         </div>
       </div>
-      </form>
+    </form>
       </div>
   </div>
 </div>
@@ -272,7 +272,7 @@
     const currentDate = new Date();
     const userName = "{{ user_name }}";
     const isoDate = currentDate.toISOString().split('T')[0];
-    
+
     // Set the common date field
     $('#common-date').val(isoDate);
     
@@ -410,7 +410,7 @@
           `;
           
           receivedWrapper.append(receivedHtml);
-        });
+      });
       } else {
         receivedWrapper.html('<div class="alert alert-info">No pending warehouse requests found for this floor. Use the Requested tab to create new requests.</div>');
       }
@@ -494,7 +494,7 @@
       
       // Initially disable all quantity inputs
       $('.requested-qty, .received-qty, .received-qty-edit').prop('disabled', true);
-    }
+        }
 
     // Make sure all received quantities are properly collected on form submission
     $('form').on('submit', function(e) {

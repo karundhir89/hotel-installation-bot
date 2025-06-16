@@ -7,20 +7,7 @@
 <h2 class="text-center text-secondary mb-4 mt-4">Welcome, {{ name }}</h2>
 
 <div class="row justify-content-center">
-    {% if 'installation' in roles %}
-        <div class="col-lg-6 col-md-9 col-12 mb-4">
-            <div class="card action-card shadow border-0 h-100">
-                <div class="card-body text-center">
-                    <div class="icon-circle mb-3 bg-secondary text-white">
-                        <span class="material-icons md-36">construction</span>
-                    </div>
-                    <h5 class="card-title text-secondary font-weight-bold">Installation</h5>
-                    <p class="card-text text-muted">Manage and submit room installation checklists.</p>
-                    <a href="{% url 'installation_form' %}" class="btn btn-secondary btn-block btn-lg">Installation Form</a>
-                </div>
-            </div>
-        </div>
-    {% endif %}
+
 
     {% if 'inventory' in roles %}
         <div class="col-lg-6 col-md-9 col-12 mb-4">
@@ -49,6 +36,24 @@
             </div>
         </div>
 
+    {% endif %}
+        
+    {% if 'inventory' in roles or 'hotel_warehouse' in roles %}
+    
+        <div class="col-lg-6 col-md-9 col-12 mb-4">
+            <div class="card action-card shadow border-0 h-100">
+                <div class="card-body text-center">
+                    <div class="icon-circle mb-3 bg-secondary text-white">
+                        <span class="material-icons md-36">inventory</span>
+                    </div>
+                    <h5 class="card-title text-secondary font-weight-bold">Hotel Warehouse Inventory Receiver</h5>
+                    <p class="card-text text-muted">Record and manage warehouse shipment receipts.</p>
+                    <a href="{% url 'warehouse_receiver' %}" class="btn btn-secondary btn-block btn-lg">Warehouse Receiver</a>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+    {% if 'inventory' in roles %}
         <div class="col-lg-6 col-md-9 col-12 mb-4">
             <div class="card action-card shadow border-0 h-100">
                 <div class="card-body text-center">
@@ -61,35 +66,41 @@
                 </div>
             </div>
         </div>
-        
+    {% endif %}
+    {% if 'inventory' in roles or 'hotel_warehouse' in roles %}
         <div class="col-lg-6 col-md-9 col-12 mb-4">
             <div class="card action-card shadow border-0 h-100">
                 <div class="card-body text-center">
                     <div class="icon-circle mb-3 bg-secondary text-white">
                         <span class="material-icons md-36">domain</span>
                     </div>
-                    <h5 class="card-title text-secondary font-weight-bold">Hotel Warehouse</h5>
+                    <h5 class="card-title text-secondary font-weight-bold">Hotel Warehouse Manager</h5>
                     <p class="card-text text-muted">Manage warehouse inventory requests and fulfillment.</p>
                     <a href="{% url 'hotel_warehouse' %}" class="btn btn-secondary btn-block btn-lg">Warehouse</a>
                 </div>
             </div>
         </div>
         
+
+    {% endif %}
+
+
+    {% if 'installation' in roles %}
         <div class="col-lg-6 col-md-9 col-12 mb-4">
             <div class="card action-card shadow border-0 h-100">
                 <div class="card-body text-center">
                     <div class="icon-circle mb-3 bg-secondary text-white">
-                        <span class="material-icons md-36">inventory</span>
+                        <span class="material-icons md-36">construction</span>
                     </div>
-                    <h5 class="card-title text-secondary font-weight-bold">Warehouse Receiver</h5>
-                    <p class="card-text text-muted">Record and manage warehouse shipment receipts.</p>
-                    <a href="{% url 'warehouse_receiver' %}" class="btn btn-secondary btn-block btn-lg">Warehouse Receiver</a>
+                    <h5 class="card-title text-secondary font-weight-bold">Installation</h5>
+                    <p class="card-text text-muted">Manage and submit room installation checklists.</p>
+                    <a href="{% url 'installation_form' %}" class="btn btn-secondary btn-block btn-lg">Installation Form</a>
                 </div>
             </div>
         </div>
+    {% endif %}
         
         {# The Room Wise Products and Floor Wise Products cards have been moved to the header in frontend_base.html #}
 
-    {% endif %}
 </div>
 {% endblock %}

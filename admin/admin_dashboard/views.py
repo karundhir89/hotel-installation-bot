@@ -39,10 +39,10 @@ def my_view(request):
 		if user is not None:
 			if user.is_active:
 				login(request, user)
-				return HttpResponseRedirect("admin_dashboard:dashboard")
+				return redirect("admin_dashboard:dashboard")
 	except Exception as e:
 		print("error in my_view :::::::::::",e)
-	return HttpResponseRedirect("/admin/login")
+	return redirect("/admin/login")
 
 @login_required
 def change_password(request):
@@ -71,12 +71,12 @@ def show_login(request):
 	try:
 		print("user id :::: ",request.user)
 		if request.user.id is not None:
-				return HttpResponseRedirect('admin_dashboard:dashboard')
+				return redirect('admin_dashboard:dashboard')
 		else:
-			return HttpResponseRedirect('user_login')
+			return redirect('user_login')
 	except Exception as e:
 		print('error in  show_login',str(e))
-	return HttpResponseRedirect('admin_dashboard:dashboard')
+	return redirect('admin_dashboard:dashboard')
 
 @login_required
 def logout_view(request):
