@@ -220,7 +220,6 @@
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title" id="receiptDetailsModalLabel">Receipt Details</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" onclick="$('#receiptDetailsModal').modal('hide');"></button>
       </div>
       <div class="modal-body">
         <div class="row mb-3">
@@ -432,12 +431,34 @@
               `);
             }
             
-            // Current page info
-            paginationContainer.append(`
-              <li class="page-item disabled">
-                <span class="page-link">Page ${data.page} of ${data.total_pages}</span>
-              </li>
-            `);
+            // Page numbers
+            for (let num = 1; num <= data.total_pages; num++) {
+              if (num === data.page) {
+                paginationContainer.append(`
+                  <li class="page-item active">
+                    <span class="page-link">${num}</span>
+                  </li>
+                `);
+              } else if (num <= 4 || num > data.total_pages - 3) {
+                paginationContainer.append(`
+                  <li class="page-item">
+                    <a class="page-link page-nav" href="#" data-page="${num}">${num}</a>
+                  </li>
+                `);
+              } else if (num === 5 && data.page > 7) {
+                paginationContainer.append(`
+                  <li class="page-item disabled">
+                    <span class="page-link">...</span>
+                  </li>
+                `);
+              } else if (num === data.total_pages - 4 && data.page < data.total_pages - 6) {
+                paginationContainer.append(`
+                  <li class="page-item disabled">
+                    <span class="page-link">...</span>
+                  </li>
+                `);
+              }
+            }
             
             // Next button
             if (data.has_next) {

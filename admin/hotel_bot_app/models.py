@@ -62,12 +62,12 @@ class Inventory(models.Model):
     item = models.TextField(null=True, blank=True)
     client_id = models.TextField(null=True, blank=True)
     qty_ordered = models.IntegerField(null=True, blank=True)
+    quantity_shipped = models.IntegerField(null=True, blank=True, default=0)
     qty_received = models.IntegerField(null=True, blank=True)
-    quantity_installed = models.IntegerField(null=True, blank=True)
     quantity_available = models.IntegerField(null=True, blank=True)
     hotel_warehouse_quantity = models.IntegerField(null=True, blank=True, default=0)
     floor_quantity = models.IntegerField(null=True, blank=True, default=0)
-    quantity_shipped = models.IntegerField(null=True, blank=True, default=0)
+    quantity_installed = models.IntegerField(null=True, blank=True)
     class Meta:
         db_table = 'inventory'  # Ensure this matches the actual table name in PostgreSQL
 

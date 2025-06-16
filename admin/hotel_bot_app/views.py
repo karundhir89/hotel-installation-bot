@@ -1830,18 +1830,18 @@ def inventory_received(request):
                             record.damaged_qty = damaged_qty
                             record.save()
                             print(f"Updated record: received_qty={received_qty}, damaged_qty={damaged_qty}")
-                            
+                
                             # Update inventory with the difference
                             inventory = Inventory.objects.filter(
                                 client_id__iexact=client_item,
                                 item__iexact=client_item
                             ).first()
-                            
+                
                             if inventory:
                                 old_net = old_received - old_damaged
                                 new_net = received_qty - damaged_qty
                                 net_change = new_net - old_net
-                                
+                    
                                 inventory.qty_received = (inventory.qty_received or 0) + net_change
                                 inventory.quantity_available = (inventory.quantity_available or 0) + net_change
                                 inventory.save()
