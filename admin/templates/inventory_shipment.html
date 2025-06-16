@@ -94,7 +94,7 @@
     <div class="card-body p-4">
       <h3 class="mb-4 text-center text-secondary py-4">Shipment Form</h3>
       
-      <h4 class="form-title mb-4">Create New Shipment</h4>
+      <h4 class="form-title mb-4">Create New Container</h4>
 
       <form method="post" action="{% url 'inventory_shipment' %}" id="shipment-form">
         {% csrf_token %}
@@ -227,16 +227,34 @@
             {% if is_paginated %}
             <nav>
               <ul class="pagination justify-content-center">
-               {% if page_obj.has_previous %}
-                 <li class="page-item">
+                {% if page_obj.has_previous %}
+                  <li class="page-item">
                     <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
                   </li>
-               {% endif %}
-               <li class="page-item disabled">
-                 <span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
-               </li>
+                {% endif %}
+
+                {% for num in page_obj.paginator.page_range %}
+                  {% if num == page_obj.number %}
+                    <li class="page-item active">
+                      <span class="page-link">{{ num }}</span>
+                    </li>
+                  {% elif num <= 4 or num > page_obj.paginator.num_pages|add:"-3" %}
+                    <li class="page-item">
+                      <a class="page-link" href="?page={{ num }}">{{ num }}</a>
+                    </li>
+                  {% elif num == 5 and page_obj.number > 7 %}
+                    <li class="page-item disabled">
+                      <span class="page-link">...</span>
+                    </li>
+                  {% elif num == page_obj.paginator.num_pages|add:"-4" and page_obj.number < page_obj.paginator.num_pages|add:"-6" %}
+                    <li class="page-item disabled">
+                      <span class="page-link">...</span>
+                    </li>
+                  {% endif %}
+                {% endfor %}
+
                 {% if page_obj.has_next %}
-                 <li class="page-item">
+                  <li class="page-item">
                     <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
                   </li>
                 {% endif %}
@@ -561,7 +579,7 @@
             $('#editing_container_id').val(data.container_id);
             
             // Update form title to show we're editing
-            $('.form-title').text(`Editing Shipment: Container ID ${data.container_id}`);
+            $('.form-title').text(`Editing Container: ${data.container_id}`);
             
             // Add items to the table
             data.items.forEach(function(item, index) {

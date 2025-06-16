@@ -554,9 +554,7 @@ def add_room(request):
     if request.method == "POST":
         room_number = request.POST.get("room")
         floor = request.POST.get("floor")
-        king = request.POST.get("king")
-        double = request.POST.get("double")
-        exec_king = request.POST.get("exec_king")
+        bed = request.POST.get("bed")
         bath_screen = request.POST.get("bath_screen")
         left_desk = request.POST.get("left_desk")
         right_desk = request.POST.get("right_desk")
@@ -574,9 +572,7 @@ def add_room(request):
             RoomData.objects.create(
                 room=room_number,
                 floor=floor,
-                king=king,
-                double=double,
-                exec_king=exec_king,
+                bed=bed,
                 bath_screen=bath_screen,
                 left_desk=left_desk,
                 right_desk=right_desk,
@@ -598,16 +594,15 @@ def edit_room(request):
             room_id = request.POST.get("room_id")
             room = get_object_or_404(RoomData, id=room_id)
 
-            # Don't update room number
+            # Update room data
+            room.room = request.POST.get("room")
             room.floor = request.POST.get("floor")
-            room.king = request.POST.get("king")
-            room.double = request.POST.get("double")
-            room.exec_king = request.POST.get("exec_king")
+            room.bed = request.POST.get("bed")
             room.bath_screen = request.POST.get("bath_screen")
-            room.description = request.POST.get("description")
             room.left_desk = request.POST.get("left_desk")
             room.right_desk = request.POST.get("right_desk")
             room.to_be_renovated = request.POST.get("to_be_renovated")
+            room.description = request.POST.get("description")
 
             # Update Room Model if given
             room_model_id = request.POST.get("room_model")
@@ -1779,57 +1774,108 @@ def inventory_received(request):
             product_count = int(request.POST.get("product_count", "0"))
             
             # Check if this container ID already exists in InventoryReceived for this user
-            # If it exists, we'll treat this as an edit operation
             if not is_editing and final_container_id:
-                # Check if this exact container_id (not client_id fallback) exists for this user
                 existing_records = InventoryReceived.objects.filter(
                     container_id=final_container_id,
                     checked_by=user
                 )
                 if existing_records.exists():
-                    print(f"Container ID {final_container_id} already exists for this user - switching to edit mode")
                     is_editing = True
-                    # We'll delete existing records for this container and recreate them
-                    existing_records_count = existing_records.count()
                     existing_records.delete()
-                    print(f"Deleted {existing_records_count} existing records for this container")
-            
-            # Debug info
-            print(f"Form submission - container_id: {container_id}, container_id_field: {container_id_field}")
-            print(f"Form submission - using container_id: {final_container_id}, received_date: {received_date}")
-            print(f"Form submission - is_editing: {is_editing}, editing_record_id: {editing_record_id}")
-            print(f"Form submission - product_count: {product_count}")
             
             if is_editing and editing_record_id:
-                # Update the existing record - for now, we'll keep handling single edits
-                record = InventoryReceived.objects.get(id=editing_record_id)
-                client_item = record.client_id
-                received_qty = int(request.POST.get("received_qty_0") or "0")
-                damaged_qty = int(request.POST.get("damaged_qty_0") or "0")
-                
-                record.received_date = received_date
-                record.received_qty = received_qty
-                record.damaged_qty = damaged_qty
-                record.checked_by = user
-                record.save()
-                
-                # Update the inventory
-                inventory = Inventory.objects.filter(
-                    client_id__iexact=client_item,
-                    item__iexact=client_item
-                ).first()
-                
-                if inventory:
-                    # Calculate the difference for inventory adjustment
-                    old_received = record.received_qty
-                    old_damaged = record.damaged_qty
-                    net_change = (received_qty - damaged_qty) - (old_received - old_damaged)
+                try:
+                    print(f"Editing record ID: {editing_record_id}")
+                    # Get the original record to get the container ID
+                    original_record = InventoryReceived.objects.get(id=editing_record_id)
+                    container_id = original_record.container_id
+                    print(f"Container ID: {container_id}")
                     
-                    inventory.qty_received = (inventory.qty_received or 0) + net_change
-                    inventory.quantity_available = (inventory.quantity_available or 0) + net_change
-                    inventory.save()
-                
-                messages.success(request, "Inventory record updated successfully!")
+                    # Get all records for this container with their IDs
+                    container_records = InventoryReceived.objects.filter(
+                        container_id=container_id,
+                        checked_by=user
+                    )
+                    print(f"Found {container_records.count()} records for container {container_id}")
+                    
+                    # Process each item in the form
+                    success_count = 0
+                    for i in range(product_count):
+                        client_item = request.POST.get(f"client_item_{i}")
+                        received_qty = int(request.POST.get(f"received_qty_{i}") or "0")
+                        damaged_qty = int(request.POST.get(f"damaged_qty_{i}") or "0")
+                        record_id = request.POST.get(f"record_id_{i}")  # Get the unique record ID
+                        
+                        print(f"Processing item {i}: client_item={client_item}, received_qty={received_qty}, damaged_qty={damaged_qty}, record_id={record_id}")
+                        
+                        if received_qty == 0:
+                            continue
+                        
+                        # Find the specific record using its unique ID
+                        record = InventoryReceived.objects.filter(
+                            id=record_id,
+                            container_id=container_id,
+                            client_id=client_item
+                        ).first()
+                        
+                        if record:
+                            print(f"Found record to update: ID={record.id}, client_id={record.client_id}")
+                            # Store old values for inventory adjustment
+                            old_received = record.received_qty
+                            old_damaged = record.damaged_qty
+                            
+                            # Update the record
+                            record.received_date = received_date
+                            record.received_qty = received_qty
+                            record.damaged_qty = damaged_qty
+                            record.save()
+                            print(f"Updated record: received_qty={received_qty}, damaged_qty={damaged_qty}")
+                            
+                            # Update inventory with the difference
+                            inventory = Inventory.objects.filter(
+                                client_id__iexact=client_item,
+                                item__iexact=client_item
+                            ).first()
+                            
+                            if inventory:
+                                old_net = old_received - old_damaged
+                                new_net = received_qty - damaged_qty
+                                net_change = new_net - old_net
+                                
+                                inventory.qty_received = (inventory.qty_received or 0) + net_change
+                                inventory.quantity_available = (inventory.quantity_available or 0) + net_change
+                                inventory.save()
+                                print(f"Updated inventory: net_change={net_change}")
+                            
+                            success_count += 1
+                        else:
+                            print(f"No record found for ID={record_id}, client_item={client_item} in container {container_id}")
+                    
+                    print(f"Successfully updated {success_count} items")
+                    
+                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                        return JsonResponse({
+                            'success': True,
+                            'message': f'Successfully updated {success_count} inventory items!'
+                        })
+                    messages.success(request, f"Successfully updated {success_count} inventory items!")
+                    
+                except InventoryReceived.DoesNotExist:
+                    print(f"Record not found with ID {editing_record_id}")
+                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                        return JsonResponse({
+                            'success': False,
+                            'message': 'Record not found'
+                        })
+                    messages.error(request, "Record not found")
+                except Exception as e:
+                    print(f"Error updating record: {str(e)}")
+                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                        return JsonResponse({
+                            'success': False,
+                            'message': f'Error updating record: {str(e)}'
+                        })
+                    messages.error(request, f"Error updating record: {str(e)}")
             else:
                 # Create new records for each product in the container
                 success_count = 0
@@ -1838,15 +1884,9 @@ def inventory_received(request):
                     received_qty = int(request.POST.get(f"received_qty_{i}") or "0")
                     damaged_qty = int(request.POST.get(f"damaged_qty_{i}") or "0")
                     
-                    # Skip if no quantity received
                     if received_qty == 0:
                         continue
                         
-                    # Debug info for new record
-                    print(f"Creating record for client_item: {client_item}, received_qty: {received_qty}, damaged_qty: {damaged_qty}")
-                    
-                    # Create a new record - store the container_id with the record
-                    print(f"Creating record with container_id: {final_container_id}")
                     InventoryReceived.objects.create(
                         client_id=client_item,
                         item=client_item,
@@ -1854,10 +1894,9 @@ def inventory_received(request):
                         received_qty=received_qty,
                         damaged_qty=damaged_qty,
                         checked_by=user,
-                        container_id=final_container_id  # Store the final container_id 
+                        container_id=final_container_id
                     )
 
-                    # Update Inventory
                     inventory = Inventory.objects.filter(
                         client_id__iexact=client_item,
                         item__iexact=client_item
@@ -1871,28 +1910,39 @@ def inventory_received(request):
                     success_count += 1
 
                 if success_count > 0:
+                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                        return JsonResponse({
+                            'success': True,
+                            'message': f'Successfully received {success_count} inventory items!'
+                        })
                     messages.success(request, f"Successfully received {success_count} inventory items!")
                 else:
+                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                        return JsonResponse({
+                            'success': False,
+                            'message': 'No inventory items were received. Please enter quantities.'
+                        })
                     messages.warning(request, "No inventory items were received. Please enter quantities.")
             
-            return redirect("inventory_received")
+            if not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return redirect("inventory_received")
 
         except Exception as e:
             print("error ::", e)
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({
+                    'success': False,
+                    'message': f'Error saving received inventory: {str(e)}'
+                })
             messages.error(request, f"Error saving received inventory: {str(e)}")
+            return redirect("inventory_received")
 
-    # Get previous submissions - complete rewrite to fix duplicate container issue
+    # Get previous submissions
     previous_submissions = []
-    already_processed_ids = set()  # Keep track of IDs we've already processed
+    already_processed_ids = set()
     
     try:
-        # Debug info
-        print("Fetching previous submissions for inventory received...")
-        
-        # Use raw SQL query for maximum precision and no duplicates
         with connection.cursor() as cursor:
-            # Get distinct containers with their newest received date for this user
-            # Only include containers that actually have a valid container_id
             cursor.execute("""
                 SELECT 
                     ir.container_id as display_container_id,
@@ -1906,50 +1956,27 @@ def inventory_received(request):
             
             containers = cursor.fetchall()
             
-        print(f"Found {len(containers)} distinct containers for this user")
-            
-        # Process each unique container
         for container_row in containers:
-            container_id = container_row[0]  # The container ID or client ID fallback
-            latest_date = container_row[1]   # The newest date for this container
+            container_id = container_row[0]
+            latest_date = container_row[1]
             
             if not container_id:
-                print(f"Skipping empty container ID")
                 continue
                 
-            # Query all items for this specific container
             items = InventoryReceived.objects.filter(
                 checked_by=user
             ).filter(
-                # Use the appropriate field based on whether this is a container ID or client ID
                 Q(container_id=container_id) | 
                 (Q(client_id=container_id) & (Q(container_id__isnull=True) | Q(container_id='')))
             ).order_by('-received_date')
             
-            # Skip if somehow we got no items (shouldn't happen)
             if not items.exists():
-                print(f"No items found for container {container_id} despite SQL result")
                 continue
                 
-            # Add container group to our dictionary
-            container_groups = {}
-            container_groups[container_id] = list(items)
-            
-            # Create a summary entry for this container
-            if not items:
-                continue
-            
-            # Get first item for date and user info
             first_item = items[0]
-            
-            # Calculate totals
-            product_count = len(items)  # Count all received items in this container
-            damaged_count = sum(1 for item in items if item.damaged_qty > 0)  # Count items with damage
-            
-            # Format date
+            product_count = len(items)
+            damaged_count = sum(1 for item in items if item.damaged_qty > 0)
             received_date = first_item.received_date.strftime('%Y-%m-%d') if first_item.received_date else 'N/A'
-            
-            print(f"Adding container {container_id} with {product_count} products, {damaged_count} damaged")
             
             previous_submissions.append({
                 'id': first_item.id,
@@ -1967,7 +1994,7 @@ def inventory_received(request):
     
     # Pagination for previous submissions
     page = request.GET.get('page', 1)
-    paginator = Paginator(previous_submissions, 10)  # 10 submissions per page
+    paginator = Paginator(previous_submissions, 10)
     try:
         previous_submissions_page = paginator.page(page)
     except PageNotAnInteger:
@@ -2082,7 +2109,7 @@ def inventory_pull(request):
                     )
                     
                     # Get the product data for logging
-                    prm = ProductData.objects.get(id=product_id)
+                prm = ProductData.objects.get(id=product_id)
                     
                 messages.success(request, f"Warehouse request for {len(product_ids)} items submitted successfully!")
                 
@@ -2845,8 +2872,8 @@ def get_floor_products(request):
                     "requested_quantity": request['quantity_requested'],
                     "received_quantity": request['quantity_received'],
                     "warehouse_requests": [request]  # Include this single request
-                })
-        
+            })
+            
         return JsonResponse({
             "success": True,
             "products": result_products,
