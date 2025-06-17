@@ -110,6 +110,12 @@
       <form method="post" action="{% url 'warehouse_receiver' %}" id="warehouse-receiver-form">
         {% csrf_token %}
         
+        <!-- Add hidden field to track edit mode -->
+        <input type="hidden" name="is_edit_mode" id="is_edit_mode" value="0">
+        <input type="hidden" name="original_reference_id" id="original_reference_id" value="">
+        <input type="hidden" name="receipt_id" id="receipt_id" value="">
+        <input type="hidden" name="delete_previous_items" id="delete_previous_items" value="0">
+        
         <!-- Reference ID -->
         <div class="row mb-4">
           <div class="col-md-6">
@@ -133,6 +139,7 @@
                 <div class="col-md-4">
                   <label class="form-label">Client Item #</label>
                   <input type="text" class="form-control client-item" name="client_items[]" placeholder="Enter Client Item #" required>
+                  <input type="hidden" class="item-id" name="item_ids[]" value="">
                 </div>
                 <div class="col-md-5">
                   <label class="form-label">Product Name</label>
@@ -285,6 +292,7 @@
       const newRow = $('#items-container .item-row').first().clone();
       newRow.find('input').val(''); // Clear input values
       newRow.find('input[name="quantities[]"]').val(1); // Reset quantity to 1
+      newRow.find('.item-id').val(''); // Clear item ID for new rows
       $('#items-container').append(newRow);
     });
     
@@ -311,6 +319,16 @@
       $('#items-container .item-row').not(firstRow).remove();
       firstRow.find('input').val('');
       firstRow.find('input[name="quantities[]"]').val(1);
+      firstRow.find('.item-id').val('');
+      
+      // Reset edit mode
+      $('#is_edit_mode').val('0');
+      $('#original_reference_id').val('');
+      $('#receipt_id').val('');
+      $('#delete_previous_items').val('0');
+      
+      // Reset submit button text
+      $('button[type="submit"]').text('Submit');
       
       toastr.info('Form has been cleared.');
     });
@@ -412,7 +430,7 @@
                     <td>${receipt.total_quantity}</td>
                     <td>${receipt.received_by}</td>
                     <td>
-                      <button type="button" class="btn btn-secondary btn-sm view-details" data-id="${receipt.id}">View Details</button>
+                      <button type="button" class="btn btn-secondary btn-sm edit-receipt" data-reference-id="${receipt.reference_id}" data-receipt-id="${receipt.id}">Edit</button>
                     </td>
                   </tr>
                 `);
@@ -474,10 +492,12 @@
             $('#receipts-loading').addClass('d-none');
             $('#receipts-container').removeClass('d-none');
             
-            // Re-bind click handlers for view details buttons
-            $('.view-details').on('click', function() {
-              const receiptId = $(this).data('id');
-              loadReceiptDetails(receiptId);
+            // Re-bind click handlers for edit buttons
+            $('.edit-receipt').on('click', function() {
+              const referenceId = $(this).data('reference-id');
+              const receiptId = $(this).data('receipt-id');
+              console.log(`Edit button clicked: reference_id=${referenceId}, receipt_id=${receiptId}`);
+              loadReceiptForEdit(receiptId);
             });
           } else {
             // Show error
@@ -499,42 +519,75 @@
       loadReceipts(page);
     });
     
-    // Function to load receipt details
-    function loadReceiptDetails(receiptId) {
+    // Function to load receipt for editing
+    function loadReceiptForEdit(receiptId) {
+      console.log("Loading receipt with receipt ID:", receiptId);
+      
+      // Check if receipt ID is empty
+      if (!receiptId) {
+        toastr.error("Receipt ID is missing. Cannot load receipt for editing.");
+        return;
+      }
+      
       // Make AJAX request to get receipt details
       $.ajax({
         url: "{% url 'get_warehouse_receipt_details' %}",
         type: "GET",
         data: { receipt_id: receiptId },
         success: function(data) {
+          console.log("Response data:", data);
           if (data.success) {
-            // Populate modal with receipt details
-            $('#modal-reference-id').text(data.receipt.reference_id);
-            $('#modal-received-date').text(data.receipt.received_date);
-            $('#modal-received-by').text(data.receipt.received_by);
+            // Clear the current form
+            $('#clear-form-btn').click();
             
-            // Clear and populate items table
-            const itemsList = $('#modal-items-list');
-            itemsList.empty();
+            // Set edit mode
+            $('#is_edit_mode').val('1');
+            $('#original_reference_id').val(data.receipt.reference_id);
+            $('#receipt_id').val(receiptId);
+            $('#delete_previous_items').val('1');
             
-            data.items.forEach(function(item) {
-              itemsList.append(`
-                <tr>
-                  <td>${item.client_id}</td>
-                  <td>${item.product_name}</td>
-                  <td>${item.quantity}</td>
-                </tr>
-              `);
-            });
+            // Populate form with receipt details
+            $('#reference_id').val(data.receipt.reference_id);
+            $('#received_date').val(data.receipt.received_date);
             
-            // Show the modal
-            $('#receiptDetailsModal').modal('show');
+            // Remove all item rows except the first one
+            const firstRow = $('#items-container .item-row').first();
+            $('#items-container .item-row').not(firstRow).remove();
+            
+            // Populate first row
+            if (data.items.length > 0) {
+              firstRow.find('.client-item').val(data.items[0].client_id);
+              firstRow.find('.product-name').val(data.items[0].product_name);
+              firstRow.find('input[name="quantities[]"]').val(data.items[0].quantity);
+              firstRow.find('.item-id').val(data.items[0].id);
+              
+              // Add rows for additional items
+              for (let i = 1; i < data.items.length; i++) {
+                const item = data.items[i];
+                $('#add-item-btn').click();
+                const newRow = $('#items-container .item-row').last();
+                newRow.find('.client-item').val(item.client_id);
+                newRow.find('.product-name').val(item.product_name);
+                newRow.find('input[name="quantities[]"]').val(item.quantity);
+                newRow.find('.item-id').val(item.id);
+              }
+            }
+            
+            // Scroll to the top of the form
+            $('html, body').animate({
+              scrollTop: $("#warehouse-receiver-form").offset().top - 100
+            }, 500);
+            
+            // Update form submit button text
+            $('button[type="submit"]').text('Update Receipt');
+            
+            toastr.info('Receipt loaded for editing. Make your changes and submit to update.');
           } else {
-            toastr.error(data.message || 'Failed to load receipt details');
+            toastr.error(data.message || 'Failed to load receipt for editing');
           }
         },
         error: function() {
-          toastr.error('Error loading receipt details');
+          toastr.error('Error loading receipt for editing');
         }
       });
     }
@@ -564,6 +617,32 @@
         toastr.warning(msg.text);
       } else if (msg.tag === "info") {
         toastr.info(msg.text);
+      }
+    });
+
+    // Handle form submission
+    $('#warehouse-receiver-form').on('submit', function(e) {
+      // Add item IDs to form for edit mode
+      if ($('#is_edit_mode').val() === '1') {
+        console.log("Submitting in edit mode with receipt ID:", $('#receipt_id').val());
+        
+        // We need to preserve the edit mode and receipt ID during submission
+        const receiptId = $('#receipt_id').val();
+        const isEditMode = $('#is_edit_mode').val();
+        const originalReferenceId = $('#original_reference_id').val();
+        
+        // Check if we have a valid receipt ID for edit mode
+        if (!receiptId) {
+          e.preventDefault();
+          toastr.error("Cannot update: Receipt ID is missing");
+          return false;
+        }
+        
+        console.log("Form is being submitted in edit mode:", {
+          receiptId: receiptId,
+          isEditMode: isEditMode,
+          originalReferenceId: originalReferenceId
+        });
       }
     });
   });

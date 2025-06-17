@@ -3844,6 +3844,14 @@ def warehouse_receiver(request):
             reference_id = request.POST.get("reference_id")
             received_date_str = request.POST.get("received_date")
             
+            # Get edit mode flags
+            is_editing = request.POST.get("is_edit_mode") == "1"
+            original_reference_id = request.POST.get("original_reference_id", "").strip()
+            delete_previous_items = request.POST.get("delete_previous_items") == "1"
+            
+            # Log edit mode information
+            print(f"Processing form - is_editing: {is_editing}, original_reference_id: {original_reference_id}, delete_previous: {delete_previous_items}")
+            
             # Parse the received date
             received_date = parse_date(received_date_str) if received_date_str else now().date()
             
@@ -3860,6 +3868,19 @@ def warehouse_receiver(request):
             if not client_items:
                 messages.error(request, "No items added to receipt")
                 return redirect("warehouse_receiver")
+            
+            # If editing and we need to delete previous items
+            if is_editing and delete_previous_items and original_reference_id:
+                # Delete existing items with this reference ID
+                print(f"Deleting previous items for reference_id: {original_reference_id}")
+                deleted_count = HotelWarehouse.objects.filter(reference_id=original_reference_id).delete()[0]
+                print(f"Deleted {deleted_count} previous items")
+                
+                # If reference ID has changed, use the new one, otherwise keep using the original
+                if reference_id != original_reference_id:
+                    print(f"Reference ID changed from {original_reference_id} to {reference_id}")
+                else:
+                    print(f"Reference ID unchanged: {reference_id}")
             
             # Create receipt items
             for i in range(len(client_items)):
@@ -3908,7 +3929,10 @@ def warehouse_receiver(request):
             # Update all inventory warehouse quantities to ensure consistency only after form submission
             update_inventory_warehouse_quantities()
             
-            messages.success(request, f"Warehouse receipt with {len(client_items)} items created successfully")
+            if is_editing:
+                messages.success(request, f"Warehouse receipt '{reference_id}' updated with {len(client_items)} items successfully")
+            else:
+                messages.success(request, f"Warehouse receipt with {len(client_items)} items created successfully")
             return redirect("warehouse_receiver")
             
         except Exception as e:
@@ -3928,7 +3952,11 @@ def get_warehouse_receipt_details(request):
     """
     API endpoint to get details of a specific warehouse receipt
     """
-    reference_id = request.GET.get('receipt_id')
+    # Try to get the reference ID (which is what we want to filter by)
+    # The frontend might send either receipt_id or reference_id
+    reference_id = request.GET.get('receipt_id') or request.GET.get('reference_id')
+    
+    print(f"get_warehouse_receipt_details - received reference_id: {reference_id}")
     
     if not reference_id:
         return JsonResponse({'success': False, 'message': 'Reference ID is required'})
