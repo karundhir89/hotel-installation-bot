@@ -281,6 +281,14 @@
     $('#tabs-section').hide();
     $('#no-products-message').show();
 
+    // Handle Enter key press in floor number input
+    $('#floor_number').on('keypress', function(e) {
+      if (e.which === 13) { // Enter key
+        e.preventDefault();
+        $('#search_floor').click(); // Trigger search button click
+      }
+    });
+
     function renderProducts(products, data) {
       // Show common fields and tabs section when products are loaded
       $('#common-fields').show();

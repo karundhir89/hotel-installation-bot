@@ -283,6 +283,22 @@
   $(document).ready(function () {
     const userName = "{{ user_name }}";
 
+    // Prevent form submission on Enter key
+    $(document).on('keypress', 'form input', function(e) {
+      if (e.which === 13) { // Enter key
+        e.preventDefault();
+        return false;
+      }
+    });
+
+    // Prevent form submission on Enter key in the entire form
+    $('#shipment-form').on('keypress', function(e) {
+      if (e.which === 13) { // Enter key
+        e.preventDefault();
+        return false;
+      }
+    });
+
     // Function to update total quantity
     function updateTotalQuantity() {
       let total = 0;
@@ -420,6 +436,12 @@
 
     // Set up the form submission
     $('#shipment-form').on('submit', function(e) {
+      // Only allow submission through the submit button
+      if (!$(document.activeElement).is('button[type="submit"]')) {
+        e.preventDefault();
+        return false;
+      }
+
       // Clear the dynamic form data container only
       $('#form-data-container').empty();
       
