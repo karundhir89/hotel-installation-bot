@@ -79,6 +79,7 @@ class HotelWarehouse(models.Model):
     reference_id = models.CharField(max_length=255)  # Warehouse Container ID 
     client_item = models.CharField(max_length=255)
     quantity_received = models.PositiveIntegerField(default=0)
+    damaged_qty = models.PositiveIntegerField(default=0)
     checked_by = models.ForeignKey('InvitedUser', on_delete=models.SET_NULL, null=True, blank=True)
     received_date = models.DateField(null=True, blank=True)
 
@@ -93,6 +94,7 @@ class WarehouseRequest(models.Model):
     floor_number = models.IntegerField()
     client_item = models.CharField(max_length=255)
     requested_by = models.ForeignKey('InvitedUser', on_delete=models.SET_NULL, null=True, blank=True)
+    received_by = models.ForeignKey('InvitedUser', null=True, blank=True, on_delete=models.SET_NULL , related_name='received_requests')
     quantity_requested = models.PositiveIntegerField(default=0)
     quantity_received = models.PositiveIntegerField(default=0)
     quantity_sent = models.PositiveIntegerField(default=0)
@@ -249,6 +251,21 @@ class Shipping(models.Model):
         return f"Shipment {self.bol} - {self.item} to Client {self.client_id}"
     class Meta:
         db_table = "shipping"
+
+class WarehouseShipment(models.Model):
+    client_id = models.CharField(max_length=255)
+    item = models.CharField(max_length=255)
+    ship_date = models.DateField()
+    ship_qty = models.PositiveIntegerField()
+    reference_id = models.CharField(max_length=100)
+    checked_by = models.ForeignKey(InvitedUser, on_delete=models.SET_NULL, null=True, blank=True)
+    expected_arrival_date = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Warehouse Shipment {self.reference_id} - {self.item}"
+    
+    class Meta:
+        db_table = "warehouse_shipment"
 
 class PullInventory(models.Model):
     client_id =  models.CharField(max_length=255)

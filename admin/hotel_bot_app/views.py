@@ -1836,16 +1836,16 @@ def inventory_received(request):
                                 client_id__iexact=client_item,
                                 item__iexact=client_item
                             ).first()
-                
+
+                            old_received = record.received_qty
+                            old_damaged = record.damaged_qty
+
+                            received_diff = received_qty - old_received
+                            damaged_diff = damaged_qty - old_damaged
                             if inventory:
-                                old_net = old_received - old_damaged
-                                new_net = received_qty - damaged_qty
-                                net_change = new_net - old_net
-                    
-                                inventory.qty_received = (inventory.qty_received or 0) + net_change
-                                inventory.quantity_available = (inventory.quantity_available or 0) + net_change
+                                inventory.qty_received = (inventory.qty_received or 0) + received_diff
+                                inventory.quantity_available = (inventory.quantity_available or 0) + (received_diff - damaged_diff)
                                 inventory.save()
-                                print(f"Updated inventory: net_change={net_change}")
                             
                             success_count += 1
                         else:
@@ -1903,7 +1903,7 @@ def inventory_received(request):
                     ).first()
                     
                     if inventory:
-                        inventory.qty_received = (inventory.qty_received or 0) + (received_qty - damaged_qty)
+                        inventory.qty_received = (inventory.qty_received or 0) + (received_qty)
                         inventory.quantity_available = (inventory.quantity_available or 0) + (received_qty - damaged_qty)
                         inventory.save()
                         
@@ -2065,6 +2065,8 @@ def inventory_pull(request):
     user_id = request.session.get("user_id")
     user_name = ""
 
+
+
     if user_id:
         try:
             user = InvitedUser.objects.get(id=user_id)
@@ -2072,6 +2074,18 @@ def inventory_pull(request):
         except InvitedUser.DoesNotExist:
             pass
     
+    previous_submissions = []
+    
+    try:
+        previous_submissions = (
+            WarehouseRequest.objects
+            .select_related('requested_by', 'received_by')
+            .order_by('-id')[:20]  # Show last 20 submissions, adjust as needed
+        )
+    except Exception as e:
+        previous_submissions = []
+
+
     if request.method == "POST":
         try:
             # Get common data
@@ -2147,6 +2161,7 @@ def inventory_pull(request):
                             
                             # Update the received quantity
                             warehouse_request.quantity_received = received_qty
+                            warehouse_request.received_by = user
                             
                             # Update sent status based on whether requested equals received
                             warehouse_request.sent = (warehouse_request.quantity_received == warehouse_request.quantity_requested)
@@ -2257,14 +2272,23 @@ def inventory_pull(request):
             return redirect('inventory_pull')
             
     return render(request, "inventory_pull.html", {
-        "user_name": user_name
+        "user_name": user_name,
+        "previous_submissions": previous_submissions,
     })
 
 @session_login_required
 def hotel_warehouse(request):
+    previous_submissions = (
+        WarehouseRequest.objects
+        .select_related('requested_by', 'received_by')
+        .order_by('-id')[:30]  # Show last 30, adjust as needed
+    )
+    
     if request.method == 'POST':
         action = request.POST.get('action')
         floor_number = request.POST.get('floor_number')
+
+
         
         if action == 'update_sent_qty':
             try:
@@ -2397,7 +2421,7 @@ def hotel_warehouse(request):
             'sent': True if all_sent else False
         })
     
-    return render(request, 'hotel_warehouse.html', {'warehouse_requests': warehouse_data})
+    return render(request, 'hotel_warehouse.html', {"previous_submissions": previous_submissions,'warehouse_requests': warehouse_data})
 
 @session_login_required
 def inventory_received_item_num(request):
@@ -3857,7 +3881,8 @@ def warehouse_receiver(request):
             
             # Get the arrays of data
             client_items = request.POST.getlist("client_items[]")
-            quantities = request.POST.getlist("quantities[]")
+            quantities = request.POST.getlist("quantities[]")  # Now these are received quantities
+            damaged_quantities = request.POST.getlist("damaged_quantities[]")  # New damaged quantities field
             product_names = request.POST.getlist("product_names[]")
             
             # Validate input
@@ -3869,83 +3894,61 @@ def warehouse_receiver(request):
                 messages.error(request, "No items added to receipt")
                 return redirect("warehouse_receiver")
             
-            # If editing and we need to delete previous items
-            if is_editing and delete_previous_items and original_reference_id:
-                # Delete existing items with this reference ID
-                print(f"Deleting previous items for reference_id: {original_reference_id}")
-                deleted_count = HotelWarehouse.objects.filter(reference_id=original_reference_id).delete()[0]
-                print(f"Deleted {deleted_count} previous items")
+            # Check if we're in edit mode
+            if is_editing and original_reference_id:
+                # If editing and the reference ID has changed, make sure the new one doesn't exist
+                if reference_id != original_reference_id and HotelWarehouse.objects.filter(reference_id=reference_id).exists():
+                    messages.error(request, f"Cannot change reference ID to '{reference_id}' as it already exists")
+                    return redirect("warehouse_receiver")
                 
-                # If reference ID has changed, use the new one, otherwise keep using the original
-                if reference_id != original_reference_id:
-                    print(f"Reference ID changed from {original_reference_id} to {reference_id}")
-                else:
-                    print(f"Reference ID unchanged: {reference_id}")
+                # Delete previous items if requested
+                if delete_previous_items:
+                    deleted_count = HotelWarehouse.objects.filter(reference_id=original_reference_id).delete()[0]
+                    print(f"Deleted {deleted_count} previous items for reference ID '{original_reference_id}'")
             
-            # Create receipt items
-            for i in range(len(client_items)):
-                client_id = client_items[i]
-                quantity = int(quantities[i]) if i < len(quantities) and quantities[i] else 1
+            # Create new warehouse receipt entries
+            for i, client_item in enumerate(client_items):
+                received_qty = int(quantities[i]) if i < len(quantities) and quantities[i] else 0
+                damaged_qty = int(damaged_quantities[i]) if i < len(damaged_quantities) and damaged_quantities[i] else 0
                 
-                # Create the warehouse receipt item
+                # Skip if received quantity is 0
+                if received_qty == 0 and damaged_qty == 0:
+                    continue
+                
+                # Create the warehouse receipt
                 HotelWarehouse.objects.create(
                     reference_id=reference_id,
-                    client_item=client_id,
-                    quantity_received=quantity,
-                    checked_by=user,  # Store the current user
-                    received_date=received_date  # Store the received date
+                    client_item=client_item,
+                    quantity_received=received_qty,
+                    damaged_qty=damaged_qty,  # Add the damaged quantity
+                    checked_by=user,
+                    received_date=received_date
                 )
                 
-                # Update inventory if needed
-                try:
-                    # Use case-insensitive lookup for client_id
-                    inventory = Inventory.objects.filter(client_id__iexact=client_id).first()
-                    if not inventory:
-                        # If not found with case-insensitive lookup, log warning
-                        logger.warning(f"Inventory not found for client_id: {client_id}")
-                        continue
-                        
-                    # Don't update quantity_available, it should be managed separately
-                    # inventory.quantity_available = (inventory.quantity_available or 0) + quantity
-                    
-                    # Calculate the total quantity from HotelWarehouse for this client item (case-insensitive)
-                    # First get all possible case variations of this client_id from HotelWarehouse
-                    client_item_variations = HotelWarehouse.objects.filter(
-                        client_item__iexact=client_id
-                    ).values_list('client_item', flat=True).distinct()
-                    
-                    # Then sum quantities for all variations
-                    total_warehouse_qty = HotelWarehouse.objects.filter(
-                        client_item__in=list(client_item_variations)
-                    ).aggregate(total=Sum('quantity_received'))['total'] or 0
-                    
-                    # Update hotel_warehouse_quantity field with the total from HotelWarehouse
-                    inventory.hotel_warehouse_quantity = total_warehouse_qty
-                    inventory.save()
-                except Exception as e:
-                    # Log any other errors
-                    logger.error(f"Error updating inventory for client_id {client_id}: {e}")
+                # Update inventory
+                inventory_item = Inventory.objects.filter(client_id__iexact=client_item).first()
+                if inventory_item:
+                    # Only add to inventory for items that aren't damaged
+                    inventory_item.hotel_warehouse_quantity = (inventory_item.hotel_warehouse_quantity or 0) + received_qty
+                    inventory_item.save()
+                    print(f"Updated inventory for {client_item}: added {received_qty} to hotel warehouse quantity")
             
-            # Update all inventory warehouse quantities to ensure consistency only after form submission
+            # Call function to update inventory quantities
             update_inventory_warehouse_quantities()
             
             if is_editing:
-                messages.success(request, f"Warehouse receipt '{reference_id}' updated with {len(client_items)} items successfully")
+                messages.success(request, "Warehouse receipt updated successfully")
             else:
-                messages.success(request, f"Warehouse receipt with {len(client_items)} items created successfully")
-            return redirect("warehouse_receiver")
+                messages.success(request, "Warehouse receipt created successfully")
             
+            return redirect("warehouse_receiver")
+        
         except Exception as e:
-            logger.error(f"Error in warehouse_receiver POST: {e}", exc_info=True)
-            messages.error(request, f"Error processing warehouse receipt: {str(e)}")
+            print(f"Error in warehouse_receiver: {e}")
+            messages.error(request, f"Error: {str(e)}")
             return redirect("warehouse_receiver")
     
-    # No need to fetch previous receipts here anymore as they'll be loaded via AJAX
-    context = {
-        'user_name': user.name if user else ""
-    }
-    
-    return render(request, "warehouse_receiver.html", context)
+    return render(request, "warehouse_receiver.html", {"user_name": user.name if user else ""})
 
 @session_login_required
 def get_warehouse_receipt_details(request):
@@ -3964,6 +3967,7 @@ def get_warehouse_receipt_details(request):
     try:
         # Get all items with this reference ID
         items = HotelWarehouse.objects.filter(reference_id=reference_id)
+        itemsqty = WarehouseShipment.objects.filter(reference_id=reference_id)
         
         if not items.exists():
             return JsonResponse({'success': False, 'message': 'Receipt not found'})
@@ -4012,11 +4016,17 @@ def get_warehouse_receipt_details(request):
             except Exception as e:
                 logger.warning(f"Error looking up product name for {item.client_item}: {e}")
             
+            # Find the matching shipment item for this warehouse item
+            matching_shipment = itemsqty.filter(client_id__iexact=item.client_item).first()
+            ship_qty = matching_shipment.ship_qty if matching_shipment else 0
+            
             items_data.append({
                 'id': item.id,
-                'client_id': item.client_item,
+                'client_item': item.client_item,  # Use consistent field name
                 'product_name': product_name,
-                'quantity': item.quantity_received
+                'ship_qty': ship_qty,  # Use the ship_qty from the matching shipment
+                'quantity_received': item.quantity_received,  # Use field name from the model
+                'damaged_qty': item.damaged_qty  # Add damaged quantity
             })
         
         return JsonResponse({
@@ -4203,3 +4213,315 @@ def get_warehouse_receipts(request):
             'success': False,
             'message': str(e)
         })
+
+@session_login_required
+def warehouse_shipment(request):
+    user_id = request.session.get("user_id")
+    user_name = ""
+
+    if user_id:
+        try:
+            user = InvitedUser.objects.get(id=user_id)
+            user_name = user.name
+        except InvitedUser.DoesNotExist:
+            pass
+
+    if request.method == "POST":
+        try:
+            # Get common form fields
+            ship_date_str = request.POST.get("ship_date")
+            expected_arrival_date_str = request.POST.get("expected_arrival_date")
+            tracking_info = request.POST.get("tracking_info")
+            
+            # Check if this is an edit operation
+            is_editing = request.POST.get("is_editing") == "1"
+            editing_reference_id = request.POST.get("editing_reference_id", "").strip()
+            
+            # Debug logging
+            print(f"Form submission - is_editing value: '{request.POST.get('is_editing')}'")
+            print(f"Form submission - is_editing: {is_editing}, editing_reference_id: '{editing_reference_id}'")
+            print(f"Current tracking_info (Reference ID): '{tracking_info}'")
+            
+            # Parse dates
+            if ship_date_str:
+                ship_date = make_aware(datetime.strptime(ship_date_str, "%Y-%m-%d"))
+            else:
+                ship_date = None
+            
+            if expected_arrival_date_str:
+                expected_arrival_date = make_aware(datetime.strptime(expected_arrival_date_str, "%Y-%m-%d"))
+            else:
+                expected_arrival_date = None
+                
+            # Get multiple items data
+            client_items = request.POST.getlist("client_items")
+            product_names = request.POST.getlist("product_names")
+            quantities = request.POST.getlist("quantities")
+            item_ids = request.POST.getlist("item_ids")  # Get the IDs of existing items when editing
+            
+            # Debug logging
+            print(f"Items to process: {len(client_items)}")
+            print(f"Client items: {client_items}")
+            print(f"Item IDs: {item_ids}")
+            
+            # Check if we have items to process
+            if not client_items:
+                messages.error(request, "No items added to shipment.")
+                return redirect("warehouse_shipment")
+            
+            # Check if this reference ID already exists (regardless of edit flag)
+            container_exists = False
+            if tracking_info and not is_editing:
+                existing_count = WarehouseShipment.objects.filter(reference_id=tracking_info).count()
+                if existing_count > 0:
+                    container_exists = True
+                    print(f"Reference ID '{tracking_info}' already exists with {existing_count} items")
+                    messages.error(request, f"Reference ID '{tracking_info}' already exists. Please use a different ID or edit the existing one.")
+                    return redirect("warehouse_shipment")
+            
+            # Handle editing differently - don't delete and recreate
+            if is_editing and editing_reference_id:
+                # Get existing items
+                existing_items = WarehouseShipment.objects.filter(reference_id=editing_reference_id)
+                existing_item_ids = list(existing_items.values_list('id', flat=True))
+                
+                # If the reference ID has changed, update all existing items
+                if tracking_info != editing_reference_id:
+                    print(f"Reference ID changed from '{editing_reference_id}' to '{tracking_info}'")
+                    # Check if the new reference ID already exists
+                    if WarehouseShipment.objects.filter(reference_id=tracking_info).exists():
+                        messages.error(request, f"Cannot change reference ID to '{tracking_info}' as it already exists.")
+                        return redirect("warehouse_shipment")
+                    
+                    # Update the reference ID for all existing items
+                    existing_items.update(reference_id=tracking_info)
+                
+                # Track which items we've processed to identify which to delete later
+                processed_ids = []
+                
+                # Process each item
+                for i in range(len(client_items)):
+                    client_item = client_items[i]
+                    qty_shipped = int(quantities[i]) if i < len(quantities) and quantities[i] else 0
+                    item_id = item_ids[i] if i < len(item_ids) and item_ids[i] else None
+                    
+                    if item_id and item_id.isdigit():
+                        # This is an existing item, update it
+                        item_id = int(item_id)
+                        processed_ids.append(item_id)
+                        try:
+                            item = WarehouseShipment.objects.get(id=item_id)
+                            item.client_id = client_item
+                            item.item = client_item
+                            item.ship_date = ship_date
+                            item.ship_qty = qty_shipped
+                            item.reference_id = tracking_info
+                            item.checked_by = user
+                            item.expected_arrival_date = expected_arrival_date
+                            item.save()
+                            print(f"Updated item ID {item_id}")
+                        except WarehouseShipment.DoesNotExist:
+                            # Item ID no longer exists, create a new one
+                            new_item = WarehouseShipment.objects.create(
+                                client_id=client_item,
+                                item=client_item,
+                                ship_date=ship_date,
+                                ship_qty=qty_shipped,
+                                reference_id=tracking_info,
+                                checked_by=user,
+                                expected_arrival_date=expected_arrival_date
+                            )
+                            processed_ids.append(new_item.id)
+                            print(f"Created new item (ID {new_item.id}) as existing ID {item_id} not found")
+                    else:
+                        # This is a new item added during editing
+                        new_item = WarehouseShipment.objects.create(
+                            client_id=client_item,
+                            item=client_item,
+                            ship_date=ship_date,
+                            ship_qty=qty_shipped,
+                            reference_id=tracking_info,
+                            checked_by=user,
+                            expected_arrival_date=expected_arrival_date
+                        )
+                        processed_ids.append(new_item.id)
+                        print(f"Added new item with ID {new_item.id}")
+                
+                # Delete items that were removed during editing
+                for item_id in existing_item_ids:
+                    if item_id not in processed_ids:
+                        WarehouseShipment.objects.filter(id=item_id).delete()
+                        print(f"Deleted item with ID {item_id}")
+                
+                messages.success(request, f"Updated warehouse shipment with {len(client_items)} items successfully!")
+            else:
+                # Not editing - create new items
+                for i in range(len(client_items)):
+                    client_item = client_items[i]
+                    qty_shipped = int(quantities[i]) if i < len(quantities) and quantities[i] else 0
+                    
+                    # Save the warehouse shipment entry
+                    WarehouseShipment.objects.create(
+                        client_id=client_item,
+                        item=client_item,
+                        ship_date=ship_date,
+                        ship_qty=qty_shipped,
+                        reference_id=tracking_info,
+                        checked_by=user,
+                        expected_arrival_date=expected_arrival_date
+                    )
+                
+                messages.success(request, f"New warehouse shipment with {len(client_items)} items submitted!")
+            
+            return redirect("warehouse_shipment")
+
+        except Exception as e:
+            print("error ::", e)
+            messages.error(request, f"Error submitting warehouse shipment: {str(e)}")
+
+    # Get previous submissions (grouped by reference ID)
+    previous_submissions = []
+    
+    # Use values to get unique reference IDs and annotate to count items
+    container_data = WarehouseShipment.objects.values('reference_id').annotate(
+        product_count=Count('id'),
+        id=Min('id')  # Use the lowest ID as a reference
+    ).order_by('-id')  # Sort by newest first
+    
+    # For each container, get additional details from a representative item
+    for container in container_data:
+        # Get the first item for this container
+        reference_item = WarehouseShipment.objects.filter(reference_id=container['reference_id']).first()
+        
+        if reference_item:
+            previous_submissions.append({
+                'id': reference_item.id,
+                'reference_id': reference_item.reference_id,
+                'ship_date': reference_item.ship_date,
+                'expected_arrival': reference_item.expected_arrival_date,
+                'product_count': container['product_count'],
+                'checked_by': reference_item.checked_by.name if reference_item.checked_by else "Unknown"
+            })
+    
+    paginator = Paginator(previous_submissions, 10)  # Show 10 submissions per page
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+    
+    context = {
+        'user_name': user_name,
+        'previous_submissions': page_obj,
+        'is_paginated': page_obj.has_other_pages(),
+        'page_obj': page_obj
+    }
+    
+    return render(request, 'warehouse_shipment.html', context)
+
+@session_login_required
+def check_warehouse_container_exists(request):
+    """
+    API to check if a warehouse reference ID exists.
+    """
+    reference_id = request.GET.get('reference_id', '')
+    
+    if not reference_id:
+        return JsonResponse({'exists': False, 'count': 0})
+    
+    # Count items with this reference ID
+    count = WarehouseShipment.objects.filter(reference_id=reference_id).count()
+    
+    return JsonResponse({'exists': count > 0, 'count': count})
+
+@session_login_required
+def get_warehouse_container_data(request):
+    """
+    API to get warehouse container details.
+    """
+    reference_id = request.GET.get('reference_id')
+    if not reference_id:
+        return JsonResponse({'success': False, 'message': 'Reference ID is required'})
+    
+    try:
+        # Get all items with this reference ID
+        items = WarehouseShipment.objects.filter(reference_id=reference_id)
+        
+        if not items.exists():
+            return JsonResponse({'success': False, 'message': 'Container not found'})
+        
+        # Get the first item for reference dates
+        reference_item = items.first()
+        
+        # Format dates for form fields
+        ship_date = reference_item.ship_date.strftime('%Y-%m-%d') if reference_item.ship_date else ''
+        expected_arrival = reference_item.expected_arrival_date.strftime('%Y-%m-%d') if reference_item.expected_arrival_date else ''
+        
+        # Format items for JSON response
+        item_list = []
+        for item in items:
+            # Get product name from ProductData if available
+            try:
+                product = ProductData.objects.get(client_id=item.client_id)
+                product_name = product.description
+            except ProductData.DoesNotExist:
+                product_name = item.item or "Unknown Product"
+            
+            item_list.append({
+                'id': item.id,
+                'client_id': item.client_id,
+                'product_name': product_name,
+                'quantity': item.ship_qty or 1
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'reference_id': reference_id,
+            'ship_date': ship_date,
+            'expected_arrival': expected_arrival,
+            'items': item_list
+        })
+    
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': str(e)})
+
+@session_login_required
+def get_warehouse_shipment_items(request):
+    """
+    API to get all items from a warehouse shipment by reference ID.
+    """
+    reference_id = request.GET.get('reference_id', '')
+    
+    if not reference_id:
+        return JsonResponse({'success': False, 'message': 'Reference ID is required'})
+    
+    try:
+        # Find all items with the given reference ID
+        items = WarehouseShipment.objects.filter(reference_id=reference_id)
+        
+        if not items.exists():
+            return JsonResponse({'success': False, 'message': 'No items found with this reference ID'})
+        
+        # Format items for response
+        item_list = []
+        for item in items:
+            # Get product name from ProductData if available
+            try:
+                product = ProductData.objects.get(client_id=item.client_id)
+                product_name = product.description
+            except ProductData.DoesNotExist:
+                product_name = item.item or "Unknown Product"
+            
+            item_list.append({
+                'id': item.id,
+                'client_id': item.client_id,
+                'product_name': product_name,
+                'quantity': item.ship_qty,
+                'ship_qty': item.ship_qty
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'reference_id': reference_id,
+            'items': item_list
+        })
+    
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': str(e)})
