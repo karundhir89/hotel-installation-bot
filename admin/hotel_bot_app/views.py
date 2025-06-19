@@ -534,6 +534,18 @@ def room_data_list(request):
 
 @login_required
 def inventory_list(request):
+    # Update the shipped_to_hotel_quantity from warehouse_shipment data
+    update_inventory_shipped_quantities()
+    
+    # Update the received_at_hotel_quantity and damaged_quantity_at_hotel from hotel_warehouse data
+    update_inventory_hotel_warehouse_quantities()
+    
+    # Update the damaged_quantity from inventory_received data
+    update_inventory_damaged_quantities()
+    
+    # Update the qty_received from inventory_received data
+    update_inventory_received_quantities()
+    
     # Fetch room data from the database
     inventory = Inventory.objects.all()
     # Pass the room data to the template
@@ -1665,7 +1677,12 @@ def inventory_shipment(request):
                 messages.success(request, f"Updated shipment with {len(client_items)} items successfully!")
             else:
                 messages.success(request, f"New shipment with {len(client_items)} items submitted and inventory updated!")
-            return redirect("inventory_shipment")
+            
+            # After successful shipment creation/update, update inventory quantities
+            update_inventory_shipped_quantities()
+            
+            # Return redirect instead of JSON response to avoid displaying JSON to user
+            return redirect('inventory_shipment')
 
         except Exception as e:
             print("error ::", e)
@@ -1734,16 +1751,44 @@ def inventory_shipment(request):
 @session_login_required
 def get_product_item_num(request):
     clientId = request.GET.get("room_number")
+    if not clientId:
+        return JsonResponse({"success": False, "message": "Client ID is required"})
+        
     try:
-        client_data_fetched = ProductData.objects.get(client_id__iexact=clientId)
-        get_item = client_data_fetched.item if client_data_fetched.item else ""
-        supplier = client_data_fetched.supplier if client_data_fetched.supplier else "N.A."
+        # Use Lower database function to ensure case-insensitive matching
+        from django.db.models.functions import Lower
+        
+        # Try first with Lower function for exact lowercase matching
+        client_data = ProductData.objects.annotate(
+            client_id_lower=Lower('client_id')
+        ).filter(
+            client_id_lower=clientId.lower()
+        ).first()
+        
+        # If not found, fall back to iexact
+        if not client_data:
+            client_data = ProductData.objects.filter(client_id__iexact=clientId).first()
+            
+        if not client_data:
+            return JsonResponse({"success": False, "message": "Product not found"})
+            
+        # Extract data from the found product
+        get_item = client_data.item if client_data.item else ""
+        supplier = client_data.supplier if client_data.supplier else "N.A."
         # Use description consistently (or fall back to item)
-        product_name = client_data_fetched.description or client_data_fetched.item or ""
+        product_name = client_data.description or client_data.item or ""
+        
         print(f"get_product_item_num - client_id: {clientId}, product_name: {product_name}")
-        return JsonResponse({"success": True, "room_type": get_item, "supplier": supplier, "product_name": product_name})
-    except ProductData.DoesNotExist:
-        return JsonResponse({"success": False})
+        return JsonResponse({
+            "success": True, 
+            "room_type": get_item, 
+            "supplier": supplier, 
+            "product_name": product_name,
+            "client_id": client_data.client_id  # Return the actual client_id with correct case
+        })
+    except Exception as e:
+        print(f"Error in get_product_item_num: {str(e)}")
+        return JsonResponse({"success": False, "message": str(e)})
 
 
 @session_login_required
@@ -1767,6 +1812,11 @@ def inventory_received(request):
             
             # Use the hidden field value if it exists (from search), otherwise fallback to container_id
             final_container_id = container_id_field if container_id_field else container_id
+
+            if container_id:
+                container_id = container_id.strip().lower()
+            if container_id_field:
+                container_id_field = container_id_field.strip().lower()
             
             received_date = request.POST.get("received_date")
             is_editing = request.POST.get("is_editing") == "1"
@@ -1776,7 +1826,7 @@ def inventory_received(request):
             # Check if this container ID already exists in InventoryReceived for this user
             if not is_editing and final_container_id:
                 existing_records = InventoryReceived.objects.filter(
-                    container_id=final_container_id,
+                    container_id__iexact=final_container_id,
                     checked_by=user
                 )
                 if existing_records.exists():
@@ -1831,27 +1881,25 @@ def inventory_received(request):
                             record.save()
                             print(f"Updated record: received_qty={received_qty}, damaged_qty={damaged_qty}")
                 
-                            # Update inventory with the difference
-                            inventory = Inventory.objects.filter(
-                                client_id__iexact=client_item,
-                                item__iexact=client_item
-                            ).first()
-
-                            old_received = record.received_qty
-                            old_damaged = record.damaged_qty
-
-                            received_diff = received_qty - old_received
-                            damaged_diff = damaged_qty - old_damaged
-                            if inventory:
-                                inventory.qty_received = (inventory.qty_received or 0) + received_diff
-                                inventory.quantity_available = (inventory.quantity_available or 0) + (received_diff - damaged_diff)
-                                inventory.save()
+                            # Update inventory available quantity using our helper function
+                            update_inventory_when_receiving(
+                                client_id=client_item, 
+                                received_qty=received_qty, 
+                                damaged_qty=damaged_qty,
+                                is_new=False,
+                                old_received=record.received_qty,
+                                old_damaged=record.damaged_qty
+                            )
                             
                             success_count += 1
                         else:
                             print(f"No record found for ID={record_id}, client_item={client_item} in container {container_id}")
                     
                     print(f"Successfully updated {success_count} items")
+                    
+                    # Update inventory calculated quantities
+                    update_inventory_damaged_quantities()
+                    update_inventory_received_quantities()
                     
                     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                         return JsonResponse({
@@ -1897,18 +1945,20 @@ def inventory_received(request):
                         container_id=final_container_id
                     )
 
-                    inventory = Inventory.objects.filter(
-                        client_id__iexact=client_item,
-                        item__iexact=client_item
-                    ).first()
-                    
-                    if inventory:
-                        inventory.qty_received = (inventory.qty_received or 0) + (received_qty)
-                        inventory.quantity_available = (inventory.quantity_available or 0) + (received_qty - damaged_qty)
-                        inventory.save()
+                    # Update inventory available quantity using our helper function
+                    update_inventory_when_receiving(
+                        client_id=client_item, 
+                        received_qty=received_qty, 
+                        damaged_qty=damaged_qty,
+                        is_new=True
+                    )
                         
                     success_count += 1
 
+                # Update inventory calculated quantities
+                update_inventory_damaged_quantities()
+                update_inventory_received_quantities()
+                
                 if success_count > 0:
                     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                         return JsonResponse({
@@ -3701,7 +3751,7 @@ def check_container_exists(request):
         })
     
     # Count shipping entries with this container ID
-    count = Shipping.objects.filter(bol=container_id).count()
+    count = Shipping.objects.filter(bol__iexact=container_id).count()
     
     return JsonResponse({
         'exists': count > 0,
@@ -3714,16 +3764,15 @@ def get_container_data(request):
     API endpoint to get all data for a specific container ID
     """
     container_id = request.GET.get('container_id', '').strip()
-    
     if not container_id:
         return JsonResponse({
             'success': False,
             'message': 'Container ID is required'
         })
-    
+    container_id_lower = container_id.lower()
     try:
-        # Get all items with this container ID
-        items = Shipping.objects.filter(bol=container_id)
+        # Get all items with this container ID (case-insensitive)
+        items = Shipping.objects.filter(bol__iexact=container_id_lower)
         
         if not items.exists():
             return JsonResponse({
@@ -3780,28 +3829,22 @@ def get_container_received_items(request):
     """API endpoint to get all received items for a specific container ID"""
     container_id = request.GET.get('container_id')
     user_id = request.session.get("user_id")
-    
     if not container_id:
         return JsonResponse({'success': False, 'message': 'Container ID is required'})
-    
+    container_id_lower = container_id.lower()
     try:
         # Debug info
-        print(f"Fetching received items for container_id: {container_id}")
-        
+        print(f"Fetching received items for container_id: {container_id_lower}")
         # Get the current user
         user = None
         if user_id:
             user = InvitedUser.objects.get(id=user_id)
-            
-        # Get all inventory received records for this container AND this user
-        # Only consider items with a valid container_id (no legacy fallback to client_id)
-        query = Q(container_id=container_id)
-            
+        # Get all inventory received records for this container AND this user (case-insensitive)
+        query = Q(container_id__iexact=container_id_lower)
         # Add user filter if available
         received_items = InventoryReceived.objects
         if user:
             received_items = received_items.filter(checked_by=user)
-            
         # Apply the container query
         received_items = received_items.filter(query).order_by('client_id')
             
@@ -3865,12 +3908,12 @@ def warehouse_receiver(request):
     if request.method == "POST":
         try:
             # Get form data
-            reference_id = request.POST.get("reference_id")
+            reference_id = request.POST.get("reference_id", "").strip().lower()
             received_date_str = request.POST.get("received_date")
             
             # Get edit mode flags
             is_editing = request.POST.get("is_edit_mode") == "1"
-            original_reference_id = request.POST.get("original_reference_id", "").strip()
+            original_reference_id = request.POST.get("original_reference_id", "").strip().lower()
             delete_previous_items = request.POST.get("delete_previous_items") == "1"
             
             # Log edit mode information
@@ -3897,13 +3940,13 @@ def warehouse_receiver(request):
             # Check if we're in edit mode
             if is_editing and original_reference_id:
                 # If editing and the reference ID has changed, make sure the new one doesn't exist
-                if reference_id != original_reference_id and HotelWarehouse.objects.filter(reference_id=reference_id).exists():
+                if reference_id != original_reference_id and HotelWarehouse.objects.filter(reference_id__iexact=reference_id).exists():
                     messages.error(request, f"Cannot change reference ID to '{reference_id}' as it already exists")
                     return redirect("warehouse_receiver")
                 
                 # Delete previous items if requested
                 if delete_previous_items:
-                    deleted_count = HotelWarehouse.objects.filter(reference_id=original_reference_id).delete()[0]
+                    deleted_count = HotelWarehouse.objects.filter(reference_id__iexact=original_reference_id).delete()[0]
                     print(f"Deleted {deleted_count} previous items for reference ID '{original_reference_id}'")
             
             # Create new warehouse receipt entries
@@ -3933,8 +3976,9 @@ def warehouse_receiver(request):
                     inventory_item.save()
                     print(f"Updated inventory for {client_item}: added {received_qty} to hotel warehouse quantity")
             
-            # Call function to update inventory quantities
+            # Call functions to update inventory quantities
             update_inventory_warehouse_quantities()
+            update_inventory_hotel_warehouse_quantities()  # Also update received and damaged quantities
             
             if is_editing:
                 messages.success(request, "Warehouse receipt updated successfully")
@@ -3957,7 +4001,7 @@ def get_warehouse_receipt_details(request):
     """
     # Try to get the reference ID (which is what we want to filter by)
     # The frontend might send either receipt_id or reference_id
-    reference_id = request.GET.get('receipt_id') or request.GET.get('reference_id')
+    reference_id = (request.GET.get('receipt_id') or request.GET.get('reference_id') or '').strip().lower()
     
     print(f"get_warehouse_receipt_details - received reference_id: {reference_id}")
     
@@ -3966,8 +4010,8 @@ def get_warehouse_receipt_details(request):
     
     try:
         # Get all items with this reference ID
-        items = HotelWarehouse.objects.filter(reference_id=reference_id)
-        itemsqty = WarehouseShipment.objects.filter(reference_id=reference_id)
+        items = HotelWarehouse.objects.filter(reference_id__iexact=reference_id)
+        itemsqty = WarehouseShipment.objects.filter(reference_id__iexact=reference_id)
         
         if not items.exists():
             return JsonResponse({'success': False, 'message': 'Receipt not found'})
@@ -4070,6 +4114,10 @@ def update_inventory_warehouse_quantities():
                     Inventory.objects.filter(client_id=inv_client_id).update(hotel_warehouse_quantity=0)
             except Exception as item_error:
                 logger.error(f"Error updating warehouse quantity for {inv_client_id}: {item_error}")
+        
+        # Also update received_at_hotel_quantity and damaged_quantity_at_hotel
+        # Call our dedicated function for those fields
+        update_inventory_hotel_warehouse_quantities()
         
         logger.info(f"Updated hotel_warehouse_quantity for {updated_count} inventory items")
     except Exception as e:
@@ -4306,11 +4354,14 @@ def warehouse_shipment(request):
                     item_id = item_ids[i] if i < len(item_ids) and item_ids[i] else None
                     
                     if item_id and item_id.isdigit():
-                        # This is an existing item, update it
+                                            # This is an existing item, update it
                         item_id = int(item_id)
                         processed_ids.append(item_id)
                         try:
                             item = WarehouseShipment.objects.get(id=item_id)
+                            # Store old quantity before updating
+                            old_qty = item.ship_qty
+                            
                             item.client_id = client_item
                             item.item = client_item
                             item.ship_date = ship_date
@@ -4319,9 +4370,12 @@ def warehouse_shipment(request):
                             item.checked_by = user
                             item.expected_arrival_date = expected_arrival_date
                             item.save()
+                            
+                            # Update inventory quantity_available (account for the difference)
+                            update_inventory_when_shipping(client_item, qty_shipped, is_new=False, old_qty=old_qty)
                             print(f"Updated item ID {item_id}")
                         except WarehouseShipment.DoesNotExist:
-                            # Item ID no longer exists, create a new one
+                                                        # Item ID no longer exists, create a new one
                             new_item = WarehouseShipment.objects.create(
                                 client_id=client_item,
                                 item=client_item,
@@ -4331,6 +4385,8 @@ def warehouse_shipment(request):
                                 checked_by=user,
                                 expected_arrival_date=expected_arrival_date
                             )
+                            # Update inventory quantity_available (new item)
+                            update_inventory_when_shipping(client_item, qty_shipped, is_new=True)
                             processed_ids.append(new_item.id)
                             print(f"Created new item (ID {new_item.id}) as existing ID {item_id} not found")
                     else:
@@ -4344,14 +4400,33 @@ def warehouse_shipment(request):
                             checked_by=user,
                             expected_arrival_date=expected_arrival_date
                         )
+                        # Update inventory quantity_available (new item)
+                        update_inventory_when_shipping(client_item, qty_shipped, is_new=True)
                         processed_ids.append(new_item.id)
                         print(f"Added new item with ID {new_item.id}")
                 
                 # Delete items that were removed during editing
                 for item_id in existing_item_ids:
                     if item_id not in processed_ids:
-                        WarehouseShipment.objects.filter(id=item_id).delete()
-                        print(f"Deleted item with ID {item_id}")
+                        # Get item details before deleting to update inventory
+                        try:
+                            removed_item = WarehouseShipment.objects.get(id=item_id)
+                            client_id = removed_item.client_id
+                            ship_qty = removed_item.ship_qty
+                            
+                            # Delete the item
+                            removed_item.delete()
+                            
+                            # Update inventory quantity_available (add back the quantity)
+                            inventory_item = Inventory.objects.filter(client_id__iexact=client_id).first()
+                            if inventory_item and inventory_item.quantity_available is not None:
+                                inventory_item.quantity_available += ship_qty
+                                inventory_item.save()
+                                print(f"Added back {ship_qty} to quantity_available for {client_id}")
+                            
+                            print(f"Deleted item with ID {item_id}")
+                        except WarehouseShipment.DoesNotExist:
+                            print(f"Item with ID {item_id} already deleted")
                 
                 messages.success(request, f"Updated warehouse shipment with {len(client_items)} items successfully!")
             else:
@@ -4370,10 +4445,17 @@ def warehouse_shipment(request):
                         checked_by=user,
                         expected_arrival_date=expected_arrival_date
                     )
+                    
+                    # Update inventory quantity_available
+                    update_inventory_when_shipping(client_item, qty_shipped, is_new=True)
                 
                 messages.success(request, f"New warehouse shipment with {len(client_items)} items submitted!")
             
-            return redirect("warehouse_shipment")
+            # After successful shipment creation/update, update inventory quantities
+            update_inventory_shipped_quantities()
+            
+            # Return redirect instead of JSON response to avoid displaying JSON to user
+            return redirect('warehouse_shipment')
 
         except Exception as e:
             print("error ::", e)
@@ -4420,14 +4502,15 @@ def warehouse_shipment(request):
 def check_warehouse_container_exists(request):
     """
     API to check if a warehouse reference ID exists.
+    Uses case-insensitive matching for consistent results.
     """
     reference_id = request.GET.get('reference_id', '')
     
     if not reference_id:
         return JsonResponse({'exists': False, 'count': 0})
     
-    # Count items with this reference ID
-    count = WarehouseShipment.objects.filter(reference_id=reference_id).count()
+    # Count items with this reference ID (case-insensitive)
+    count = WarehouseShipment.objects.filter(reference_id__iexact=reference_id).count()
     
     return JsonResponse({'exists': count > 0, 'count': count})
 
@@ -4435,14 +4518,15 @@ def check_warehouse_container_exists(request):
 def get_warehouse_container_data(request):
     """
     API to get warehouse container details.
+    Uses case-insensitive matching for consistent results.
     """
     reference_id = request.GET.get('reference_id')
     if not reference_id:
         return JsonResponse({'success': False, 'message': 'Reference ID is required'})
     
     try:
-        # Get all items with this reference ID
-        items = WarehouseShipment.objects.filter(reference_id=reference_id)
+        # Get all items with this reference ID (case-insensitive)
+        items = WarehouseShipment.objects.filter(reference_id__iexact=reference_id)
         
         if not items.exists():
             return JsonResponse({'success': False, 'message': 'Container not found'})
@@ -4457,10 +4541,12 @@ def get_warehouse_container_data(request):
         # Format items for JSON response
         item_list = []
         for item in items:
-            # Get product name from ProductData if available
+            # Get product name from ProductData if available (case-insensitive)
             try:
-                product = ProductData.objects.get(client_id=item.client_id)
-                product_name = product.description
+                product = ProductData.objects.filter(client_id__iexact=item.client_id).first()
+                product_name = product.description if product else None
+                if not product_name:
+                    raise ProductData.DoesNotExist
             except ProductData.DoesNotExist:
                 product_name = item.item or "Unknown Product"
             
@@ -4486,6 +4572,7 @@ def get_warehouse_container_data(request):
 def get_warehouse_shipment_items(request):
     """
     API to get all items from a warehouse shipment by reference ID.
+    Uses case-insensitive matching for consistent results.
     """
     reference_id = request.GET.get('reference_id', '')
     
@@ -4493,8 +4580,8 @@ def get_warehouse_shipment_items(request):
         return JsonResponse({'success': False, 'message': 'Reference ID is required'})
     
     try:
-        # Find all items with the given reference ID
-        items = WarehouseShipment.objects.filter(reference_id=reference_id)
+        # Find all items with the given reference ID (case-insensitive)
+        items = WarehouseShipment.objects.filter(reference_id__iexact=reference_id)
         
         if not items.exists():
             return JsonResponse({'success': False, 'message': 'No items found with this reference ID'})
@@ -4502,10 +4589,12 @@ def get_warehouse_shipment_items(request):
         # Format items for response
         item_list = []
         for item in items:
-            # Get product name from ProductData if available
+            # Get product name from ProductData if available (case-insensitive)
             try:
-                product = ProductData.objects.get(client_id=item.client_id)
-                product_name = product.description
+                product = ProductData.objects.filter(client_id__iexact=item.client_id).first()
+                product_name = product.description if product else None
+                if not product_name:
+                    raise ProductData.DoesNotExist
             except ProductData.DoesNotExist:
                 product_name = item.item or "Unknown Product"
             
@@ -4525,3 +4614,332 @@ def get_warehouse_shipment_items(request):
     
     except Exception as e:
         return JsonResponse({'success': False, 'message': str(e)})
+
+def update_inventory_shipped_quantities():
+    """
+    Calculate the sum of shipped quantities from warehouse_shipment table
+    and update the shipped_to_hotel_quantity in inventory table.
+    
+    This function:
+    1. Groups all warehouse shipments by client_id (case-insensitive)
+    2. Calculates the total ship_qty for each client_id
+    3. Updates the shipped_to_hotel_quantity in the inventory table for matching client_id
+    """
+    from django.db.models import Sum, F
+    from django.db.models.functions import Lower
+    from hotel_bot_app.models import Inventory, WarehouseShipment
+    
+    # Get all warehouse shipments grouped by client_id (converted to lowercase for case-insensitive grouping)
+    # We use Lower() function to make the comparison case-insensitive
+    shipment_sums = WarehouseShipment.objects.annotate(
+        client_id_lower=Lower('client_id')
+    ).values('client_id_lower').annotate(
+        total_shipped=Sum('ship_qty'),
+        original_client_id=F('client_id')  # Keep one original client_id for reference
+    ).values('client_id_lower', 'total_shipped', 'original_client_id')
+    
+    update_count = 0
+    # Update each inventory record with the calculated sum
+    for shipment in shipment_sums:
+        # Get client_id and total
+        client_id_lower = shipment['client_id_lower']
+        total_shipped = shipment['total_shipped']
+        original_client_id = shipment['original_client_id']
+        
+        # Find and update all inventory records with this client_id (case-insensitive)
+        updated = Inventory.objects.filter(
+            client_id__iexact=original_client_id
+        ).update(shipped_to_hotel_quantity=total_shipped)
+        
+        # If no records found with exact case, try with lowercase comparison
+        if updated == 0:
+            updated = Inventory.objects.filter(
+                client_id__iexact=client_id_lower
+            ).update(shipped_to_hotel_quantity=total_shipped)
+        
+        update_count += updated
+        print(f"Client ID: {original_client_id} (lowercase: {client_id_lower}), Total: {total_shipped}, Updated: {updated} records")
+        
+    print(f"Updated shipped_to_hotel_quantity for {update_count} inventory items based on {len(shipment_sums)} unique client IDs")
+    return update_count
+
+def update_inventory_hotel_warehouse_quantities():
+    """
+    Calculate the sum of received and damaged quantities from hotel_warehouse table
+    and update the received_at_hotel_quantity and damaged_quantity_at_hotel in inventory table.
+    
+    This function:
+    1. Groups all hotel warehouse records by client_item (case-insensitive)
+    2. Calculates the total quantity_received and damaged_qty for each client_item
+    3. Updates the received_at_hotel_quantity and damaged_quantity_at_hotel in the inventory table
+    """
+    from django.db.models import Sum, F
+    from django.db.models.functions import Lower
+    from hotel_bot_app.models import Inventory, HotelWarehouse
+    
+    # Get all hotel warehouse records grouped by client_item (converted to lowercase for case-insensitive grouping)
+    warehouse_sums = HotelWarehouse.objects.annotate(
+        client_item_lower=Lower('client_item')
+    ).values('client_item_lower').annotate(
+        total_received=Sum('quantity_received'),
+        total_damaged=Sum('damaged_qty'),
+        original_client_item=F('client_item')  # Keep one original client_item for reference
+    ).values('client_item_lower', 'total_received', 'total_damaged', 'original_client_item')
+    
+    update_count = 0
+    # Update each inventory record with the calculated sums
+    for warehouse in warehouse_sums:
+        # Get client_item and totals
+        client_item_lower = warehouse['client_item_lower']
+        total_received = warehouse['total_received']
+        total_damaged = warehouse['total_damaged']
+        original_client_item = warehouse['original_client_item']
+        
+        # Find and update all inventory records with this client_item (case-insensitive)
+        updated = Inventory.objects.filter(
+            client_id__iexact=original_client_item
+        ).update(
+            received_at_hotel_quantity=total_received,
+            damaged_quantity_at_hotel=total_damaged
+        )
+        
+        # If no records found with exact case, try with lowercase comparison
+        if updated == 0:
+            updated = Inventory.objects.filter(
+                client_id__iexact=client_item_lower
+            ).update(
+                received_at_hotel_quantity=total_received,
+                damaged_quantity_at_hotel=total_damaged
+            )
+        
+        update_count += updated
+        print(f"Client Item: {original_client_item}, Received: {total_received}, Damaged: {total_damaged}, Updated: {updated} records")
+        
+    print(f"Updated hotel warehouse quantities for {update_count} inventory items based on {len(warehouse_sums)} unique client items")
+    return update_count
+
+def update_inventory_damaged_quantities():
+    """
+    Calculate the sum of damaged_qty from inventory_received table
+    and update the damaged_quantity column in inventory table.
+    
+    This function:
+    1. Groups all inventory received records by client_id (case-insensitive)
+    2. Calculates the total damaged_qty for each client_id
+    3. Updates the damaged_quantity in the inventory table for matching client_id
+    """
+    from django.db.models import Sum, F
+    from django.db.models.functions import Lower
+    from hotel_bot_app.models import Inventory, InventoryReceived
+    
+    # Get all inventory received records grouped by client_id (converted to lowercase for case-insensitive grouping)
+    damaged_sums = InventoryReceived.objects.annotate(
+        client_id_lower=Lower('client_id')
+    ).values('client_id_lower').annotate(
+        total_damaged=Sum('damaged_qty'),
+        original_client_id=F('client_id')  # Keep one original client_id for reference
+    ).values('client_id_lower', 'total_damaged', 'original_client_id')
+    
+    update_count = 0
+    # Update each inventory record with the calculated sum
+    for damaged in damaged_sums:
+        # Get client_id and total
+        client_id_lower = damaged['client_id_lower']
+        total_damaged = damaged['total_damaged']
+        original_client_id = damaged['original_client_id']
+        
+        # Find and update all inventory records with this client_id (case-insensitive)
+        updated = Inventory.objects.filter(
+            client_id__iexact=original_client_id
+        ).update(damaged_quantity=total_damaged)
+        
+        # If no records found with exact case, try with lowercase comparison
+        if updated == 0:
+            updated = Inventory.objects.filter(
+                client_id__iexact=client_id_lower
+            ).update(damaged_quantity=total_damaged)
+        
+        update_count += updated
+        print(f"Client ID: {original_client_id} (lowercase: {client_id_lower}), Total Damaged: {total_damaged}, Updated: {updated} records")
+        
+    print(f"Updated damaged_quantity for {update_count} inventory items based on {len(damaged_sums)} unique client IDs")
+    return update_count
+
+def update_inventory_received_quantities():
+    """
+    Calculate the sum of received_qty from inventory_received table
+    and update the qty_received column in inventory table.
+    
+    This function:
+    1. Groups all inventory received records by client_id (case-insensitive)
+    2. Calculates the total received_qty for each client_id
+    3. Updates the qty_received in the inventory table for matching client_id
+    """
+    from django.db.models import Sum, F
+    from django.db.models.functions import Lower
+    from hotel_bot_app.models import Inventory, InventoryReceived
+    
+    # Get all inventory received records grouped by client_id (converted to lowercase for case-insensitive grouping)
+    received_sums = InventoryReceived.objects.annotate(
+        client_id_lower=Lower('client_id')
+    ).values('client_id_lower').annotate(
+        total_received=Sum('received_qty'),
+        original_client_id=F('client_id')  # Keep one original client_id for reference
+    ).values('client_id_lower', 'total_received', 'original_client_id')
+    
+    update_count = 0
+    # Update each inventory record with the calculated sum
+    for received in received_sums:
+        # Get client_id and total
+        client_id_lower = received['client_id_lower']
+        total_received = received['total_received']
+        original_client_id = received['original_client_id']
+        
+        # Find and update all inventory records with this client_id (case-insensitive)
+        updated = Inventory.objects.filter(
+            client_id__iexact=original_client_id
+        ).update(qty_received=total_received)
+        
+        # If no records found with exact case, try with lowercase comparison
+        if updated == 0:
+            updated = Inventory.objects.filter(
+                client_id__iexact=client_id_lower
+            ).update(qty_received=total_received)
+        
+        update_count += updated
+        print(f"Client ID: {original_client_id} (lowercase: {client_id_lower}), Total Received: {total_received}, Updated: {updated} records")
+        
+    print(f"Updated qty_received for {update_count} inventory items based on {len(received_sums)} unique client IDs")
+    return update_count
+
+@session_login_required
+def get_available_quantity(request):
+    """
+    API endpoint to get the available quantity for a client item from the inventory table.
+    Uses case-insensitive matching to ensure consistent results regardless of case.
+    """
+    client_item = request.GET.get('client_item', '')
+    
+    if not client_item:
+        return JsonResponse({'success': False, 'message': 'Client item is required'})
+    
+    try:
+        # Use Lower database function to ensure case-insensitive matching
+        from django.db.models.functions import Lower
+        
+        # Find the inventory item with case-insensitive matching
+        inventory_items = Inventory.objects.annotate(
+            client_id_lower=Lower('client_id')
+        ).filter(
+            client_id_lower=client_item.lower()
+        )
+        
+        if inventory_items.exists():
+            inventory_item = inventory_items.first()
+            # Return the quantity available
+            quantity_available = inventory_item.quantity_available or 0
+            return JsonResponse({
+                'success': True, 
+                'quantity_available': quantity_available,
+                'client_id': inventory_item.client_id
+            })
+        else:
+            # Try a fallback approach with iexact if the above fails
+            inventory_item = Inventory.objects.filter(client_id__iexact=client_item).first()
+            if inventory_item:
+                quantity_available = inventory_item.quantity_available or 0
+                return JsonResponse({
+                    'success': True, 
+                    'quantity_available': quantity_available,
+                    'client_id': inventory_item.client_id
+                })
+            return JsonResponse({'success': False, 'message': 'Item not found in inventory'})
+    
+    except Exception as e:
+        print(f"Error in get_available_quantity: {str(e)}")
+        return JsonResponse({'success': False, 'message': str(e)})
+
+def update_inventory_when_shipping(client_id, ship_qty, is_new=True, old_qty=0):
+    """
+    Update the quantity_available in the inventory table when items are shipped to the hotel.
+    
+    Args:
+        client_id (str): The client ID of the item being shipped
+        ship_qty (int): The quantity being shipped
+        is_new (bool): Whether this is a new shipment (True) or an edit (False)
+        old_qty (int): If editing, the previous shipped quantity
+    
+    Returns:
+        bool: True if inventory was updated successfully, False otherwise
+    """
+    try:
+        # Find the inventory record with case-insensitive matching
+        inventory_item = Inventory.objects.filter(client_id__iexact=client_id).first()
+        
+        if inventory_item:
+            if is_new:
+                # For new shipments, simply subtract the shipped quantity
+                if inventory_item.quantity_available is not None:
+                    inventory_item.quantity_available -= ship_qty
+                    inventory_item.save()
+                    print(f"Updated quantity_available for {client_id}: {inventory_item.quantity_available}")
+            else:
+                # For edits, calculate the difference between old and new quantities
+                qty_difference = ship_qty - old_qty
+                if inventory_item.quantity_available is not None:
+                    inventory_item.quantity_available -= qty_difference
+                    inventory_item.save()
+                    print(f"Updated quantity_available for {client_id} (edit): {inventory_item.quantity_available}, diff: {qty_difference}")
+            
+            return True
+        else:
+            print(f"Warning: No inventory record found for client ID {client_id}")
+            return False
+    
+    except Exception as e:
+        print(f"Error updating inventory quantity_available for {client_id}: {str(e)}")
+        return False
+
+def update_inventory_when_receiving(client_id, received_qty, damaged_qty, is_new=True, old_received=0, old_damaged=0):
+    """
+    Update the quantity_available in the inventory table when items are received.
+    
+    Args:
+        client_id (str): The client ID of the item being received
+        received_qty (int): The quantity being received (already excludes damaged items)
+        damaged_qty (int): The damaged quantity being received (not used in calculation)
+        is_new (bool): Whether this is a new receipt (True) or an edit (False)
+        old_received (int): If editing, the previous received quantity
+        old_damaged (int): If editing, the previous damaged quantity
+    
+    Returns:
+        bool: True if inventory was updated successfully, False otherwise
+    """
+    try:
+        # Find the inventory record with case-insensitive matching
+        inventory_item = Inventory.objects.filter(client_id__iexact=client_id).first()
+        
+        if inventory_item:
+            if is_new:
+                # For new receipts, simply add the received quantity (already good qty)
+                if inventory_item.quantity_available is not None:
+                    inventory_item.quantity_available += received_qty
+                    inventory_item.save()
+                    print(f"Updated quantity_available for {client_id}: {inventory_item.quantity_available} (+{received_qty})")
+            else:
+                # For edits, just calculate the difference in received quantity
+                received_diff = received_qty - old_received
+                
+                if inventory_item.quantity_available is not None:
+                    inventory_item.quantity_available += received_diff
+                    inventory_item.save()
+                    print(f"Updated quantity_available for {client_id} (edit): {inventory_item.quantity_available}, diff: {received_diff}")
+            
+            return True
+        else:
+            print(f"Warning: No inventory record found for client ID {client_id}")
+            return False
+    
+    except Exception as e:
+        print(f"Error updating inventory quantity_available for {client_id}: {str(e)}")
+        return False

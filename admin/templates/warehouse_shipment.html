@@ -344,12 +344,31 @@
         success: function(data) {
           if (data.success) {
             $('#product_name_preview').val(data.product_name);
+            
+            // Store the correct case client_id if it's returned
+            const actualClientId = data.client_id || clientItem;
+            
+            // Get available quantity for this client item, using the actual client_id with correct case
+            $.ajax({
+              url: "{% url 'get_available_quantity' %}",
+              type: "GET",
+              data: { client_item: actualClientId },
+              success: function(quantityData) {
+                if (quantityData.success) {
+                  // Store the available quantity as a data attribute on the input field
+                  $('#room_number').attr('data-available-quantity', quantityData.quantity_available);
+                  // Store the correct case client_id
+                  $('#room_number').attr('data-client-id', quantityData.client_id || actualClientId);
+                  console.log(`Available quantity for ${actualClientId}: ${quantityData.quantity_available}`);
+                }
+              }
+            });
           } else {
             $('#product_name_preview').val('Not found');
           }
         },
         error: function() {
-          $('#product_name_preview').val('Not Product found');
+          $('#product_name_preview').val('No Product found');
         }
       });
     }, 500)); 
@@ -392,13 +411,20 @@
             console.log("Product data from API:", data);
             const productName = data.product_name || "Unknown Product";
             
+            // Get available quantity from data attribute
+            const availableQty = parseInt($('#room_number').attr('data-available-quantity') || 0);
+            
+            // Get the correct case client ID if available
+            const actualClientId = $('#room_number').attr('data-client-id') || clientItem;
+            
             //add row to the table
             $('#item_list').append(`
-              <tr data-item-id="">
-                <td class="client-item">${clientItem}</td>
+              <tr data-item-id="" data-available-qty="${availableQty}">
+                <td class="client-item">${actualClientId}</td>
                 <td class="product-name">${productName}</td>
                 <td>
-                  <input type="number" class="form-control qty-input" min="1" value="1" required/>
+                  <input type="number" class="form-control qty-input" min="1" max="${availableQty}" value="1" required/>
+                  <small class="text-muted">Available: ${availableQty}</small>
                 </td>
                 <td>
                   <button type="button" class="btn btn-danger btn-sm delete-row">Delete</button>
@@ -455,6 +481,28 @@
         return false;
       }
       
+      // Validate all quantities against available quantities
+      let quantityError = false;
+      $('#item_list tr').each(function() {
+        const row = $(this);
+        const clientItem = row.find('.client-item').text().trim();
+        const availableQty = parseInt(row.attr('data-available-qty')) || 0;
+        const shipQty = parseInt(row.find('.qty-input').val()) || 0;
+        
+        if (shipQty > availableQty) {
+          quantityError = true;
+          toastr.error(`Cannot ship ${shipQty} of item ${clientItem}. Maximum available: ${availableQty}`);
+          row.addClass('table-danger');
+        } else {
+          row.removeClass('table-danger');
+        }
+      });
+      
+      if (quantityError) {
+        e.preventDefault();
+        return false;
+      }
+      
       // No need to re-add the edit mode fields since they're now outside the cleared container
       
       // Collect data from the table
@@ -502,8 +550,18 @@
       }
     });
 
-    // Update total quantity when quantity changes
+    // Update total quantity when quantity changes and validate quantity
     $(document).on('input', '.qty-input', function() {
+      const input = $(this);
+      const value = parseInt(input.val()) || 0;
+      const availableQty = parseInt(input.closest('tr').attr('data-available-qty')) || 0;
+      
+      // Validate quantity against available quantity
+      if (value > availableQty) {
+        toastr.error(`You cannot ship more than the available quantity (${availableQty})`);
+        input.val(availableQty); // Reset to maximum available
+      }
+      
       updateTotalQuantity();
     });
 
@@ -633,18 +691,30 @@
               console.log(`  - client_id: ${item.client_id}`);
               console.log(`  - product_name: ${item.product_name}`);
               
-              $('#item_list').append(`
-                <tr data-item-id="${item.id}">
-                  <td class="client-item">${item.client_id}</td>
-                  <td class="product-name">${item.product_name || "Unknown Product"}</td>
-                  <td>
-                    <input type="number" class="form-control qty-input" min="1" value="${item.quantity}" required/>
-                  </td>
-                  <td>
-                    <button type="button" class="btn btn-danger btn-sm delete-row">Delete</button>
-                  </td>
-                </tr>
-              `);
+              // Get available quantity for this client item
+              $.ajax({
+                url: "{% url 'get_available_quantity' %}",
+                type: "GET",
+                data: { client_item: item.client_id },
+                async: false, // Use synchronous request to ensure we have the quantity before appending
+                success: function(quantityData) {
+                  const availableQty = quantityData.success ? quantityData.quantity_available : 0;
+                  
+                  $('#item_list').append(`
+                    <tr data-item-id="${item.id}" data-available-qty="${availableQty}">
+                      <td class="client-item">${item.client_id}</td>
+                      <td class="product-name">${item.product_name || "Unknown Product"}</td>
+                      <td>
+                        <input type="number" class="form-control qty-input" min="1" max="${availableQty}" value="${item.quantity}" required/>
+                        <small class="text-muted">Available: ${availableQty}</small>
+                      </td>
+                      <td>
+                        <button type="button" class="btn btn-danger btn-sm delete-row">Delete</button>
+                      </td>
+                    </tr>
+                  `);
+                }
+              });
             });
             
             // Show table if there are items
