@@ -98,7 +98,7 @@
                                         {% for issue in issues_page.object_list %}
                                             <tr>
                                                 <td>{{ issue.id }}</td>
-                                                <td><a href="{% url 'issue_detail' issue.id %}">{{ issue.title }}</a></td>
+                                                <td>{{ issue.title }}</td>
                                                 <td>
                                                     <span class="text-{% if issue.status == 'OPEN' %}primary{% elif issue.status == 'WORKING' %}warning{% elif issue.status == 'PENDING' %}info{% elif issue.status == 'CLOSE' %}success{% else %}secondary{% endif %}">
                                                         {{ issue.get_status_display }}

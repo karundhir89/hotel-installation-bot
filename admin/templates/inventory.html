@@ -87,7 +87,11 @@
                                         <th>Qty Ordered</th>
                                         <th>Qty Shipped</th>
                                         <th>Qty Received</th>
+                                        <th>Damaged Qty</th>
                                         <th>Qty Available</th>
+                                        <th>Shipped to Hotel</th>
+                                        <th>Received at Hotel</th>
+                                        <th>Damaged at Hotel</th>
                                         <th>Hotel Warehouse Qty</th>
                                         <th>Floor Qty</th>
                                         <th>Qty Installed</th>
@@ -102,7 +106,11 @@
                                         <td>{{ model.qty_ordered }}</td>
                                         <td>{{ model.quantity_shipped }}</td>
                                         <td>{{ model.qty_received }}</td>
+                                        <td>{{ model.damaged_quantity }}</td>
                                         <td>{{ model.quantity_available }}</td>
+                                        <td>{{ model.shipped_to_hotel_quantity }}</td>
+                                        <td>{{ model.received_at_hotel_quantity }}</td>
+                                        <td>{{ model.damaged_quantity_at_hotel }}</td>
                                         <td>{{ model.hotel_warehouse_quantity }}</td>
                                         <td>{{ model.floor_quantity }}</td>
                                         <td>{{ model.quantity_installed }}</td>
@@ -114,7 +122,11 @@
                                                     data-qty_ordered="{{ model.qty_ordered }}"
                                                     data-quantity_shipped="{{ model.quantity_shipped }}"
                                                     data-qty_received="{{ model.qty_received }}"
+                                                    data-damaged_quantity="{{ model.damaged_quantity }}"
                                                     data-quantity_available="{{ model.quantity_available }}"
+                                                    data-shipped_to_hotel_quantity="{{ model.shipped_to_hotel_quantity }}"
+                                                    data-received_at_hotel_quantity="{{ model.received_at_hotel_quantity }}"
+                                                    data-damaged_quantity_at_hotel="{{ model.damaged_quantity_at_hotel }}"
                                                     data-hotel_warehouse_quantity="{{ model.hotel_warehouse_quantity }}"
                                                     data-floor_quantity="{{ model.floor_quantity }}"
                                                     data-quantity_installed="{{ model.quantity_installed }}">
@@ -170,8 +182,24 @@
                 <input type="number" id="qty_received" name="qty_received" class="form-control">
             </div>
             <div class="form-group">
+                <label for="damaged_quantity">Damaged Quantity:</label>
+                <input type="number" id="damaged_quantity" name="damaged_quantity" class="form-control">
+            </div>
+            <div class="form-group">
                 <label for="quantity_available">Quantity Available:</label>
                 <input type="number" id="quantity_available" name="quantity_available" class="form-control">
+            </div>
+            <div class="form-group">
+                <label for="shipped_to_hotel_quantity">Shipped to Hotel Quantity:</label>
+                <input type="number" id="shipped_to_hotel_quantity" name="shipped_to_hotel_quantity" class="form-control">
+            </div>
+            <div class="form-group">
+                <label for="received_at_hotel_quantity">Received at Hotel Quantity:</label>
+                <input type="number" id="received_at_hotel_quantity" name="received_at_hotel_quantity" class="form-control">
+            </div>
+            <div class="form-group">
+                <label for="damaged_quantity_at_hotel">Damaged Quantity at Hotel:</label>
+                <input type="number" id="damaged_quantity_at_hotel" name="damaged_quantity_at_hotel" class="form-control">
             </div>
             <div class="form-group">
                 <label for="hotel_warehouse_quantity">Hotel Warehouse Quantity:</label>
@@ -221,7 +249,11 @@ $(document).ready(function () {
         $('#qty_ordered').val("");
         $('#quantity_shipped').val("");
         $('#qty_received').val("");
+        $('#damaged_quantity').val("");
         $('#quantity_available').val("");
+        $('#shipped_to_hotel_quantity').val("");
+        $('#received_at_hotel_quantity').val("");
+        $('#damaged_quantity_at_hotel').val("");
         $('#hotel_warehouse_quantity').val("");
         $('#floor_quantity').val("");
         $('#quantity_installed').val("");
@@ -239,7 +271,11 @@ $(document).ready(function () {
         $('#qty_ordered').val($(this).data('qty_ordered'));
         $('#quantity_shipped').val($(this).data('quantity_shipped'));
         $('#qty_received').val($(this).data('qty_received'));
+        $('#damaged_quantity').val($(this).data('damaged_quantity'));
         $('#quantity_available').val($(this).data('quantity_available'));
+        $('#shipped_to_hotel_quantity').val($(this).data('shipped_to_hotel_quantity'));
+        $('#received_at_hotel_quantity').val($(this).data('received_at_hotel_quantity'));
+        $('#damaged_quantity_at_hotel').val($(this).data('damaged_quantity_at_hotel'));
         $('#hotel_warehouse_quantity').val($(this).data('hotel_warehouse_quantity'));
         $('#floor_quantity').val($(this).data('floor_quantity'));
         $('#quantity_installed').val($(this).data('quantity_installed'));

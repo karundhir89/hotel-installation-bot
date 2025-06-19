@@ -418,12 +418,13 @@ def add_users_roles(request):
             password=bcrypt.hashpw(password.encode(), bcrypt.gensalt()),
         )
 
-        if 'admin' in roles_list:
+        if 'admin' in roles_list or 'administrator' in roles_list:
             auth_user = User.objects.create_user(
                 username=email,
                 password=password,
                 email=email,
             )
+            auth_user.is_staff = True  # Set is_staff to True for admin dashboard access
             auth_user.is_superuser = False
             auth_user.save()
         
@@ -459,14 +460,26 @@ def edit_users_roles(request, user_id):
             
             user.save()
 
-            if 'admin' in roles_list:
-                auth_user = User.objects.create_user(
-                    username=email,
-                    password=password,
-                    email=email,
-                )
-                auth_user.is_superuser = False
-                auth_user.save()
+            if 'admin' in roles_list or 'administrator' in roles_list:
+                # Check if Django auth user already exists
+                try:
+                    auth_user = User.objects.get(username=email)
+                    auth_user.is_staff = True  # Ensure is_staff is set
+                    # If password was provided, update it
+                    if password:
+                        auth_user.set_password(password)
+                    auth_user.save()
+                except User.DoesNotExist:
+                    # Only create if it doesn't exist
+                    if password:  # Only create if we have a password
+                        auth_user = User.objects.create_user(
+                            username=email,
+                            password=password,
+                            email=email,
+                        )
+                        auth_user.is_staff = True  # Set is_staff to True
+                        auth_user.is_superuser = False
+                        auth_user.save()
             else:
                 try:
                     auth_user = User.objects.get(username=email)
@@ -835,13 +848,19 @@ def save_room_model(request):
 def save_inventory(request):
     if request.method == "POST":
         inventory_id = request.POST.get("inventory_id")
-        print(inventory_id, "ssssss  ")
         item = request.POST.get("item", "").strip()
         client_id = request.POST.get("client_id", "").strip()
         qty_ordered = request.POST.get("qty_ordered") or 0
+        quantity_shipped = request.POST.get("quantity_shipped") or 0
         qty_received = request.POST.get("qty_received") or 0
-        quantity_installed = request.POST.get("quantity_installed") or 0
+        damaged_quantity = request.POST.get("damaged_quantity") or 0
         quantity_available = request.POST.get("quantity_available") or 0
+        shipped_to_hotel_quantity = request.POST.get("shipped_to_hotel_quantity") or 0
+        received_at_hotel_quantity = request.POST.get("received_at_hotel_quantity") or 0
+        damaged_quantity_at_hotel = request.POST.get("damaged_quantity_at_hotel") or 0
+        hotel_warehouse_quantity = request.POST.get("hotel_warehouse_quantity") or 0
+        floor_quantity = request.POST.get("floor_quantity") or 0
+        quantity_installed = request.POST.get("quantity_installed") or 0
 
         if not item:
             return JsonResponse({"error": "Item name is required"}, status=400)
@@ -849,9 +868,16 @@ def save_inventory(request):
         # Convert to appropriate data types
         try:
             qty_ordered = int(qty_ordered)
+            quantity_shipped = int(quantity_shipped)
             qty_received = int(qty_received)
-            quantity_installed = int(quantity_installed)
+            damaged_quantity = int(damaged_quantity)
             quantity_available = int(quantity_available)
+            shipped_to_hotel_quantity = int(shipped_to_hotel_quantity)
+            received_at_hotel_quantity = int(received_at_hotel_quantity)
+            damaged_quantity_at_hotel = int(damaged_quantity_at_hotel)
+            hotel_warehouse_quantity = int(hotel_warehouse_quantity)
+            floor_quantity = int(floor_quantity)
+            quantity_installed = int(quantity_installed)
         except ValueError:
             return JsonResponse({"error": "Quantities must be integers"}, status=400)
 
@@ -871,9 +897,16 @@ def save_inventory(request):
                 inventory.item = item
                 inventory.client_id = client_id
                 inventory.qty_ordered = qty_ordered
+                inventory.quantity_shipped = quantity_shipped
                 inventory.qty_received = qty_received
-                inventory.quantity_installed = quantity_installed
+                inventory.damaged_quantity = damaged_quantity
                 inventory.quantity_available = quantity_available
+                inventory.shipped_to_hotel_quantity = shipped_to_hotel_quantity
+                inventory.received_at_hotel_quantity = received_at_hotel_quantity
+                inventory.damaged_quantity_at_hotel = damaged_quantity_at_hotel
+                inventory.hotel_warehouse_quantity = hotel_warehouse_quantity
+                inventory.floor_quantity = floor_quantity
+                inventory.quantity_installed = quantity_installed
                 inventory.save()
                 return JsonResponse({"success": True})
             except Inventory.DoesNotExist:
@@ -883,9 +916,16 @@ def save_inventory(request):
                 item=item,
                 client_id=client_id,
                 qty_ordered=qty_ordered,
+                quantity_shipped=quantity_shipped,
                 qty_received=qty_received,
-                quantity_installed=quantity_installed,
+                damaged_quantity=damaged_quantity,
                 quantity_available=quantity_available,
+                shipped_to_hotel_quantity=shipped_to_hotel_quantity,
+                received_at_hotel_quantity=received_at_hotel_quantity,
+                damaged_quantity_at_hotel=damaged_quantity_at_hotel,
+                hotel_warehouse_quantity=hotel_warehouse_quantity,
+                floor_quantity=floor_quantity,
+                quantity_installed=quantity_installed,
             )
             return JsonResponse({"success": True})
 
@@ -2328,11 +2368,55 @@ def inventory_pull(request):
 
 @session_login_required
 def hotel_warehouse(request):
+    # Get all previous warehouse submissions
     previous_submissions = (
         WarehouseRequest.objects
         .select_related('requested_by', 'received_by')
         .order_by('-id')[:30]  # Show last 30, adjust as needed
     )
+    
+    # Process previous submissions to determine if all items for each floor are sent
+    from itertools import groupby
+    from django.db.models import Count, Sum
+    
+    # Group submissions by floor number and check if all items are sent
+    floor_data = []
+    floor_groups = {}
+    
+    # First group by floor number
+    for submission in previous_submissions:
+        floor_num = submission.floor_number
+        if floor_num not in floor_groups:
+            floor_groups[floor_num] = {
+                'floor_number': floor_num,
+                'items': [],
+                'all_sent': True,  # Start with True and set to False if any item is not sent
+                'total_items': 0,
+                'total_requested': 0,
+                'total_sent': 0,
+                'total_received': 0,
+                'requested_by': None
+            }
+        
+        # Add item to the floor group
+        floor_groups[floor_num]['items'].append(submission)
+        
+        # Update totals
+        floor_groups[floor_num]['total_items'] += 1
+        floor_groups[floor_num]['total_requested'] += submission.quantity_requested
+        floor_groups[floor_num]['total_sent'] += submission.quantity_sent
+        floor_groups[floor_num]['total_received'] += submission.quantity_received
+        
+        # Set requested_by if not set yet
+        if floor_groups[floor_num]['requested_by'] is None and submission.requested_by:
+            floor_groups[floor_num]['requested_by'] = submission.requested_by.name
+        
+        # Update all_sent status
+        if not submission.sent:
+            floor_groups[floor_num]['all_sent'] = False
+    
+    # Convert dictionary to list for template
+    floor_data = list(floor_groups.values())
     
     if request.method == 'POST':
         action = request.POST.get('action')
@@ -2471,7 +2555,11 @@ def hotel_warehouse(request):
             'sent': True if all_sent else False
         })
     
-    return render(request, 'hotel_warehouse.html', {"previous_submissions": previous_submissions,'warehouse_requests': warehouse_data})
+    return render(request, 'hotel_warehouse.html', {
+        "previous_submissions": previous_submissions,
+        "floor_data": floor_data,
+        "warehouse_requests": warehouse_data
+    })
 
 @session_login_required
 def inventory_received_item_num(request):
@@ -4181,6 +4269,73 @@ def warehouse_request_items(request):
         
     except Exception as e:
         logger.error(f"Error in warehouse_request_items: {e}", exc_info=True)
+        return JsonResponse({'success': False, 'message': str(e)})
+
+@session_login_required
+def get_previous_warehouse_requests(request):
+    """
+    API endpoint to get all previous warehouse requests for a specific floor
+    """
+    floor_number = request.GET.get('floor_number')
+    
+    if not floor_number:
+        return JsonResponse({'success': False, 'message': 'Floor number is required'})
+    
+    try:
+        # Get all warehouse request items for this floor
+        items = WarehouseRequest.objects.filter(floor_number=floor_number)
+        
+        if not items.exists():
+            return JsonResponse({'success': False, 'message': 'No items found for this floor'})
+        
+        # Format items for response
+        items_data = []
+        for item in items:
+            # Get product name from ProductData or Inventory tables
+            product_name = "Unknown Product"
+            try:
+                # First try to get from ProductData by client_id
+                product = ProductData.objects.filter(client_id__iexact=item.client_item).first()
+                if product and product.description:
+                    product_name = product.description
+                elif product and product.item:
+                    product_name = product.item
+                else:
+                    # If not found, try to get from Inventory
+                    inventory = Inventory.objects.filter(client_id__iexact=item.client_item).first()
+                    if inventory and inventory.item:
+                        # Try to get the description from ProductData using item
+                        prod_from_item = ProductData.objects.filter(item__iexact=inventory.item).first()
+                        if prod_from_item and prod_from_item.description:
+                            product_name = prod_from_item.description
+                        else:
+                            product_name = inventory.item
+            except Exception as e:
+                logger.warning(f"Error looking up product name for {item.client_item}: {e}")
+            
+            # Get requested_by and received_by names
+            requested_by_name = item.requested_by.name if item.requested_by else "Unknown"
+            received_by_name = item.received_by.name if item.received_by else "Not received"
+            
+            items_data.append({
+                'id': item.id,
+                'client_item': item.client_item,
+                'product_name': product_name,
+                'quantity_requested': item.quantity_requested,
+                'quantity_sent': item.quantity_sent,
+                'quantity_received': item.quantity_received,
+                'requested_by': requested_by_name,
+                'received_by': received_by_name,
+                'sent': item.sent
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'items': items_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in get_previous_warehouse_requests: {e}", exc_info=True)
         return JsonResponse({'success': False, 'message': str(e)})
 
 @session_login_required

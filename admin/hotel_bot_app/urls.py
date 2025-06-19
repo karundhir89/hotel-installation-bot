@@ -82,6 +82,9 @@ urlpatterns = [
     # API endpoint for warehouse request items
     path('api/warehouse_request_items/', warehouse_request_items, name='warehouse_request_items'),
     
+    # API endpoint to get previous warehouse requests by floor
+    path('api/get_previous_warehouse_requests/', get_previous_warehouse_requests, name='get_previous_warehouse_requests'),
+    
     # API endpoint to get available quantity for a client item
     path('api/get_available_quantity/', get_available_quantity, name='get_available_quantity'),
 ]
