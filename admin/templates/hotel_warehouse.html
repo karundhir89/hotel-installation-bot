@@ -104,6 +104,14 @@
     background-color: #fff3cd !important;
   }
   
+  .table-success {
+    background-color: #d1e7dd !important;
+  }
+  
+  .table-warning {
+    background-color: #fff3cd !important;
+  }
+  
   .sent-qty-input {
     max-width: 80px;
   }
@@ -197,7 +205,6 @@
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title" id="requestDetailsModalLabel">Pending Request Details</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" onclick="$('#requestDetailsModal').modal('hide');"></button>
       </div>
       <div class="modal-body">
         <div class="row mb-3">
@@ -246,52 +253,38 @@
   <div class="card shadow-sm rounded-4">
       <div class="card-body p-4">
       <h4 class="mb-3 text-secondary">Previous Warehouse Requests</h4>
-    {% if previous_submissions %}
+    {% if floor_data %}
     <div class="table-responsive">
       <table class="table table-bordered table-striped align-middle">
         <thead>
           <tr>
             <th>Floor Number</th>
-            <th>Client Item</th>
-            <th>Quantity Requested</th>
-            <th>Quantity Sent</th>
-            <th>Quantity Received</th>
+            <th>Total Items</th>
+            <th>Total Requested Qty</th>
+            <th>Total Sent Qty</th>
+            <th>Total Received Qty</th>
             <th>Requested By</th>
-            <th>Received By</th>
-            <th>Sent Status</th>
-
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          {% for req in previous_submissions %}
-          <tr>
-            <td>{{ req.floor_number }}</td>
-            <td>{{ req.client_item }}</td>
-            <td>{{ req.quantity_requested }}</td>
-            <td>{{ req.quantity_sent }}</td>
-            <td>{{ req.quantity_received }}</td>
+          {% for floor in floor_data %}
+          <tr class="{% if floor.all_sent %}table-success{% else %}table-warning{% endif %}">
+            <td>{{ floor.floor_number }}</td>
+            <td>{{ floor.total_items }}</td>
+            <td>{{ floor.total_requested }}</td>
+            <td>{{ floor.total_sent }}</td>
+            <td>{{ floor.total_received }}</td>
             <td>
-              {% if req.requested_by %}
-                {{ req.requested_by.name }}
+              {% if floor.requested_by %}
+                {{ floor.requested_by }}
               {% else %}
                 -
               {% endif %}
             </td>
             <td>
-              {% if req.received_by %}
-                {{ req.received_by.name }}
-              {% else %}
-                -
-              {% endif %}
+              <button type="button" class="btn btn-secondary btn-sm view-previous-details" data-floor="{{ floor.floor_number }}">View Details</button>
             </td>
-            <td>
-              {% if req.sent %}
-                Yes
-              {% else %}
-                No
-              {% endif %}
-            </td>
-
           </tr>
           {% endfor %}
         </tbody>
@@ -303,6 +296,48 @@
     </div>
     {% endif %}
       </div>
+  </div>
+</div>
+
+<!-- Previous Requests Details Modal -->
+<div class="modal fade" id="previousRequestsModal" tabindex="-1" aria-labelledby="previousRequestsModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="previousRequestsModalLabel">Previous Floor Requests</h5>
+      </div>
+      <div class="modal-body">
+        <div class="row mb-3">
+          <div class="col-md-6">
+            <p><strong>Floor Number:</strong> <span id="prev-modal-floor"></span></p>
+          </div>
+        </div>
+        
+        <h6 class="mt-4 mb-3">Request Items</h6>
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered">
+            <thead>
+              <tr>
+                <th>Client Item</th>
+                <th>Description</th>
+                <th>Requested Qty</th>
+                <th>Sent Qty</th>
+                <th>Received Qty</th>
+                <th>Requested By</th>
+                <th>Received By</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="prev-modal-items-list">
+              <!-- Items will be populated dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" onclick="$('#previousRequestsModal').modal('hide');">Close</button>
+      </div>
+    </div>
   </div>
 </div>
   
@@ -326,7 +361,7 @@
 
     // Add explicit handler for modal close button
     $('.btn-close, [data-bs-dismiss="modal"]').on('click', function() {
-      $('#requestDetailsModal').modal('hide');
+      $('#requestDetailsModal, #previousRequestsModal').modal('hide');
     });
     
     // View details button click
@@ -482,6 +517,69 @@
       "progressBar": true,
       "timeOut": "3000"
     };
+    
+    // View previous requests details button click
+    $('.view-previous-details').on('click', function() {
+      const floorNumber = $(this).data('floor');
+      
+      // Populate the modal header
+      $('#prev-modal-floor').text(floorNumber);
+      
+      // Fetch the previous request items for this floor from the server
+      $.ajax({
+        url: "{% url 'get_previous_warehouse_requests' %}",
+        type: 'GET',
+        data: { floor_number: floorNumber },
+        success: function(response) {
+          if (response.success) {
+            // Populate items table with real data
+            const itemsList = $('#prev-modal-items-list');
+            itemsList.empty();
+            
+            response.items.forEach(item => {
+              itemsList.append(`
+                <tr>
+                  <td>${item.client_item}</td>
+                  <td>${item.product_name || 'Unknown'}</td>
+                  <td>${item.quantity_requested}</td>
+                  <td>${item.quantity_sent}</td>
+                  <td>${item.quantity_received}</td>
+                  <td>${item.requested_by || '-'}</td>
+                  <td>${item.received_by || '-'}</td>
+                  <td>${item.sent ? '<span class="yes-badge">Sent</span>' : '<span class="no-badge">Not Sent</span>'}</td>
+                </tr>
+              `);
+            });
+          } else {
+            // If API fails, show placeholder data
+            const itemsList = $('#prev-modal-items-list');
+            itemsList.empty();
+            
+            // Create a single row with a message
+            itemsList.append(`
+              <tr>
+                <td colspan="8" class="text-center">Could not load item details</td>
+              </tr>
+            `);
+          }
+        },
+        error: function() {
+          // If AJAX fails, show placeholder data
+          const itemsList = $('#prev-modal-items-list');
+          itemsList.empty();
+          
+          // Create a single row with a message
+          itemsList.append(`
+            <tr>
+              <td colspan="8" class="text-center">Could not load item details</td>
+            </tr>
+          `);
+        }
+      });
+      
+      // Show the modal
+      $('#previousRequestsModal').modal('show');
+    });
   });
 </script>
 {% endblock %} 
