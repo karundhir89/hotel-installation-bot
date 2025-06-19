@@ -47,6 +47,14 @@ urlpatterns = [
     path('check_container_exists/', check_container_exists, name='check_container_exists'),
     path('get_container_data/', get_container_data, name='get_container_data'),
     
+    # Warehouse Shipment URLs
+    path('warehouse_shipment/', warehouse_shipment, name='warehouse_shipment'),
+    path('check_warehouse_container_exists/', check_warehouse_container_exists, name='check_warehouse_container_exists'),
+    path('get_warehouse_container_data/', get_warehouse_container_data, name='get_warehouse_container_data'),
+    
+    # Warehouse Shipment Items API
+    path('get_warehouse_shipment_items/', get_warehouse_shipment_items, name='get_warehouse_shipment_items'),
+    
     # New URLs for Product Room Model
     path('product-room-models/', product_room_model_list, name='product_room_model_list'),
     path('save_product_room_model/', save_product_room_model, name='save_product_room_model'),

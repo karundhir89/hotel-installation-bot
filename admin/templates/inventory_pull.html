@@ -259,8 +259,65 @@
         </div>
       </div>
     </form>
-      </div>
+    </div>
   </div>
+</div>
+
+        <!-- Previous Submissions Card -->
+<div class="container-lg my-5">
+  <div class="card shadow-sm rounded-4">
+    <div class="card-body p-4">
+    <div class="card mt-5 shadow-sm rounded-4">
+      <div class="card-body">
+        <h4 class="mb-3 text-secondary">Previous Submissions</h4>
+        {% if previous_submissions %}
+        <div class="table-responsive">
+          <table class="table table-bordered table-striped align-middle">
+            <thead>
+              <tr>
+                <th>Floor Number</th>
+                <th>Client Item</th>
+                <th>Quantity Requested</th>
+                <th>Quantity Received</th>
+                <th>Requested By</th>
+                <th>Received By</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for req in previous_submissions %}
+              <tr>
+                <td>{{ req.floor_number }}</td>
+                <td>{{ req.client_item }}</td>
+                <td>{{ req.quantity_requested }}</td>
+                <td>{{ req.quantity_received }}</td>
+                <td>
+                  {% if req.requested_by %}
+                    {{ req.requested_by.name }}
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+                <td>
+                  {% if req.received_by %}
+                   {{ req.received_by.name }}
+                  {% else %}
+                    -
+                   {% endif %}
+              </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="alert alert-info mb-0">
+          No previous submissions found.
+        </div>
+        {% endif %}
+        </div>
+      </div>
+      </div>
+    </div>
 </div>
 {% endblock %}
 
