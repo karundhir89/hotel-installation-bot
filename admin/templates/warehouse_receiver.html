@@ -129,11 +129,19 @@
             <small class="form-text text-muted">Enter a Reference ID from Warehouse Shipment to automatically load items</small>
           </div>
           <div class="col-md-6">
+            <label class="form-label">Total Items</label>
+            <input type="text" class="form-control bg-light" id="total_items_box" placeholder="Total Items" readonly>
+          </div>
+        </div>
+        
+        <!-- Received Date Row -->
+        <div class="row mb-4">
+          <div class="col-md-6">
             <label for="received_date" class="form-label">Received Date</label>
             <input type="date" class="form-control" id="received_date" name="received_date" required>
           </div>
         </div>
-        
+
         <!-- Items Section -->
             <h5 class="mb-3">Items</h5>
             <div id="items-container">
@@ -143,7 +151,7 @@
                 <th>Client Item #</th>
                 <th>Product Name</th>
                 <th>Shipped Qty</th>
-                <th>Received Qty</th>
+                <th>Good Received Qty</th>
                 <th>Damaged Qty</th>
               </tr>
             </thead>
@@ -151,7 +159,7 @@
               <!-- First item row will be here -->
               <tr class="item-row">
                 <td>
-                  <input type="text" class="form-control client-item" name="client_items[]" placeholder="Enter Client Item #" required>
+                  <input type="text" class="form-control client-item" name="client_items[]" placeholder="Enter Client Item #" required readonly>
                   <input type="hidden" class="item-id" name="item_ids[]" value="">
                 </td>
                 <td>
@@ -291,7 +299,56 @@
     // Set today's date for the received date field
     var today = new Date().toISOString().split('T')[0];
     $('#received_date').val(today);
-    
+
+    // Helper to update the total items box
+    function updateTotalItems() {
+      let total = 0;
+      $('#items-container .received-qty').each(function() {
+        total += parseInt($(this).val()) || 0;
+      });
+      $('#total_items_box').val(total);
+    }
+
+    // Enforce shipped/received/damaged constraints per row
+    function enforceConstraints(row) {
+      const shipped = parseInt(row.find('.shipped-qty').val() || row.find('.shipped-qty').text()) || 0;
+      const receivedInput = row.find('.received-qty');
+      const damagedInput = row.find('.damaged-qty');
+
+      // Set max attributes
+      receivedInput.attr('max', shipped);
+
+      let receivedVal = parseInt(receivedInput.val()) || 0;
+      if (receivedVal > shipped) {
+        toastr.warning('Received quantity cannot exceed shipped quantity. It has been adjusted.');
+        receivedVal = shipped;
+        receivedInput.val(receivedVal);
+      }
+
+      const maxDamaged = Math.max(shipped - receivedVal, 0);
+      damagedInput.attr('max', maxDamaged);
+
+      let damagedVal = parseInt(damagedInput.val()) || 0;
+      if (damagedVal > maxDamaged) {
+        toastr.warning('Damaged quantity cannot exceed (shipped - received). It has been adjusted.');
+        damagedVal = maxDamaged;
+        damagedInput.val(damagedVal);
+      }
+
+      updateTotalItems();
+    }
+
+    // Real-time listeners
+    $('#items-container').on('input', '.received-qty', function() {
+      const row = $(this).closest('.item-row');
+      enforceConstraints(row);
+    });
+
+    $('#items-container').on('input', '.damaged-qty', function() {
+      const row = $(this).closest('.item-row');
+      enforceConstraints(row);
+    });
+
     // Load items from a reference ID
     $('#load-items-btn').on('click', function() {
       const reference_id = $('#reference_id').val().trim();
@@ -320,7 +377,7 @@
           
           if (data.success && data.items && data.items.length > 0) {
             // This is an existing warehouse receipt - load it directly
-            // We'll re-use our common function, which will make another API call but with proper parameters
+            // Use the provided reference ID as is (server handles case insensitivity)
             loadExistingReceipt(null, reference_id);
           } else {
             // Check if this is a warehouse shipment
@@ -424,7 +481,7 @@
               // Add cells with proper escaping for values
               newRow.append(`
                 <td>
-                  <input type="text" class="form-control client-item" name="client_items[]" value="${clientItem}" required>
+                  <input type="text" class="form-control client-item" name="client_items[]" value="${clientItem}" required readonly>
                   <input type="hidden" class="item-id" name="item_ids[]" value="">
                 </td>
                 <td>
@@ -453,6 +510,7 @@
             // Update form button text
             $('button[type="submit"]').text('Submit');
             
+            updateTotalItems();
             toastr.success('Items loaded from warehouse shipment');
           } else {
             // Reference ID not found anywhere
@@ -482,8 +540,13 @@
               success: function(data) {
                 if (data.success) {
                   // Fill product name
-            row.find('.product-name').val(data.product_name || data.room_type || '');
-          }
+                  row.find('.product-name').val(data.product_name || data.room_type || '');
+                  
+                  // Use the correctly cased client_id returned from the server if available
+                  if (data.client_id) {
+                    row.find('.client-item').val(data.client_id);
+                  }
+                }
               }
             });
           }
@@ -530,6 +593,12 @@
               
               // Add a visual indicator
               $('#reference_id').addClass('border-info');
+              
+              // Store the actual reference ID with correct case
+              if (data.receipt && data.receipt.reference_id) {
+                // Just keep the user's input - backend will handle case-insensitive matching
+                console.log("Found existing reference ID with original case:", data.receipt.reference_id);
+              }
             } else {
               // Remove visual indicator if it was previously set
               $('#reference_id').removeClass('border-info');
@@ -734,6 +803,9 @@
       $('#original_reference_id').val('');
       $('#receipt_id').val('');
       $('#delete_previous_items').val('0');
+
+      // Clear total items box
+      $('#total_items_box').val('');
       
       // Reset form button text
       $('button[type="submit"]').text('Submit');
@@ -873,7 +945,7 @@
                 // Add cells with proper escaping for values
                 newRow.append(`
                   <td>
-                    <input type="text" class="form-control client-item" name="client_items[]" value="${clientItem}" required>
+                    <input type="text" class="form-control client-item" name="client_items[]" value="${clientItem}" required readonly>
                     <input type="hidden" class="item-id" name="item_ids[]" value="${itemId}">
                   </td>
                   <td>
@@ -902,6 +974,7 @@
               // Update form button text
               $('button[type="submit"]').text('Update Receipt');
               
+              updateTotalItems();
               toastr.info('Loaded existing warehouse receipt for editing');
             } else {
               toastr.warning('No items found for this warehouse receipt');

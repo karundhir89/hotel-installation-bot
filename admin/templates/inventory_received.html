@@ -109,14 +109,18 @@
         <div class="row mb-4">
           <div class="col-md-6 mb-3 mb-md-0">
             <label class="form-label">Container ID</label>
-            <input type="text" class="form-control" name="container_id" id="container_id" placeholder="Enter Container ID" required>
+            <div class="input-group">
+            <input type="text" class="form-control" name="container_id" id="container_id" placeholder="Enter Container ID" required style="text-transform:lowercase;">
+            <button type="button" class="btn btn-secondary btn-sm" id="search_container" style="margin-left: 5px;">
+              <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true" id="search_spinner"></span>
+              <span id="search_text">Search</span>
+            </button>
+            
+          </div>
           </div>
           <div class="col-md-6">
-            <label class="form-label d-md-block d-none">&nbsp;</label>
-            <button type="button" class="btn btn-secondary form-control" id="search_container">
-              <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true" id="search_spinner"></span>
-              <span id="search_text">Search Container</span>
-            </button>
+            <label class="form-label d-md-block d-none">Total Items</label>
+            <input type="text" class="form-control bg-light" id="total_items_box" placeholder="Total Items Received" readonly >
           </div>
         </div>
 
@@ -146,7 +150,7 @@
                     <th>Client Item #</th>
                     <th>Product Name</th>
                     <th>QTY Shipped</th>
-                    <th>QTY Received</th>
+                    <th>Good QTY Received</th>
                     <th>QTY Damaged</th>
                   </tr>
                 </thead>
@@ -254,6 +258,33 @@
 <script>
   $(document).ready(function() {
     const userName = "{{ user_name }}";
+
+    // Helper function to enforce received/damaged constraints for a row
+    function enforceConstraints(row) {
+      const shipped = parseInt(row.find('.qty-shipped').text()) || 0;
+      const receivedInput = row.find('input[name^="received_qty_"]');
+      const damagedInput = row.find('input[name^="damaged_qty_"]');
+
+      // Make sure max attributes are set
+      receivedInput.attr('max', shipped);
+
+      let receivedVal = parseInt(receivedInput.val()) || 0;
+      if (receivedVal > shipped) {
+        toastr.warning('Received quantity cannot exceed shipped quantity. It has been adjusted.');
+        receivedVal = shipped;
+        receivedInput.val(receivedVal);
+      }
+
+      const maxDamaged = Math.max(shipped - receivedVal, 0);
+      damagedInput.attr('max', maxDamaged);
+
+      let damagedVal = parseInt(damagedInput.val()) || 0;
+      if (damagedVal > maxDamaged) {
+        toastr.warning('Damaged quantity cannot exceed (shipped - received). It has been adjusted.');
+        damagedVal = maxDamaged;
+        damagedInput.val(damagedVal);
+      }
+    }
     
     // Ensure table is hidden on page load
     $('#container_table_section').hide();
@@ -282,14 +313,13 @@
     
     // Search for container
     $('#search_container').on('click', function() {
-      const containerId = $('#container_id').val().trim();
+      let containerId = $('#container_id').val().trim().toLowerCase();
+      $('#container_id').val(containerId); // Ensure field stays lowercase
       if (!containerId) {
         toastr.error("Please enter a Container ID");
         return;
       }
-      
       setLoading('search_container', true);
-      
       // Store the container ID in the hidden field for form submission
       $('#container_id_field').val(containerId);
       
@@ -359,7 +389,14 @@
                 
                 // Set the hidden product count
                 $('#hidden_product_count').html('<input type="hidden" name="product_count" value="' + receivedData.items.length + '">');
-                
+
+                // Calculate total received quantity
+                let totalReceived = 0;
+                receivedData.items.forEach(function(item) {
+                  totalReceived += parseInt(item.received_qty) || 0;
+                });
+                $('#total_items_box').val(totalReceived);
+
                 // Set the received date
                 if (receivedData.received_date) {
                   $('input[name="received_date"]').val(receivedData.received_date);
@@ -399,6 +436,7 @@
                   
                   if (data.items.length === 0) {
                     $('#container_table_section').hide();
+                    $('#total_items_box').val('');
                     toastr.warning('No items found in this container');
                   } else {
                     // Show the table when items are found
@@ -423,6 +461,12 @@
                     
                     // Add a hidden field to track the number of products
                     $('#hidden_product_count').html('<input type="hidden" name="product_count" value="' + data.items.length + '">');
+                    // Calculate total received quantity (initially zero for new entries)
+                    let totalReceived = 0;
+                    $('#container_items input[name^="received_qty_"]').each(function() {
+                      totalReceived += parseInt($(this).val()) || 0;
+                    });
+                    $('#total_items_box').val(totalReceived);
                   }
                   
                   toastr.success('Found ' + data.items.length + ' items in container ' + containerId);
@@ -476,6 +520,25 @@
       }, 500);
     });
     
+    // Update total received quantity and enforce constraints when any received quantity changes
+    $('#container_items').on('input', 'input[name^="received_qty_"]', function() {
+      const row = $(this).closest('tr');
+      enforceConstraints(row);
+
+      // Re-calculate total received
+      let totalReceived = 0;
+      $('#container_items input[name^="received_qty_"]').each(function() {
+        totalReceived += parseInt($(this).val()) || 0;
+      });
+      $('#total_items_box').val(totalReceived);
+    });
+
+    // Enforce constraints when any damaged quantity changes
+    $('#container_items').on('input', 'input[name^="damaged_qty_"]', function() {
+      const row = $(this).closest('tr');
+      enforceConstraints(row);
+    });
+
     // Reset form
     function resetForm() {
       // Reset form fields
@@ -486,6 +549,8 @@
       
       // Hide the container table
       $('#container_table_section').hide();
+
+      $('#total_items_box').val('');
       
       // Clear the container items
       $('#container_items').html(
@@ -586,6 +651,12 @@
                         '</tr>'
                       );
                     });
+                    // Calculate total received quantity
+                    let totalReceived = 0;
+                    $('#container_items input[name^="received_qty_"]').each(function() {
+                      totalReceived += parseInt($(this).val()) || 0;
+                    });
+                    $('#total_items_box').val(totalReceived);
                   } else {
                     toastr.error("No received items found for this container");
                   }
