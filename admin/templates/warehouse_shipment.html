@@ -279,6 +279,25 @@
 <script>
   $(document).ready(function () {
     const userName = "{{ user_name }}";
+    
+    // Track if we're in edit mode for page unload handling
+    let currentlyEditing = false;
+    let currentEditingRefId = '';
+    
+    // Handle page unload/reload when in edit mode
+    $(window).on('beforeunload', function() {
+      // If in edit mode, revert inventory
+      if (currentlyEditing && currentEditingRefId) {
+        // We need to use synchronous AJAX to ensure this happens before page unload
+        $.ajax({
+          url: "{% url 'revert_warehouse_inventory' %}",
+          type: "GET",
+          data: { reference_id: currentEditingRefId },
+          async: false  // This is important to ensure it completes before unload
+        });
+        console.log("Page unloaded while editing. Inventory reverted for " + currentEditingRefId);
+      }
+    });
 
     // Prevent form submission on Enter key
     $(document).on('keypress', 'form input', function(e) {
@@ -419,11 +438,12 @@
             
             //add row to the table
             $('#item_list').append(`
-              <tr data-item-id="" data-available-qty="${availableQty}">
+              <tr data-item-id="">
                 <td class="client-item">${actualClientId}</td>
                 <td class="product-name">${productName}</td>
                 <td>
                   <input type="number" class="form-control qty-input" min="1" max="${availableQty}" value="1" required/>
+                  <input type="hidden" class="available-qty" value="${availableQty}">
                   <small class="text-muted">Available: ${availableQty}</small>
                 </td>
                 <td>
@@ -486,12 +506,18 @@
       $('#item_list tr').each(function() {
         const row = $(this);
         const clientItem = row.find('.client-item').text().trim();
-        const availableQty = parseInt(row.attr('data-available-qty')) || 0;
+        const availableQty = parseInt(row.find('.available-qty').val()) || 0;
         const shipQty = parseInt(row.find('.qty-input').val()) || 0;
         
+        console.log('Validating ' + clientItem + ': shipQty=' + shipQty + 
+                   ', availableQty=' + availableQty);
+        
+        // For editing, the inventory has already been adjusted on the server
+        // so we can just compare against the available quantity directly
         if (shipQty > availableQty) {
           quantityError = true;
-          toastr.error(`Cannot ship ${shipQty} of item ${clientItem}. Maximum available: ${availableQty}`);
+          toastr.error('Cannot ship ' + shipQty + ' of item ' + clientItem + 
+                       '. Maximum available: ' + availableQty);
           row.addClass('table-danger');
         } else {
           row.removeClass('table-danger');
@@ -525,6 +551,10 @@
       
       console.log(`Form submission complete with ${$('#item_list tr').length} items`);
       
+      // Clear editing state since we're submitting
+      currentlyEditing = false;
+      currentEditingRefId = '';
+      
       // Let the form submit normally
       return true;
     });
@@ -538,13 +568,31 @@
       console.log("Edit button clicked. Submission ID:", submissionId, "Container ID:", containerId);
       
       if (containerId) {
-        // Use the common function to load container data
-        loadContainerData(containerId);
-        
-        // Scroll to the form
-        $('html, body').animate({
-          scrollTop: $("#shipment-form").offset().top - 100
-        }, 500);
+        // First restore the inventory quantities for this container
+        $.ajax({
+          url: "{% url 'restore_warehouse_inventory' %}",
+          type: "GET",
+          data: { reference_id: containerId },
+          success: function(response) {
+            if (response.success) {
+              console.log("Inventory quantities restored:", response.updated);
+              toastr.success("Inventory updated for editing");
+              
+              // Now load the container data
+              loadContainerData(containerId);
+              
+              // Scroll to the form
+              $('html, body').animate({
+                scrollTop: $("#shipment-form").offset().top - 100
+              }, 500);
+            } else {
+              toastr.error("Error restoring inventory: " + response.message);
+            }
+          },
+          error: function() {
+            toastr.error("Failed to restore inventory quantities");
+          }
+        });
       } else {
         toastr.error("Could not determine container ID from the table row.");
       }
@@ -554,11 +602,11 @@
     $(document).on('input', '.qty-input', function() {
       const input = $(this);
       const value = parseInt(input.val()) || 0;
-      const availableQty = parseInt(input.closest('tr').attr('data-available-qty')) || 0;
+      const availableQty = parseInt(input.closest('tr').find('.available-qty').val()) || 0;
       
       // Validate quantity against available quantity
       if (value > availableQty) {
-        toastr.error(`You cannot ship more than the available quantity (${availableQty})`);
+        toastr.error('You cannot ship more than the available quantity (' + availableQty + ')');
         input.val(availableQty); // Reset to maximum available
       }
       
@@ -594,6 +642,10 @@
 
     // Reset form function update
     function resetForm() {
+      // Get the current editing reference ID before clearing
+      const wasEditing = $('#is_editing').val() === '1';
+      const editingRefId = $('#editing_reference_id').val();
+      
       // Clear the item table
       $('#item_list').empty();
       
@@ -613,9 +665,33 @@
       $('#is_editing').val('0');
       $('#editing_reference_id').val('');
       
+      // Reset global tracking variables
+      currentlyEditing = false;
+      currentEditingRefId = '';
+      
       // Reset any UI changes that might indicate edit mode
       $('.form-title').text('Create New Shipment');
       $('input[name="tracking_info"]').removeClass('border-warning');
+      
+      // If we were in edit mode, restore the original shipment quantities by reverting inventory
+      if (wasEditing && editingRefId) {
+        $.ajax({
+          url: "{% url 'revert_warehouse_inventory' %}",
+          type: "GET",
+          data: { reference_id: editingRefId },
+          success: function(response) {
+            if (response.success) {
+              console.log("Inventory quantities reverted:", response.updated);
+              toastr.success("Inventory restored to original state");
+            } else {
+              toastr.error("Error reverting inventory: " + response.message);
+            }
+          },
+          error: function() {
+            toastr.error("Failed to revert inventory quantities");
+          }
+        });
+      }
       
       toastr.info('Form has been cleared. You can start a new shipment.');
     }
@@ -678,52 +754,32 @@
             $('input[name="ship_date"]').val(data.ship_date);
             $('input[name="expected_arrival_date"]').val(data.expected_arrival);
             
+            // Make sure reference ID is editable
+            $('input[name="tracking_info"]').prop('readonly', false);
+            
             // Mark this as an edit operation
             $('#is_editing').val('1');
             $('#editing_reference_id').val(data.reference_id);
             
-            // Update form title to show we're editing
-            $('.form-title').text(`Editing Container: ${data.reference_id}`);
+            // Update global tracking variables for page unload
+            currentlyEditing = true;
+            currentEditingRefId = data.reference_id;
             
-            // Add items to the table
-            data.items.forEach(function(item, index) {
-              console.log(`Item ${index+1}:`, item);
-              console.log(`  - client_id: ${item.client_id}`);
-              console.log(`  - product_name: ${item.product_name}`);
-              
-              // Get available quantity for this client item
-              $.ajax({
-                url: "{% url 'get_available_quantity' %}",
-                type: "GET",
-                data: { client_item: item.client_id },
-                async: false, // Use synchronous request to ensure we have the quantity before appending
-                success: function(quantityData) {
-                  const availableQty = quantityData.success ? quantityData.quantity_available : 0;
-                  
-                  $('#item_list').append(`
-                    <tr data-item-id="${item.id}" data-available-qty="${availableQty}">
-                      <td class="client-item">${item.client_id}</td>
-                      <td class="product-name">${item.product_name || "Unknown Product"}</td>
-                      <td>
-                        <input type="number" class="form-control qty-input" min="1" max="${availableQty}" value="${item.quantity}" required/>
-                        <small class="text-muted">Available: ${availableQty}</small>
-                      </td>
-                      <td>
-                        <button type="button" class="btn btn-danger btn-sm delete-row">Delete</button>
-                      </td>
-                    </tr>
-                  `);
-                }
-              });
-            });
+            // Update form title to show we're editing
+            $('.form-title').text('Editing Container: ' + data.reference_id);
+            
+            // Process each item
+            if (data.items && data.items.length > 0) {
+              // Process items one by one to avoid synchronous AJAX
+              processItemsSequentially(data.items, 0);
+            } else {
+              toastr.warning("No items found in this container");
+            }
             
             // Show table if there are items
             if (data.items.length > 0) {
               $('#item_table_section').show();
             }
-            
-            // Update total quantity
-            updateTotalQuantity();
             
             toastr.success("Container data loaded successfully!");
           } else {
@@ -733,6 +789,64 @@
         },
         error: function() {
           toastr.error("Error loading container data. Please try again.");
+        }
+      });
+    }
+    
+    // Process items one by one to avoid synchronous AJAX issues
+    function processItemsSequentially(items, index) {
+      if (index >= items.length) {
+        // All items processed, update total
+        updateTotalQuantity();
+        return;
+      }
+      
+      const item = items[index];
+      console.log(`Processing item ${index+1}/${items.length}:`, item);
+      
+      // Get available quantity for this client item
+      $.ajax({
+        url: "{% url 'get_available_quantity' %}",
+        type: "GET",
+        data: {
+          client_item: item.client_id,
+          for_edit: "false", // No need to add back quantities since we restored them server-side
+          edit_quantity: 0
+        },
+        success: function(quantityData) {
+          // Get the latest quantity info from the server (already updated on backend)
+          const availableQty = quantityData.success ? quantityData.quantity_available : 0;
+          const originalQty = parseInt(item.quantity) || 0;
+          
+          console.log(`Item ${item.client_id}: Current Available=${availableQty} (includes restored quantity), Original Shipped=${originalQty}`);
+          
+          // Create row with hidden fields for original qty
+          const newRow = $(`
+            <tr data-item-id="${item.id}">
+              <td class="client-item">${item.client_id}</td>
+              <td class="product-name">${item.product_name || "Unknown Product"}</td>
+              <td>
+                <input type="number" class="form-control qty-input" min="1" 
+                       max="${availableQty}" value="${originalQty}" required/>
+                <input type="hidden" class="available-qty" value="${availableQty}">
+                <small class="text-muted">Available: ${availableQty}</small>
+              </td>
+              <td>
+                <button type="button" class="btn btn-danger btn-sm delete-row">Delete</button>
+              </td>
+            </tr>
+          `);
+          
+          // Add row to table
+          $('#item_list').append(newRow);
+          
+          // Process next item
+          processItemsSequentially(items, index + 1);
+        },
+        error: function() {
+          console.error(`Failed to get available quantity for item ${item.client_id}`);
+          // Still process next item
+          processItemsSequentially(items, index + 1);
         }
       });
     }

@@ -62,8 +62,23 @@
                     </div>
                 </div>
 
+                <!-- Product Information -->
+                <div id="check-items-wrapper">
+                    {% for product in product_list %}
+                    <div class="card mb-3">
+                        <div class="card-body p-3">
+                            <p><strong>Client ID:</strong> {{ product.client_id|default:"N/A" }}</p>
+                            <p><strong>Description:</strong> {{ product.description|default:"N/A" }}</p>
+                            <p><strong>Needed per Room:</strong> {{ product.quantity_needed_per_room|default:"0" }}</p>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <hr class="my-4">
+
                 <!-- Dynamic Check Items Render Here -->
-                <div id="check-items-wrapper"></div>
+                <div id="check-items-wrapper-2"></div>
 
                 <hr class="my-4">
 
@@ -166,7 +181,7 @@
           } else {
             toastr.error("Room number does not exist");
             $('#room_type').val('');
-            $('#check-items-wrapper').html('');
+            $('#check-items-wrapper-2').html('');
           }
           
         },
@@ -174,13 +189,13 @@
           toastr.error("Error fetching room type");
           setLoading('search_room', false);
           $('#room_type').val('');
-          $('#check-items-wrapper').html('');
+          $('#check-items-wrapper-2').html('');
         }
       });
     });
 
     function renderCheckItems(items, savedItems = []) {
-      const wrapper = $('#check-items-wrapper');
+      const wrapper = $('#check-items-wrapper-2');
       wrapper.html('');
 
       // Show/hide select all section based on whether there are items
@@ -217,7 +232,9 @@
           installedOn = saved.installed_on ? saved.installed_on.split("T")[0] : "";
           product_client_id = saved.product_client_id ? saved.product_client_id : "";
         }
-
+        const requiredQty = item.required_quantity || item.quantity_needed_per_room || 0;
+        const floorQty = item.floor_quantity || 0;
+        const canCheck = floorQty >= requiredQty;
         const html = `
           <div class="form-group row align-items-center mb-3 border border-light rounded-top">
             <div class="col-md-5 mt-3">
@@ -228,6 +245,10 @@
                 <label class="form-check-label" for="step_${item.type}_${item.id}">
                   ${item.label} 
                 </label>
+                <div class="text-muted" style="font-size: 0.95em; margin-left: 2rem;">
+                  Required: ${requiredQty} | On Floor: ${floorQty}
+                  ${!canCheck ? '<span class="text-danger"> (Not enough on floor)</span>' : ''}
+                </div>
               </div>
             </div>
             <div class="col-md-3 mt-2 mb-2">

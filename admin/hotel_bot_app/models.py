@@ -99,10 +99,12 @@ class WarehouseRequest(models.Model):
     client_item = models.CharField(max_length=255)
     requested_by = models.ForeignKey('InvitedUser', on_delete=models.SET_NULL, null=True, blank=True)
     received_by = models.ForeignKey('InvitedUser', null=True, blank=True, on_delete=models.SET_NULL , related_name='received_requests')
+    sent_by = models.ForeignKey('InvitedUser', null=True, blank=True, on_delete=models.SET_NULL, related_name='sent_requests')
     quantity_requested = models.PositiveIntegerField(default=0)
     quantity_received = models.PositiveIntegerField(default=0)
     quantity_sent = models.PositiveIntegerField(default=0)
     sent = models.BooleanField(default=False)  # True for Yes, False for No
+    sent_date = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return f"Floor {self.floor_number} - {self.client_item} (Requested: {self.quantity_requested}, Sent: {self.quantity_sent})"

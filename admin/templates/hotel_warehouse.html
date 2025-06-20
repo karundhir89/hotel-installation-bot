@@ -145,10 +145,9 @@
             <tr>
               <th>Floor Number</th>
               <th>Requested By</th>
-              <th>Items</th>
-              <th>Requested Qty</th>
-              <th>Sent Qty</th>
-              <!-- Status column removed -->
+              <th>Pending Items</th>
+              <th>Pending Requested Qty</th>
+              <th>Pending Sent Qty</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -211,7 +210,6 @@
           <div class="col-md-6">
             <p><strong>Floor Number:</strong> <span id="modal-floor"></span></p>
             <p><strong>Requested By:</strong> <span id="modal-requester"></span></p>
-            <p><strong>Requested Date:</strong> <span id="modal-date"></span></p>
           </div>
           <div class="col-md-6">
             <p><strong>Status:</strong> <span id="modal-status"></span></p>
@@ -324,6 +322,8 @@
                 <th>Sent Qty</th>
                 <th>Received Qty</th>
                 <th>Requested By</th>
+                <th>Sent By</th>
+                <th>Sent Date</th>
                 <th>Received By</th>
                 <th>Status</th>
               </tr>
@@ -537,6 +537,9 @@
             itemsList.empty();
             
             response.items.forEach(item => {
+              // Debug the item data in console
+              console.log('Item data:', item);
+              
               itemsList.append(`
                 <tr>
                   <td>${item.client_item}</td>
@@ -545,6 +548,8 @@
                   <td>${item.quantity_sent}</td>
                   <td>${item.quantity_received}</td>
                   <td>${item.requested_by || '-'}</td>
+                  <td>${item.sent_by || '-'}</td>
+                  <td>${item.sent_date || '-'}</td>
                   <td>${item.received_by || '-'}</td>
                   <td>${item.sent ? '<span class="yes-badge">Sent</span>' : '<span class="no-badge">Not Sent</span>'}</td>
                 </tr>

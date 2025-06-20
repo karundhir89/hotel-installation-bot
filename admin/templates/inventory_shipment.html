@@ -623,6 +623,9 @@
             $('input[name="tracking_info"]').val(data.container_id);
             $('input[name="ship_date"]').val(data.ship_date);
             $('input[name="expected_arrival_date"]').val(data.expected_arrival);
+
+            // Make sure reference ID is editable
+            $('input[name="tracking_info"]').prop('readonly', false);
             
             // Mark this as an edit operation
             $('#is_editing').val('1');

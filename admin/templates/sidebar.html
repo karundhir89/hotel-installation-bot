@@ -75,7 +75,7 @@
 						<p class="display_prompts-link">Edit Prompt</p>
 					</a>
 				</li>
-				{% if request.user.is_superuser or 'administrator' not in request.session.user_roles %}
+				{% if request.user.is_superuser or 'administrator' in request.session.user_roles %}
 				<li class="nav-item user_management li-elements-js" id="management">
 					<a class="nav-link" id="management-link" href="{% url 'user_management' %}">
 						<i class="material-icons">management</i>
