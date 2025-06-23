@@ -1,4 +1,5 @@
 {% load static %}
+{% load admin_tags %}
 <style>
 @media only screen and (min-width: 992px) {
     .log-out {
@@ -68,22 +69,25 @@
                     <p class="chat-link">Chat Bot</p>
                 </a>
             </li>
-			{% if request.user.is_superuser %}
+			{% if request.user|is_admin_or_superuser %}
 				<li class="nav-item display_prompts li-elements-js" id="prompt">
 					<a class="nav-link" id="prompt-link" href="{% url 'edit_prompts' %}">
 						<i class="material-icons">edit</i>
 						<p class="display_prompts-link">Edit Prompt</p>
 					</a>
 				</li>
-				{% if request.user.is_superuser or 'administrator' in request.session.user_roles %}
+			{% endif %}
+
+			{% if request.user|is_superuser_only %}
 				<li class="nav-item user_management li-elements-js" id="management">
 					<a class="nav-link" id="management-link" href="{% url 'user_management' %}">
 						<i class="material-icons">management</i>
 						<p class="user_management-link">User Management</p>
 					</a>
 				</li>
-				{% endif %}
+			{% endif %}
 
+			{% if request.user|is_admin_or_superuser %}
 				<li class="nav-item admin_issues_nav li-elements-js" id="admin_issues_li">
 					<a class="nav-link" id="admin_issues_link" href="{% url 'admin_dashboard:admin_issue_list' %}">
 						<i class="material-icons">bug_report</i>

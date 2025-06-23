@@ -76,6 +76,28 @@
         font-weight: bold;
         color: #2e2bda;
     }
+    .floor-numbers-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        max-height: 60px;
+        overflow-y: auto;
+        word-break: break-all;
+    }
+    .floor-numbers-list a {
+        background: #f1f1f1;
+        border-radius: 3px;
+        padding: 2px 7px;
+        margin-bottom: 2px;
+        font-size: 0.95em;
+        display: inline-block;
+        text-decoration: none;
+        color: #2e2bda;
+    }
+    .floor-numbers-list a:hover {
+        background: #e0e0e0;
+        font-weight: bold;
+    }
 </style>
 
 <!-- Loader -->
@@ -115,9 +137,11 @@
                                         <div class="stats">
                                             Floor Numbers:
                                             {% if floor_status_summary.renovated.numbers %}
+                                                <div class="floor-numbers-list">
                                                 {% for floor in floor_status_summary.renovated.numbers %}
                                                     <a href="/install/?floor={{ floor }}">{{ floor }}</a>{% if not forloop.last %}, {% endif %}
                                                 {% endfor %}
+                                                </div>
                                             {% else %}
                                                 N/A
                                             {% endif %}
@@ -138,9 +162,11 @@
                                         <div class="stats">
                                             Floor Numbers:
                                             {% if floor_status_summary.closed.numbers %}
+                                                <div class="floor-numbers-list">
                                                 {% for floor in floor_status_summary.closed.numbers %}
                                                     <a href="/install/?floor={{ floor }}">{{ floor }}</a>{% if not forloop.last %}, {% endif %}
                                                 {% endfor %}
+                                                </div>
                                             {% else %}
                                                 N/A
                                             {% endif %}
@@ -161,9 +187,11 @@
                                         <div class="stats">
                                             Floor Numbers:
                                             {% if floor_status_summary.pending.numbers %}
+                                                <div class="floor-numbers-list">
                                                 {% for floor in floor_status_summary.pending.numbers %}
                                                     <a href="/install/?floor={{ floor }}">{{ floor }}</a>{% if not forloop.last %}, {% endif %}
                                                 {% endfor %}
+                                                </div>
                                             {% else %}
                                                 N/A
                                             {% endif %}

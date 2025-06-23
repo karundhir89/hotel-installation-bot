@@ -50,6 +50,7 @@ from .forms import IssueForm, CommentForm, IssueUpdateForm # Import the forms
 import logging
 from django.contrib.contenttypes.models import ContentType # Added for GFK
 from django.utils.timezone import make_aware
+from django.http import HttpResponseForbidden
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +70,25 @@ def session_login_required(view_func):
         if not request.session.get("user_id"):
             return redirect("user_login")
         return view_func(request, *args, **kwargs)
-
     return wrapper
 
+def admin_required(view_func):
+    """
+    Decorator to check if the user is a superuser or has is_administrator=True
+    """
+    @wraps(view_func)
+    def wrapper(request, *args, **kwargs):
+        # Check if user is authenticated
+        if not request.user.is_authenticated:
+            return redirect('login')
+            
+        # Check if user is superuser or administrator
+        if request.user.is_superuser or hasattr(request.user, 'profile') and request.user.profile.is_administrator:
+            return view_func(request, *args, **kwargs)
+            
+        # If not, return forbidden
+        return HttpResponseForbidden("You don't have permission to access this page")
+    return wrapper
 
 def extract_values(json_obj, keys):
     """
@@ -360,6 +377,7 @@ def chatbot(request):
     return render(request, "chatbot.html")
 
 @login_required
+@admin_required
 def display_prompts(request):
     print(request)
     prompts = Prompt.objects.all()  # Fetch all records
@@ -387,6 +405,11 @@ def update_prompt(request):
 
 @login_required
 def user_management(request):
+    # Additional check to ensure only superusers can access this view
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Only superusers can access this page. Administrator users cannot access user management.")
+    
+    # Removed the info message about the Administrator role
     prompts = InvitedUser.objects.all()
     print("users", prompts)
 
@@ -395,6 +418,9 @@ def user_management(request):
 @login_required
 def add_users_roles(request):
     print(request.POST)
+    # Check if this is an AJAX request
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+    
     if request.method == "POST":
         name = request.POST.get("name")  # Get the ID
         email = request.POST.get("email")  # Get the new description
@@ -418,7 +444,12 @@ def add_users_roles(request):
             password=bcrypt.hashpw(password.encode(), bcrypt.gensalt()),
         )
 
-        if 'admin' in roles_list or 'administrator' in roles_list:
+        # Set is_administrator flag in InvitedUser for anyone with administrator role
+        if 'administrator' in roles_list:
+            user.is_administrator = True
+            user.save()
+            
+            # Create Django User with administrator privileges (but not superuser)
             auth_user = User.objects.create_user(
                 username=email,
                 password=password,
@@ -427,9 +458,44 @@ def add_users_roles(request):
             auth_user.is_staff = True  # Set is_staff to True for admin dashboard access
             auth_user.is_superuser = False
             auth_user.save()
+            
+            # Set is_administrator in UserProfile
+            auth_user.profile.is_administrator = True
+            auth_user.profile.save()
+            
+            # For AJAX requests, don't use messages framework
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({
+                    "success": True,
+                    "message": f"Administrator user '{name}' created successfully."
+                })
+                
+            messages.success(request, f"Administrator user '{name}' created successfully. They can access the Django admin interface.")
+        elif 'admin' in roles_list:
+            # Regular admin/hotel owner role
+            auth_user = User.objects.create_user(
+                username=email,
+                password=password,
+                email=email,
+            )
+            auth_user.is_staff = True  # Still give admin dashboard access
+            auth_user.is_superuser = False
+            auth_user.save()
         
+        if User.role == 'administrator':
+            request.session['is_soft_admin'] = True
+        else:
+            request.session['is_soft_admin'] = False
+        
+        # Return JSON response for AJAX requests
+        if is_ajax:
+            return JsonResponse({
+                "success": True,
+                "message": f"User '{name}' created successfully."
+            })
 
-    return render(request, "add_users_roles.html") # Should not be reached if AJAX
+    # For non-AJAX requests
+    return render(request, "add_users_roles.html")
 
 @login_required
 def edit_users_roles(request, user_id):
@@ -460,14 +526,28 @@ def edit_users_roles(request, user_id):
             
             user.save()
 
-            if 'admin' in roles_list or 'administrator' in roles_list:
+            # Check if user has administrator role
+            is_administrator_role = 'administrator' in roles_list
+            
+            # Update is_administrator flag on InvitedUser
+            user.is_administrator = is_administrator_role
+            
+            # Handle Django User creation/update
+            if 'administrator' in roles_list or 'admin' in roles_list:
                 # Check if Django auth user already exists
                 try:
                     auth_user = User.objects.get(username=email)
                     auth_user.is_staff = True  # Ensure is_staff is set
+                    
                     # If password was provided, update it
                     if password:
                         auth_user.set_password(password)
+                    
+                    # Update the is_administrator flag in the profile
+                    if hasattr(auth_user, 'profile'):
+                        auth_user.profile.is_administrator = is_administrator_role
+                        auth_user.profile.save()
+                    
                     auth_user.save()
                 except User.DoesNotExist:
                     # Only create if it doesn't exist
@@ -480,6 +560,10 @@ def edit_users_roles(request, user_id):
                         auth_user.is_staff = True  # Set is_staff to True
                         auth_user.is_superuser = False
                         auth_user.save()
+                        
+                        # Set is_administrator in profile
+                        auth_user.profile.is_administrator = is_administrator_role
+                        auth_user.profile.save()
             else:
                 try:
                     auth_user = User.objects.get(username=email)
@@ -519,6 +603,10 @@ def user_login(request):
 
             if user is None:
                 return JsonResponse({"error": "Email does not exist."}, status=404)
+            
+            user_roles = [role.strip().lower() for role in user.role] if user.role else []
+            request.session['user_roles'] = user_roles
+            request.session['is_soft_admin'] = 'administrator' in user_roles or 'admin' in user_roles
 
             # ADD THIS CHECK
             if hasattr(user, "status") and user.status.lower() == "deactivated":
@@ -1542,10 +1630,25 @@ def installation_form(request):
     invited_user_instance = get_object_or_404(InvitedUser, id=invited_user_id)
     checked_product_ids = []
 
+    # Track modified items (unchecked or newly checked)
+    modified_details = {}
+    for key, value in request.POST.items():
+        if key.startswith("modified_detail_"):
+            detail_id = key.split("modified_detail_")[1]
+            modified_details[detail_id] = True
+    
+    # Process checked items
     for key, value in request.POST.items():
         if key.startswith("step_detail_") and value == "on":
             detail_id = key.split("step_detail_")[1]
             product_id = request.POST.get(f"product_id_detail_{detail_id}")
+            
+            # Check if this is a previous installation - don't update inventory again
+            previous_install = request.POST.get(f"previous_install_detail_{detail_id}") == "true"
+            if previous_install:
+                # Skip previously installed items - they were already counted in inventory
+                continue
+                
             # Get required quantity for this product (from ProductRoomModel)
             install_detail = InstallDetail.objects.filter(install_id=detail_id).first()
             if install_detail:
@@ -1555,18 +1658,52 @@ def installation_form(request):
                 required_qty = prm.quantity if prm else 1
             else:
                 required_qty = 1
+                
             if product_id:
                 try:
                     inventory_item = Inventory.objects.get(client_id=product_id)
-                    if inventory_item.floor_quantity is not None:
-                        inventory_item.floor_quantity = max(0, inventory_item.floor_quantity - required_qty)
-                    if inventory_item.quantity_installed is not None:
-                        inventory_item.quantity_installed += required_qty
-                    else:
-                        inventory_item.quantity_installed = required_qty
-                    inventory_item.save()
+                    
+                    # Only increment install qty if not previously installed or not modified
+                    # (a modification from unchecked to checked will add)
+                    if not install_detail or install_detail.status != "YES" or modified_details.get(detail_id):
+                        if inventory_item.floor_quantity is not None:
+                            inventory_item.floor_quantity = max(0, inventory_item.floor_quantity - required_qty)
+                        if inventory_item.quantity_installed is not None:
+                            inventory_item.quantity_installed += required_qty
+                        else:
+                            inventory_item.quantity_installed = required_qty
+                        inventory_item.save()
+                        
                 except Inventory.DoesNotExist:
                     print(f"Inventory item with product_id {product_id} does not exist.")
+    
+    # Handle items that were unchecked (previously YES but now unchecked)
+    for key, value in request.POST.items():
+        if key.startswith("step_detail_") and value == "off" and modified_details.get(key.split("step_detail_")[1]):
+            detail_id = key.split("step_detail_")[1]
+            
+            # Only process if this was modified from checked to unchecked
+            if not request.POST.get(f"current_session_{key.split('step_')[1]}") and modified_details.get(detail_id):
+                install_detail = InstallDetail.objects.filter(install_id=detail_id).first()
+                if install_detail and install_detail.status == "YES" and install_detail.product_id:
+                    product_id = install_detail.product_id.client_id
+                    
+                    # Get required quantity to revert
+                    room_model_id = install_detail.room_model_id_id
+                    product_data_id = install_detail.product_id_id
+                    prm = ProductRoomModel.objects.filter(room_model_id=room_model_id, product_id=product_data_id).first()
+                    required_qty = prm.quantity if prm else 1
+                    
+                    try:
+                        # Revert the inventory - add back to floor, remove from installed
+                        inventory_item = Inventory.objects.get(client_id=product_id)
+                        if inventory_item.floor_quantity is not None:
+                            inventory_item.floor_quantity += required_qty
+                        if inventory_item.quantity_installed is not None:
+                            inventory_item.quantity_installed = max(0, inventory_item.quantity_installed - required_qty)
+                        inventory_item.save()
+                    except Inventory.DoesNotExist:
+                        print(f"Inventory item with product_id {product_id} does not exist.")
     #             checked_product_ids.append(product_id)
 
     # # Now checked_product_ids contains ONLY product IDs that were ticked
@@ -2072,10 +2209,12 @@ def inventory_received(request):
                                 received_qty=received_qty, 
                                 damaged_qty=damaged_qty,
                                 is_new=False,
-                                old_received=record.received_qty,
-                                old_damaged=record.damaged_qty
+                                old_received=old_received,   # <-- use the old value
+                                old_damaged=old_damaged      # <-- use the old value
                             )
                             
+                            # Add this line:
+                            recalculate_quantity_available(client_item)
                             success_count += 1
                         else:
                             print(f"No record found for ID={record_id}, client_item={client_item} in container {container_id}")
@@ -2137,6 +2276,8 @@ def inventory_received(request):
                         damaged_qty=damaged_qty,
                         is_new=True
                     )
+                    # Add this line:
+                    recalculate_quantity_available(client_item)
                         
                     success_count += 1
 
@@ -2952,6 +3093,7 @@ def home(request):
         return redirect("user_login")
 
 @login_required
+@admin_required
 def chat_history(request):
     sessions = ChatSession.objects.prefetch_related('chat_history').order_by('-created_at')
     return render(request, 'chat_history.html', {'sessions': sessions})
@@ -4241,27 +4383,30 @@ def warehouse_receiver(request):
                 if received_qty == 0 and damaged_qty == 0:
                     continue
                 
-                # Create the warehouse receipt
-                HotelWarehouse.objects.create(
-                    reference_id=reference_id,
-                    client_item=client_item,
-                    quantity_received=received_qty,
-                    damaged_qty=damaged_qty,  # Add the damaged quantity
-                    checked_by=user,
-                    received_date=received_date
-                )
-                
-                # Update inventory
-                inventory_item = Inventory.objects.filter(client_id__iexact=client_item).first()
-                if inventory_item:
-                    # Only add to inventory for items that aren't damaged
-                    inventory_item.hotel_warehouse_quantity = (inventory_item.hotel_warehouse_quantity or 0) + received_qty
-                    inventory_item.save()
-                    print(f"Updated inventory for {client_item}: added {received_qty} to hotel warehouse quantity")
+                try:
+                    # Create the warehouse receipt
+                    HotelWarehouse.objects.create(
+                        reference_id=reference_id,
+                        client_item=client_item,
+                        quantity_received=received_qty,
+                        damaged_qty=damaged_qty,  # Add the damaged quantity
+                        checked_by=user,
+                        received_date=received_date
+                    )
+                    # Use the recalculate function which handles case insensitivity
+                    recalculate_hotel_warehouse_quantity(client_item)
+                    print(f"Updated hotel warehouse quantity for {client_item} using recalculate_hotel_warehouse_quantity")
+                except Exception as item_error:
+                    print(f"Error creating warehouse receipt for {client_item}: {str(item_error)}")
+                    # Don't raise the exception as we want to continue with other items
             
-            # Call functions to update inventory quantities
-            update_inventory_warehouse_quantities()
-            update_inventory_hotel_warehouse_quantities()  # Also update received and damaged quantities
+            try:
+                # Call functions to update inventory quantities
+                update_inventory_warehouse_quantities()
+                update_inventory_hotel_warehouse_quantities()  # Also update received and damaged quantities
+            except Exception as update_error:
+                print(f"Error updating inventory quantities: {str(update_error)}")
+                # Don't raise the exception as we want to continue with the response
             
             if is_editing:
                 messages.success(request, "Warehouse receipt updated successfully")
@@ -5260,13 +5405,35 @@ def get_available_quantity(request):
         from django.db.models.functions import Lower
         
         # Find the inventory item with case-insensitive matching
+        # Use annotate to get case-insensitive matching
         inventory_items = Inventory.objects.annotate(
             client_id_lower=Lower('client_id')
         ).filter(
             client_id_lower=client_item.lower()
         )
         
-        if inventory_items.exists():
+        # Check if we have multiple items with same client_id but different case
+        if inventory_items.count() > 1:
+            # Find the primary item (first one) and consolidate quantities to it
+            primary_item = inventory_items.first()
+            
+            # Set other items to 0 quantity
+            for item in inventory_items.exclude(id=primary_item.id):
+                if item.quantity_available > 0:
+                    # Transfer any available quantity to primary item
+                    primary_item.quantity_available += (item.quantity_available or 0)
+                    item.quantity_available = 0
+                    item.save()
+                    print(f"Consolidated quantity from {item.client_id} to {primary_item.client_id}")
+            
+            # Save primary item with consolidated quantity
+            primary_item.save()
+            
+            # Continue with just the primary item
+            inventory_item = primary_item
+            quantity_available = inventory_item.quantity_available or 0
+        elif inventory_items.exists():
+            # Just one item found, proceed normally
             inventory_item = inventory_items.first()
             # Get the base quantity available
             quantity_available = inventory_item.quantity_available or 0
@@ -5503,4 +5670,138 @@ def revert_warehouse_inventory(request):
     except Exception as e:
         print(f"Error reverting inventory: {str(e)}")
         return JsonResponse({'success': False, 'message': str(e)})
+    
+@login_required
+def create_django_admin_user(request):
+    """Create a Django admin user with is_administrator=True but is_superuser=False
+    
+    This creates users who can access most admin features but can't manage users.
+    """
+    # Only superusers can create Django admin users
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Only superusers can create Django admin users")
+    if request.method == "POST":
+        username = request.POST.get("username")
+        email = request.POST.get("email")
+        password = request.POST.get("password")
+        
+        if not username or not email or not password:
+            messages.error(request, "All fields are required")
+            return render(request, "create_django_admin.html")
+            
+        # Check if user already exists
+        if User.objects.filter(username=username).exists():
+            messages.error(request, "Username already exists")
+            return render(request, "create_django_admin.html")
+            
+        if User.objects.filter(email=email).exists():
+            messages.error(request, "Email already exists")
+            return render(request, "create_django_admin.html")
+            
+        # Create Django user
+        django_user = User.objects.create_user(
+            username=username,
+            email=email,
+            password=password,
+            is_staff=True,
+            is_superuser=False  # Not a superuser, just an administrator
+        )
+        
+        # Set administrator flag
+        django_user.profile.is_administrator = True
+        django_user.profile.save()
+        
+        # Create matching InvitedUser if needed
+        if not InvitedUser.objects.filter(email=email).exists():
+            InvitedUser.objects.create(
+                name=username,
+                email=email,
+                role=['administrator'],
+                is_administrator=True,
+                status='activated',
+                password=bcrypt.hashpw(password.encode(), bcrypt.gensalt())
+            )
+        
+        messages.success(request, f"Administrator user '{username}' created successfully (with is_administrator=True but NOT superuser)")
+        return redirect("user_management")
+        
+    return render(request, "create_django_admin.html")
+    
+# Add this helper function near the other inventory update helpers
+def recalculate_quantity_available(client_id):
+    from django.db.models import Sum
+    from hotel_bot_app.models import InventoryReceived, Inventory
+    # Use iexact to get case-insensitive matches for received quantities
+    total_received = InventoryReceived.objects.filter(client_id__iexact=client_id).aggregate(Sum('received_qty'))['received_qty__sum'] or 0
+    
+    # Find all inventory items that match this client_id (case-insensitive)
+    inventory_items = Inventory.objects.filter(client_id__iexact=client_id)
+    
+    if inventory_items.exists():
+        # If there are multiple inventory items with different case variations
+        if inventory_items.count() > 1:
+            # Keep the first one and update it with the total received quantity
+            primary_item = inventory_items.first()
+            primary_item.quantity_available = total_received
+            primary_item.save()
+            
+            # For all other items (different case variations), set quantity to 0 to avoid confusion
+            for item in inventory_items.exclude(id=primary_item.id):
+                item.quantity_available = 0
+                item.save()
+                print(f"Set quantity to 0 for duplicate inventory item: {item.client_id}")
+        else:
+            # Just one item found, update it normally
+            inventory_item = inventory_items.first()
+            inventory_item.quantity_available = total_received
+            inventory_item.save()
+
+# Add this helper function for hotel warehouse quantities
+def recalculate_hotel_warehouse_quantity(client_id):
+    from django.db.models import Sum
+    from hotel_bot_app.models import HotelWarehouse, Inventory
+    # Use iexact to get case-insensitive matches for hotel warehouse quantities
+    total_received = HotelWarehouse.objects.filter(client_item__iexact=client_id).aggregate(Sum('quantity_received'))['quantity_received__sum'] or 0
+    total_damaged = HotelWarehouse.objects.filter(client_item__iexact=client_id).aggregate(Sum('damaged_qty'))['damaged_qty__sum'] or 0
+    
+    print(f"Recalculating for {client_id}: received={total_received}, damaged={total_damaged}")
+    
+    # Find all inventory items that match this client_id (case-insensitive)
+    inventory_items = Inventory.objects.filter(client_id__iexact=client_id)
+    
+    if inventory_items.exists():
+        # If there are multiple inventory items with different case variations
+        if inventory_items.count() > 1:
+            # Keep the first one and update it with the total received quantity
+            primary_item = inventory_items.first()
+            primary_item.hotel_warehouse_quantity = total_received
+            primary_item.received_at_hotel_quantity = total_received  # Update received_at_hotel_quantity too
+            primary_item.damaged_quantity_at_hotel = total_damaged    # Update damaged_quantity_at_hotel too
+            primary_item.save()
+            
+            # For all other items (different case variations), set quantity to 0 to avoid confusion
+            for item in inventory_items.exclude(id=primary_item.id):
+                item.hotel_warehouse_quantity = 0
+                item.received_at_hotel_quantity = 0     # Set to 0 for duplicate items
+                item.damaged_quantity_at_hotel = 0      # Set to 0 for duplicate items
+                item.save()
+                print(f"Set hotel quantities to 0 for duplicate inventory item: {item.client_id}")
+        else:
+            # Just one item found, update it normally
+            inventory_item = inventory_items.first()
+            inventory_item.hotel_warehouse_quantity = total_received
+            inventory_item.received_at_hotel_quantity = total_received  # Update received_at_hotel_quantity too
+            inventory_item.damaged_quantity_at_hotel = total_damaged    # Update damaged_quantity_at_hotel too
+            inventory_item.save()
+            print(f"Updated hotel quantities for {client_id}: received={total_received}, damaged={total_damaged}")
+
+# ... inside warehouse_receiver view, after each new HotelWarehouse.objects.create(...):
+    HotelWarehouse.objects.create(
+        reference_id=reference_id,
+        client_item=client_item,
+        quantity_received=received_qty,
+        damaged_qty=damaged_qty,  # Add the damaged quantity
+        checked_by=user,
+        received_date=received_date
+    )
     

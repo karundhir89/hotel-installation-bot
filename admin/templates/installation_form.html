@@ -158,6 +158,23 @@
 {% block extra_js %}
 <script>
   $(document).ready(function () {
+    // Store initial state of checkboxes to track changes during a session
+    let initialCheckboxState = {};
+    
+    // Add custom CSS for our status indicators
+    $('<style>')
+      .prop('type', 'text/css')
+      .html(`
+        .previously-installed {
+          background-color: rgba(40, 167, 69, 0.1) !important;
+          border-left: 4px solid #28a745 !important;
+        }
+        .current-selection {
+          background-color: rgba(23, 162, 184, 0.1) !important;
+          border-left: 4px solid #17a2b8 !important;
+        }
+      `)
+      .appendTo('head');
     $('#search_room').on('click', function () {
       const roomNumber = $('#room_number').val();
       if (!roomNumber) {
@@ -178,6 +195,22 @@
           if (data.success) {
             $('#room_type').val(data.room_type);
             renderCheckItems(data.check_items, data.saved_items);
+            
+            // Add form submission handler to track what's actually being submitted
+            $('form').off('submit.track').on('submit.track', function() {
+              console.log('Form submitted with these checkboxes:');
+              $('.form-check-input').each(function() {
+                const id = $(this).attr('id');
+                const isChecked = $(this).is(':checked');
+                const wasModified = id && initialCheckboxState[id] !== undefined && 
+                                   initialCheckboxState[id] !== isChecked;
+                
+                if (id && wasModified) {
+                  console.log(`${id}: ${isChecked ? 'CHECKED' : 'UNCHECKED'} (Modified from ${initialCheckboxState[id]})`);
+                }
+              });
+              return true; // Allow form submission to continue
+            });
           } else {
             toastr.error("Room number does not exist");
             $('#room_type').val('');
@@ -205,81 +238,209 @@
         $('#select_all_section').hide();
       }
 
+      // Create a map of previously installed products to product_client_id
+      const installedItemsMap = {};
+      savedItems.forEach(item => {
+        if (item.install_id !== undefined && item.status === "YES" && item.product_client_id) {
+          // If a product is already installed (status YES), track it
+          if (!installedItemsMap[item.product_client_id]) {
+            installedItemsMap[item.product_client_id] = [];
+          }
+          installedItemsMap[item.product_client_id].push(item);
+        }
+      });
+
       const savedItemsMap = {};
       savedItems.forEach(item => {
         if (item.install_id !== undefined) {
-
-        console.log("item = ",item);
           savedItemsMap[`detail-${item.install_id}`] = item;
         }
       });
 
+      // Track already processed products to avoid duplicates
+      const processedProducts = new Set();
+
       items.forEach(item => {
         const key = `${item.type}-${item.id}`;
         const saved = savedItemsMap[key] || {};
-
+        
         let isChecked = false;
         let installedBy = "";
         let installedOn = "";
         let product_client_id = "";
+        let alreadyInstalled = false;
+        let installedCount = 0;
+        
         if (item.type === "installation") {
           isChecked = item.status === "YES";
           installedBy = item.checked_by || "";
           installedOn = item.check_on ? item.check_on.split("T")[0] : "";
         } else if (item.type === "detail") {
-          isChecked = saved.status === "YES";
-          installedBy = saved.installed_by || "";
-          installedOn = saved.installed_on ? saved.installed_on.split("T")[0] : "";
-          product_client_id = saved.product_client_id ? saved.product_client_id : "";
+          product_client_id = item.client_id || saved.product_client_id || "";
+          
+          // Check if this product is already installed
+          if (product_client_id && installedItemsMap[product_client_id]) {
+            const installedItems = installedItemsMap[product_client_id];
+            installedCount = installedItems.length;
+            
+            // Determine if this specific item was already installed
+            const matchingInstalled = installedItems.find(installed => 
+              installed.install_id === item.id || 
+              (saved.install_id && installed.install_id === saved.install_id)
+            );
+            
+            if (matchingInstalled) {
+              isChecked = true;
+              installedBy = matchingInstalled.installed_by || "";
+              installedOn = matchingInstalled.installed_on ? matchingInstalled.installed_on.split("T")[0] : "";
+              alreadyInstalled = true;
+            }
+          }
+          
+          // If not specifically identified as already installed, check if saved
+          if (!alreadyInstalled) {
+            isChecked = saved.status === "YES";
+            installedBy = saved.installed_by || "";
+            installedOn = saved.installed_on ? saved.installed_on.split("T")[0] : "";
+          }
         }
+        
         const requiredQty = item.required_quantity || item.quantity_needed_per_room || 0;
         const floorQty = item.floor_quantity || 0;
-        const canCheck = floorQty >= requiredQty;
-        const html = `
-          <div class="form-group row align-items-center mb-3 border border-light rounded-top">
-            <div class="col-md-5 mt-3">
-              <div class="form-check mb-2">
-                <input type="hidden" name="step_${item.type}_${item.id}" value="off">
-            <input class="form-check-input"  type="checkbox" name="step_${item.type}_${item.id}" id="step_${item.type}_${item.id}" value="on" ${isChecked ? 'checked' : ''}>
-            <input type="hidden" name="product_id_${item.type}_${item.id}" value="${product_client_id}">
-                <label class="form-check-label" for="step_${item.type}_${item.id}">
-                  ${item.label} 
-                </label>
-                <div class="text-muted" style="font-size: 0.95em; margin-left: 2rem;">
-                  Required: ${requiredQty} | On Floor: ${floorQty}
-                  ${!canCheck ? '<span class="text-danger"> (Not enough on floor)</span>' : ''}
-                </div>
-              </div>
-            </div>
-            <div class="col-md-3 mt-2 mb-2">
-              <input type="date" readonly class="form-control" name="date_${item.type}_${item.id}" value="${installedOn}">
-            </div>
-            <div class="col-md-4 mt-2 mb-2">
-              <input type="text" readonly class="form-control" name="checked_by_${item.type}_${item.id}" value="${installedBy}" placeholder="Checked by">
-            </div>
-          </div>
-        `;
+        // const canCheck = floorQty >= requiredQty; // No longer needed for frontend
+        
+        // For products, check if we already have a row for this product client ID
+        if (item.type === "detail" && product_client_id) {
+          // If we've already processed this product and it's already installed, skip it
+          if (processedProducts.has(product_client_id) && alreadyInstalled) {
+            return; // Skip this item
+          }
+          processedProducts.add(product_client_id);
+        }
+        
+        // Create special classes for different item states
+        let itemClass = "";
+        if (alreadyInstalled && installedOn && installedBy) {
+          // Previously installed in a past session
+          itemClass = "previously-installed bg-light";
+        } else if (isChecked) {
+          // Selected in current session
+          itemClass = "current-selection bg-info-light";
+        }
+        
+        // Build HTML using string concatenation to avoid template literal syntax errors
+        let html = '<div class="form-group mb-3 border border-light rounded-top ' + itemClass + ' d-flex justify-content-between align-items-center">';
+        html += '<div class="left-group" style="flex:1 1 auto; min-width:0;">';
+        html += '<div class="form-check mb-2">';
+        html += '<input type="hidden" name="step_' + item.type + '_' + item.id + '" value="off">';
+        
+        // Only lock items that were installed in previous sessions with confirmed install data
+        // We want a clear threshold for "permanent" vs "in progress" installs
+        const fromPreviousSession = item.type === "installation" ? 
+          (alreadyInstalled && installedOn && installedBy) : 
+          false; // Never lock product items so they can be unchecked if needed
+        
+        if (fromPreviousSession) {
+          // Only installation steps can be locked - product items are always changeable
+          html += '<input class="form-check-input" type="checkbox" disabled checked>';
+          html += '<input type="hidden" name="step_' + item.type + '_' + item.id + '" value="on">';
+          html += '<input type="hidden" name="previous_install_' + item.type + '_' + item.id + '" value="true">';
+        } else {
+          // All product items and new installation steps are toggleable
+          html += '<input class="form-check-input" type="checkbox" name="step_' + item.type + '_' + item.id + '" id="step_' + item.type + '_' + item.id + '" value="on" ' + (isChecked ? 'checked' : '') + '>';
+          
+          // Add a data attribute to track items checked in current session
+          if (isChecked) {
+            html += '<input type="hidden" class="current-session-flag" name="current_session_' + item.type + '_' + item.id + '" value="true">';
+          }
+        }
+        
+        html += '<input type="hidden" name="product_id_' + item.type + '_' + item.id + '" value="' + product_client_id + '">';
+        html += '<label class="form-check-label" for="step_' + item.type + '_' + item.id + '">';
+        html += item.label;
+        
+        if (fromPreviousSession) {
+          html += ' <span class="badge bg-success text-white ml-2">Previously Installed</span>';
+        } else if (isChecked) {
+          html += ' <span class="badge bg-info text-white ml-2">Selected for Installation</span>';
+        }
+        
+        html += '</label>';
+        // Only show requirements for detail (product) items, not for installation steps
+        if (item.type === "detail") {
+          html += '<div class="text-muted" style="font-size: 0.95em; margin-left: 0.5rem; text-align: left;">';
+          html += 'Required: ' + requiredQty;
+          if (installedCount > 0) {
+            html += ' <span class="text-success"> (' + installedCount + ' previously installed)</span>';
+          }
+          html += '</div>';
+        }
+        html += '</div>';
+        html += '</div>';
+        html += '<div class="right-group" style="flex:0 0 200px; min-width:160px; text-align:right;">';
+        html += '<input type="date" readonly class="form-control" style="width:100%;" name="date_' + item.type + '_' + item.id + '" value="' + installedOn + '">';
+        html += '</div>';
+        html += '</div>';
         wrapper.append(html);
       });
+      
+      // After rendering all items, save their initial state
+      setTimeout(saveInitialCheckboxState, 100);
     }
 
+    // After rendering check items, save their initial state
+    function saveInitialCheckboxState() {
+      initialCheckboxState = {};
+      $('.form-check-input').each(function() {
+        const id = $(this).attr('id');
+        if (id) {
+          initialCheckboxState[id] = $(this).is(':checked');
+        }
+      });
+    }
+    
     // Fill checked_by and check_on when checkbox is ticked
     $(document).on("change", ".form-check-input", function () {
       const checkbox = $(this);
-      const idParts = checkbox.attr("id").split("_"); // ["step", "detail", "23"]
+      const checkboxId = checkbox.attr("id");
+      const idParts = checkboxId.split("_"); // ["step", "detail", "23"]
       const type = idParts[1];
       const id = idParts[2];
 
       const isChecked = checkbox.is(":checked");
       const currentDate = new Date().toISOString().split("T")[0];
       const currentUser = "{{ invited_user.name|escapejs }}";
-
+      
+      // Get the parent row to apply visual indicators
+      const parentRow = checkbox.closest('.form-group.row');
+      
       if (isChecked) {
+        // Add checked state and visual indicator
         $(`input[name="date_${type}_${id}"]`).val(currentDate);
         $(`input[name="checked_by_${type}_${id}"]`).val(currentUser);
+        parentRow.addClass('current-selection');
+        
+        // If this was a change from initial state, mark it
+        if (initialCheckboxState[checkboxId] === false) {
+          parentRow.find('.form-check-label').append(' <span class="badge bg-warning text-white ml-2">Modified</span>');
+        }
       } else {
+        // Remove checked state and visual indicator
         $(`input[name="date_${type}_${id}"]`).val("");
         $(`input[name="checked_by_${type}_${id}"]`).val("");
+        parentRow.removeClass('current-selection');
+        
+        // If this was a change from initial state, mark it
+        if (initialCheckboxState[checkboxId] === true) {
+          parentRow.find('.form-check-label').append(' <span class="badge bg-warning text-white ml-2">Modified</span>');
+        }
+      }
+      
+      // Add a hidden input to track that this checkbox was modified
+      if (initialCheckboxState[checkboxId] !== undefined && initialCheckboxState[checkboxId] !== isChecked) {
+        if (!parentRow.find('input[name^="modified_"]').length) {
+          parentRow.append(`<input type="hidden" name="modified_${type}_${id}" value="true">`);
+        }
       }
     });
 

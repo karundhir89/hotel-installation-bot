@@ -149,6 +149,9 @@
 </div>
 
 <style>
+    .dropdown-item input[type="checkbox"] {
+        margin-right: 12px; /* Increased space between checkbox and text */
+    }
     .modal-overlay {
         display: none;
         position: fixed;
@@ -315,6 +318,8 @@
         checkboxes.forEach(function(checkbox) {
             checkbox.addEventListener("change", function() {
                 updateSelectedRoles();
+                
+                // Administrator role handling is now simplified - no popup
             });
         });
 
@@ -375,7 +380,14 @@
                 type: method,
                 data: serializedData,
                 success: function(response) {
-                    alert(response.message || "User action successful!");
+                    // Check if response is HTML or JSON
+                    if (typeof response === 'string' && response.includes('<!DOCTYPE html>')) {
+                        // Response is HTML, show generic success message
+                        alert("User created successfully!");
+                    } else {
+                        // Response is JSON
+                        alert(response.message || "User action successful!");
+                    }
                     modalOverlay.fadeOut();
                     userModal.fadeOut();
                     location.reload();
