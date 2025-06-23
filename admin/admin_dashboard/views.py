@@ -297,28 +297,43 @@ def _prepare_floor_progress_data():
 	pending_floor_numbers = []
 
 	sql_query = """
+		WITH room_installs AS (
+			-- Get all rooms that have products installed
+			SELECT 
+				rd.id AS room_data_id,
+				rd.room AS room_number,
+				rd.floor AS floor_number,
+				i.id AS install_id,
+				i.prework_check_on,
+				i.day_install_complete,
+				i.post_work_check_on,
+				(SELECT COUNT(*) FROM install_detail WHERE installation_id = i.id AND status = 'YES') AS installed_products_count
+			FROM
+				room_data rd
+			LEFT JOIN
+				install i ON rd.room = i.room
+			WHERE
+				rd.floor IS NOT NULL
+		)
 		SELECT
-			rd.floor AS floor_number,
-			COUNT(rd.id) AS total_rooms_on_floor,
-			COALESCE(SUM(CASE WHEN i.prework_check_on IS NOT NULL THEN 1 ELSE 0 END), 0) AS prework_completed_count,
-			COALESCE(SUM(CASE WHEN i.day_install_complete IS NOT NULL THEN 1 ELSE 0 END), 0) AS install_completed_count,
-			COALESCE(SUM(CASE WHEN i.post_work_check_on IS NOT NULL THEN 1 ELSE 0 END), 0) AS postwork_completed_count,
+			ri.floor_number,
+			COUNT(DISTINCT ri.room_data_id) AS total_rooms_on_floor,
+			COALESCE(SUM(CASE WHEN ri.prework_check_on IS NOT NULL THEN 1 ELSE 0 END), 0) AS prework_completed_count,
+			-- Count a room as having installation completed if it has ANY products installed
+			COALESCE(SUM(CASE WHEN ri.installed_products_count > 0 THEN 1 ELSE 0 END), 0) AS install_completed_count,
+			COALESCE(SUM(CASE WHEN ri.post_work_check_on IS NOT NULL THEN 1 ELSE 0 END), 0) AS postwork_completed_count,
 			COALESCE(SUM(CASE 
-				WHEN i.prework_check_on IS NOT NULL AND 
-					 i.day_install_complete IS NOT NULL AND 
-					 i.post_work_check_on IS NOT NULL 
+				WHEN ri.prework_check_on IS NOT NULL AND 
+					 ri.installed_products_count > 0 AND 
+					 ri.post_work_check_on IS NOT NULL 
 				THEN 1 ELSE 0 
 			END), 0) AS fully_completed_rooms_on_floor
 		FROM
-			room_data rd
-		LEFT JOIN
-			install i ON rd.room = i.room
-		WHERE
-			rd.floor IS NOT NULL
+			room_installs ri
 		GROUP BY
-			rd.floor
+			ri.floor_number
 		ORDER BY
-			rd.floor;
+			ri.floor_number;
 	"""
 
 	with connection.cursor() as cursor:
@@ -342,19 +357,29 @@ def _prepare_floor_progress_data():
 		postwork_status = "Pending"
 
 		if total_rooms_on_floor > 0:
-			percentage_completed_val = (fully_completed_on_floor / total_rooms_on_floor * 100)
-			percentage_completed_str = f"{percentage_completed_val:.0f}%"
+			# Calculate percentage based on total installation progress, not just fully completed rooms
+			# This gives a more accurate progress percentage
+			prework_percentage = (prework_completed / total_rooms_on_floor) if total_rooms_on_floor > 0 else 0
+			install_percentage = (install_completed / total_rooms_on_floor) if total_rooms_on_floor > 0 else 0
+			postwork_percentage = (postwork_completed / total_rooms_on_floor) if total_rooms_on_floor > 0 else 0
+			
+			# Overall progress is weighted average of the three phases
+			# 25% prework + 50% installation + 25% postwork
+			overall_percentage = (0.25 * prework_percentage + 0.5 * install_percentage + 0.25 * postwork_percentage) * 100
+			percentage_completed_str = f"{overall_percentage:.0f}%"
 
-			prework_status = "Completed" if prework_completed == total_rooms_on_floor else "Pending"
+			# Status text for each phase
+			prework_status = "Completed" if prework_completed == total_rooms_on_floor else \
+							 f"{(prework_percentage * 100):.0f}%" if prework_completed > 0 else "Pending"
 			
 			if install_completed == total_rooms_on_floor:
 				install_status_str = "Completed"
 			elif install_completed > 0:
-				install_percentage_val = (install_completed / total_rooms_on_floor * 100)
-				install_status_str = f"{install_percentage_val:.0f}%"
+				install_status_str = f"{(install_percentage * 100):.0f}%"
 			# else install_status_str remains "Pending"
 
-			postwork_status = "Completed" if postwork_completed == total_rooms_on_floor else "Pending"
+			postwork_status = "Completed" if postwork_completed == total_rooms_on_floor else \
+							  f"{(postwork_percentage * 100):.0f}%" if postwork_completed > 0 else "Pending"
 		
 		floor_progress_list.append({
 			'floor_number': current_floor,
@@ -368,9 +393,9 @@ def _prepare_floor_progress_data():
 		if total_rooms_on_floor > 0: # Ensure floor has rooms to be considered
 			if fully_completed_on_floor == total_rooms_on_floor:
 				renovated_floor_numbers.append(current_floor)
-			elif install_completed > 0: # Some installation started, but not all rooms fully completed
+			elif install_completed > 0: # Some products installed, but not all rooms fully completed
 				closed_floor_numbers.append(current_floor)
-			else: # No installation started
+			else: # No products installed
 				pending_floor_numbers.append(current_floor)
 		else: # Floors with no rooms in room_data but potentially in schedule (not covered by this SQL)
 			pending_floor_numbers.append(current_floor) # Or handle as per broader project definition if available
@@ -396,7 +421,48 @@ def _prepare_pie_chart_data(total_project_rooms, total_project_fully_completed_r
 	"""
 	Prepares the data for the overall project completion pie chart.
 	"""
-	overall_completion_percentage = (total_project_fully_completed_rooms / total_project_rooms * 100) if total_project_rooms > 0 else 0
+	# Get additional detailed information about partial completions
+	with connection.cursor() as cursor:
+		cursor.execute("""
+			SELECT
+				-- Count installations that have ANY products installed
+				COUNT(DISTINCT i.id) AS installations_with_products,
+				-- Count installations with completed prework
+				COUNT(DISTINCT CASE WHEN i.prework = 'YES' THEN i.id END) AS prework_completed,
+				-- Count installations with completed postwork
+				COUNT(DISTINCT CASE WHEN i.post_work = 'YES' THEN i.id END) AS postwork_completed
+			FROM
+				install i
+			INNER JOIN
+				install_detail id ON i.id = id.installation_id
+			WHERE
+				id.status = 'YES'
+		""")
+		results = cursor.fetchone()
+		
+		installations_with_products = results[0] if results[0] is not None else 0
+		prework_completed = results[1] if results[1] is not None else 0
+		postwork_completed = results[2] if results[2] is not None else 0
+	
+	# Calculate weighted completion percentage
+	if total_project_rooms > 0:
+		# Phase weighting: 25% prework, 50% installation, 25% postwork
+		prework_weight = 0.25
+		install_weight = 0.50
+		postwork_weight = 0.25
+		
+		prework_percentage = prework_completed / total_project_rooms
+		install_percentage = installations_with_products / total_project_rooms
+		postwork_percentage = postwork_completed / total_project_rooms
+		
+		overall_completion_percentage = (
+			prework_weight * prework_percentage +
+			install_weight * install_percentage +
+			postwork_weight * postwork_percentage
+		) * 100
+	else:
+		overall_completion_percentage = 0
+	
 	pending_completion_percentage = 100 - overall_completion_percentage
 
 	return {

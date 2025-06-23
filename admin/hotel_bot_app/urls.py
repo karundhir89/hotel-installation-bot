@@ -12,6 +12,7 @@ urlpatterns = [
     path("add_users_roles/", add_users_roles, name="add_users_roles"), 
     path('users/roles/edit/<int:user_id>/', edit_users_roles, name='edit_users_roles'),
     path("user_login/", user_login, name="user_login"), 
+    path("create_django_admin/", create_django_admin_user, name="create_django_admin"),
     path('rooms/', room_data_list, name='room_data_list'),
     path('rooms/add/', add_room, name='add_room'),  # Add room view
     path('get_room_models/', get_room_models, name='get_room_models'),
@@ -54,6 +55,7 @@ urlpatterns = [
     
     # Warehouse Shipment Items API
     path('get_warehouse_shipment_items/', get_warehouse_shipment_items, name='get_warehouse_shipment_items'),
+    path('get_available_quantity/', get_available_quantity, name='get_available_quantity'),
     
     # New URLs for Product Room Model
     path('product-room-models/', product_room_model_list, name='product_room_model_list'),
@@ -61,7 +63,7 @@ urlpatterns = [
     path('delete_product_room_model/', delete_product_room_model, name='delete_product_room_model'),
     path('get_floor_products/', get_floor_products, name='get_floor_products'),
     path('get_room_products/', get_room_products, name='get_room_products'),
-    # New URLs for user-facing product lists with download
+    # New URLs for user-facing product lists with download 
     path('floor-products/', floor_products_list, name='floor_products_list'),
     path('room-products/', room_number_products_list, name='room_number_products_list'),
 
@@ -81,10 +83,9 @@ urlpatterns = [
     
     # API endpoint for warehouse request items
     path('api/warehouse_request_items/', warehouse_request_items, name='warehouse_request_items'),
+    path('get_previous_warehouse_requests/', get_previous_warehouse_requests, name='get_previous_warehouse_requests'),
     
-    # API endpoint to get previous warehouse requests by floor
-    path('api/get_previous_warehouse_requests/', get_previous_warehouse_requests, name='get_previous_warehouse_requests'),
-    
-    # API endpoint to get available quantity for a client item
-    path('api/get_available_quantity/', get_available_quantity, name='get_available_quantity'),
+    # Inventory restoration/reversion APIs for warehouse shipments
+    path('restore_warehouse_inventory/', restore_warehouse_inventory, name='restore_warehouse_inventory'),
+    path('revert_warehouse_inventory/', revert_warehouse_inventory, name='revert_warehouse_inventory'),
 ]

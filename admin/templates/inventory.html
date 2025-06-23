@@ -268,17 +268,17 @@ $(document).ready(function () {
         $('#item').prop('readonly', true);
         $('#client_id').val($(this).data('client_id'));
         $('#client_id').prop('readonly', true);
-        $('#qty_ordered').val($(this).data('qty_ordered'));
-        $('#quantity_shipped').val($(this).data('quantity_shipped'));
-        $('#qty_received').val($(this).data('qty_received'));
-        $('#damaged_quantity').val($(this).data('damaged_quantity'));
-        $('#quantity_available').val($(this).data('quantity_available'));
-        $('#shipped_to_hotel_quantity').val($(this).data('shipped_to_hotel_quantity'));
-        $('#received_at_hotel_quantity').val($(this).data('received_at_hotel_quantity'));
-        $('#damaged_quantity_at_hotel').val($(this).data('damaged_quantity_at_hotel'));
-        $('#hotel_warehouse_quantity').val($(this).data('hotel_warehouse_quantity'));
-        $('#floor_quantity').val($(this).data('floor_quantity'));
-        $('#quantity_installed').val($(this).data('quantity_installed'));
+        $('#qty_ordered').val($(this).data('qty_ordered') || 0);
+        $('#quantity_shipped').val($(this).data('quantity_shipped') || 0);
+        $('#qty_received').val($(this).data('qty_received') || 0);
+        $('#damaged_quantity').val($(this).data('damaged_quantity') || 0);
+        $('#quantity_available').val($(this).data('quantity_available') || 0);
+        $('#shipped_to_hotel_quantity').val($(this).data('shipped_to_hotel_quantity') || 0);
+        $('#received_at_hotel_quantity').val($(this).data('received_at_hotel_quantity') || 0);
+        $('#damaged_quantity_at_hotel').val($(this).data('damaged_quantity_at_hotel') || 0);
+        $('#hotel_warehouse_quantity').val($(this).data('hotel_warehouse_quantity') || 0);
+        $('#floor_quantity').val($(this).data('floor_quantity') || 0);
+        $('#quantity_installed').val($(this).data('quantity_installed') || 0);
         $('#modelModal').fadeIn();
         $('#modelModalOverlay').fadeIn();
     });
@@ -332,7 +332,8 @@ $(document).ready(function () {
                     }
 
                     setTimeout(() => {
-                        location.reload();
+                        // Redirect with skip_updates parameter to prevent auto-recalculation
+                        window.location.href = "{% url 'inventory_list' %}?skip_updates=true";
                     }, 1000);
                 } else {
                     toastr.error(response.error || 'Something went wrong!');
