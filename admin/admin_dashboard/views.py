@@ -930,11 +930,16 @@ def admin_issue_create(request):
 				if isinstance(request.user, InvitedUser):
 					invited_user_instance = request.user
 				else:
-					invited_user_instance = InvitedUser.objects.get(id=request.user.id)
-			except InvitedUser.DoesNotExist:
-				messages.error(request, "Associated invited user account not found.")
-				if is_ajax:
-					return JsonResponse({'success': False, 'message': "Associated invited user account not found."}, status=400)
+        			# Try by id first, then by email (case-insensitive)
+					invited_user_instance = InvitedUser.objects.filter(id=request.user.id).first()
+					if not invited_user_instance:
+						invited_user_instance = InvitedUser.objects.filter(email__iexact=request.user.email).first()
+			except Exception:
+				invited_user_instance = None
+				if not invited_user_instance:
+					messages.error(request, "Associated invited user account not found.")
+					if is_ajax:
+						return JsonResponse({'success': False, 'message': "Associated invited user account not found."}, status=400)
 				# Non-AJAX falls through to render form with errors.
 
 			if invited_user_instance:
