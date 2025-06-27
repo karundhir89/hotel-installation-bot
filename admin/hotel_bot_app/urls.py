@@ -1,5 +1,7 @@
 from django.urls import path
 from .views import *
+from django.conf import settings
+from django.conf.urls.static import static
 
 urlpatterns = [
     path('chat/', chatbot, name='chatbot'),
@@ -88,4 +90,4 @@ urlpatterns = [
     # Inventory restoration/reversion APIs for warehouse shipments
     path('restore_warehouse_inventory/', restore_warehouse_inventory, name='restore_warehouse_inventory'),
     path('revert_warehouse_inventory/', revert_warehouse_inventory, name='revert_warehouse_inventory'),
-]
+] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
