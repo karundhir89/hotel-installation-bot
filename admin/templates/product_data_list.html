@@ -2,6 +2,7 @@
 {% load static %}
 {% block content %}
 
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
 <style>
     #roomModelTable tbody tr {
         height: 60px;
@@ -53,6 +54,27 @@
         padding: 10px;
         position: relative;
         margin: 20px 0 0;
+    }
+
+    /* Image preview modal styles */
+    #imagePreviewModal {
+        display: none;
+        position: fixed;
+        z-index: 2000;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(0, 0, 0, 0.7);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+    #imagePreviewModal img {
+        max-width: 90vw;
+        max-height: 80vh;
+        border-radius: 8px;
+        box-shadow: 0 2px 16px #0008;
     }
 </style>
 
@@ -107,7 +129,9 @@
                                                 data-client_id="{{ model.client_id }}"
                                                 data-description="{{ model.description }}"
                                                 data-supplier="{{ model.supplier| default:'' }}"
-                                                data-client_selected="{{ model.client_selected }}">
+                                                data-client_selected="{{ model.client_selected }}"
+                                                data-image="{% if model.image and model.image.name %}{{ model.image.url }}{% else %}{% endif %}"
+                                                data-image-name="{% if model.image and model.image.name %}{{ model.image.name }}{% else %}{% endif %}">
                                                 Edit
                                             </button>
                                             <button class="btn deleteModelBtn" data-id="{{ model.id }}">
@@ -145,11 +169,33 @@
             <div class="form-group"><label for="description">Description:</label><input type="text" id="description" name="description" class="form-control"></div>
             <div class="form-group"><label for="supplier">Supplier:</label><input type="text" id="supplier" name="supplier" class="form-control"></div>
             <div class="form-group"><label for="client_selected">Client Selected:</label><input type="text" id="client_selected" name="client_selected" class="form-control"></div>
-
+            <div class="form-group" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                <label for="image" style="margin-bottom:0;min-width:70px;">Image:</label>
+                <div id="imageThumbContainer" style="display:none; align-items:center; gap:4px;">
+                    <img id="imageThumb" src="" style="width:48px;height:48px;object-fit:cover;border-radius:4px;border:1px solid #ccc;">
+                    <span id="deleteImageBtn" style="cursor:pointer;color:#d00;font-size:1.5em;margin-left:4px;">&times;</span>
+                </div>
+                <button type="button" id="imageUploadBtn" class="btn btn-light" style="margin-left:0;">
+                    <i class="fa fa-upload"></i> Upload
+                </button>
+                <input type="file" id="image" name="image" class="form-control" style="display: none;">
+                <span id="imageFileName" style="margin-left: 6px; font-size: 0.9em; color: #555;"></span>
+                <input type="hidden" id="deleteImageFlag" name="delete_image" value="0">
+                <div id="currentImageInfo" style="margin-top: 6px; font-size: 0.92em; color: #007bff;"></div>
+            </div>
             <button type="submit" class="btn float-right">Save Product Data</button>
         </form>
     </div>
 </div>
+
+<!-- Image Preview Modal -->
+<div id="imagePreviewModal">
+    <div>
+        <span id="closeImagePreview" style="position:absolute;top:-30px;right:0;font-size:2.2em;color:#fff;cursor:pointer;z-index:10;">&times;</span>
+        <img id="previewImage" src="" style="max-width:90vw;max-height:80vh;border-radius:8px;box-shadow:0 2px 16px #0008;">
+    </div>
+</div>
+
 <script>
 $(document).ready(function () {
     $('#modelLoader').hide();
@@ -185,9 +231,30 @@ $(document).ready(function () {
 
     $('#modelModal').fadeIn();
     $('#modelModalOverlay').fadeIn();
+    
 });
 
-
+$('#imageUploadBtn').click(function() {
+    $('#image').click();
+});
+$('#image').change(function() {
+    const file = this.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            $('#imageThumb').attr('src', e.target.result);
+            $('#imageThumbContainer').show();
+            $('#deleteImageFlag').val('0');
+            $('#imageFileName').text(''); // Hide filename text
+            $('#currentImageInfo').hide();
+        };
+        reader.readAsDataURL(file);
+    } else {
+        $('#imageThumbContainer').hide();
+        $('#imageFileName').text('');
+        $('#currentImageInfo').show();
+    }
+});
     $(document).on('click', '.editModelBtn', function () {
     $('#modelModalTitle').text("Edit Products");
     $('#model-id').val($(this).data('id'));
@@ -198,6 +265,22 @@ $(document).ready(function () {
     $('#description').val($(this).data('description'));
     $('#supplier').val($(this).data('supplier'));
     $('#client_selected').val($(this).data('client_selected'));
+
+    // Show previous image info
+    var imageUrl = $(this).data('image');
+    var imageName = $(this).data('image-name');
+    if (imageUrl) {
+        // Show thumbnail and delete icon
+        $('#imageThumb').attr('src', imageUrl);
+        $('#imageThumbContainer').show();
+        $('#deleteImageFlag').val('0');
+        $('#currentImageInfo').hide();
+    } else {
+        $('#imageThumbContainer').hide();
+        $('#deleteImageFlag').val('0');
+        $('#currentImageInfo').show();
+    }
+    $('#imageFileName').text(''); // Clear new file name
 
     $('#modelModal').fadeIn();
     $('#modelModalOverlay').fadeIn();
@@ -231,13 +314,16 @@ $(document).ready(function () {
 
     $('#modelForm').submit(function (e) {
         e.preventDefault();
-        const formData = $(this).serialize();
+        const form = $(this)[0];
+        const formData = new FormData(form);
         const formAction = $(this).attr('action');
 
         $.ajax({
             url: formAction,
             type: 'POST',
             data: formData,
+            processData: false,
+            contentType: false,
             headers: {
                 'X-CSRFToken': '{{ csrf_token }}',
             },
@@ -266,6 +352,30 @@ $(document).ready(function () {
         $('#modelModal').fadeOut();
         $('#modelModalOverlay').fadeOut();
     });
+
+    // Image preview popup logic
+    $(document).on('click', '.previewImageLink', function(e) {
+        e.preventDefault();
+        var url = $('#currentImageInfo').data('image-url');
+        if (url) {
+            $('#previewImage').attr('src', url);
+            $('#imagePreviewModal').fadeIn();
+        }
+    });
+    $('#closeImagePreview, #imagePreviewModal').on('click', function(e) {
+        // Only close if clicking the close button or the overlay (not the image itself)
+        if (e.target === this) {
+            $('#imagePreviewModal').fadeOut();
+            $('#previewImage').attr('src', '');
+        }
+    });
+});
+
+$('#deleteImageBtn').on('click', function() {
+    $('#imageThumbContainer').hide();
+    $('#deleteImageFlag').val('1');
+    $('#currentImageInfo').show().html('<span style="color:#888;">Image will be deleted after save.</span>');
+    $('#image').val(''); // Clear the file input so user can re-upload
 });
 </script>
 

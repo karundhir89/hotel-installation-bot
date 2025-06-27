@@ -1224,6 +1224,7 @@ def _get_installation_checklist_data(room_number, installation_id=None, user_for
                     "installed_on": install_detail_item.installed_on.isoformat() if install_detail_item.installed_on else None,
                     "status": install_detail_item.status,
                     "product_client_id": product.client_id,
+                    "product_image": product.image.url if product.image else None,
                 })
                 check_items.append({
                     "id": install_detail_item.install_id, # This is InstallDetail PK
@@ -1234,6 +1235,7 @@ def _get_installation_checklist_data(room_number, installation_id=None, user_for
                     "check_on": localtime(install_detail_item.installed_on).isoformat() if install_detail_item.installed_on else None,
                     "quantity_needed_per_room": prm.quantity,
                     "floor_quantity": floor_quantity, 
+                    "image_url": product.image.url if product.image else None, 
                 })
             elif not installation_data.id : # Product from room model, but main installation record is new (no ID yet)
                  # This is for the initial rendering of the frontend form for a NEW installation
@@ -3002,22 +3004,30 @@ def save_product_data(request):
         print("hhhhhhhh", post_data)
 
         product_id = post_data.get("product_id")
+        image = request.FILES.get('image')
         item = post_data.get("item", "").strip()
         client_id = post_data.get("client_id", "").strip()
         description = post_data.get("description") or 0
 
         supplier = post_data.get("supplier")
         client_selected = post_data.get("client_selected") or 0
+        image = request.FILES.get('image')
         try:
             if product_id:
                 print("inside")
                 installation = ProductData.objects.get(id=product_id)
+                if request.POST.get('delete_image') == '1':
+                    if installation.image:
+                        installation.image.delete(save=False)
+                        installation.image = None  
                 installation.product_id = product_id
                 installation.item = item
                 installation.client_id = client_id
                 installation.description = description
                 installation.supplier = supplier
                 installation.client_selected = client_selected
+                if image:  # Only update if a new image is uploaded
+                    installation.image = image
                 installation.save()
             else:
                 print("Adding new row")
@@ -3027,6 +3037,7 @@ def save_product_data(request):
                     description=description,
                     supplier=supplier,
                     client_selected=client_selected,
+                    image=image,
                 )
 
             return JsonResponse({"success": True})

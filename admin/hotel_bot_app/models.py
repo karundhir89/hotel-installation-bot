@@ -7,6 +7,10 @@ from django.contrib.contenttypes.models import ContentType
 from django.contrib.auth.models import User
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from PIL import Image
+from django.core.exceptions import ValidationError
+import os
+
 
 class InvitedUser(models.Model):
     id = models.AutoField(primary_key=True)
@@ -214,12 +218,28 @@ class ProductData(models.Model):
     description = models.TextField(null=True, blank=True)
     client_selected = models.TextField(null=True, blank=True)
     supplier = models.TextField(null=True, blank=True)
+    image = models.ImageField(upload_to='product_images/', null=True, blank=True)
 
     class Meta:
         db_table = 'product_data'  # Ensures it maps to the correct table
 
     def __str__(self):
         return f"ProductData - Item: {self.item}, Client: {self.client_id}"
+    def save(self, *args, **kwargs):
+        # Check format
+        if self.image:
+            ext = os.path.splitext(self.image.name)[1].lower()
+            if ext not in ['.jpg', '.jpeg', '.png', '.webp']:
+                raise ValidationError(f'Unsupported file format: {ext}')
+
+        super().save(*args, **kwargs)  # Save first to ensure file exists
+
+        # Resize image
+        if self.image:
+            img = Image.open(self.image.path)
+            if img.height > 1200 or img.width > 1200:
+                img.thumbnail((1200, 1200))
+                img.save(self.image.path)    
 
 class Prompt(models.Model):
     id = models.AutoField(primary_key=True)
