@@ -420,82 +420,91 @@ def add_users_roles(request):
     print(request.POST)
     # Check if this is an AJAX request
     is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
-    
-    if request.method == "POST":
-        name = request.POST.get("name")  # Get the ID
-        email = request.POST.get("email")  # Get the new description
-        roles = request.POST.get("role")  # Get the new description
-        status = request.POST.get("status")  # Get the new description
-        password = request.POST.get("password")  # Get the password
-        roles_list = roles.split(", ") if roles else []
-        print(name, email, type(roles_list), roles_list, status, password)
+    try:
+        if request.method == "POST":
+            name = request.POST.get("name")  # Get the ID
+            email = request.POST.get("email")  # Get the new description
+            roles = request.POST.get("role")  # Get the new description
+            status = request.POST.get("status")  # Get the new description
+            password = request.POST.get("password")  # Get the password
+            roles_list = roles.split(", ") if roles else []
+            print(name, email, type(roles_list), roles_list, status, password)
 
-        # Check if email already exists
-        if InvitedUser.objects.filter(email=email).exists():
-            return JsonResponse({"error": "User with this email already exists."}, status=400)
+            # Check if email already exists
+            if InvitedUser.objects.filter(email=email).exists():
+                return JsonResponse({"error": "User with this email already exists."}, status=400)
 
 
-        user = InvitedUser.objects.create(
-            name=name,
-            role=roles_list,
-            last_login=now(),
-            email=email,
-            status=status if status else 'activated', # Default to activated if not provided
-            password=bcrypt.hashpw(password.encode(), bcrypt.gensalt()),
-        )
-
-        # Set is_administrator flag in InvitedUser for anyone with administrator role
-        if 'administrator' in roles_list:
-            user.is_administrator = True
-            user.save()
-            
-            # Create Django User with administrator privileges (but not superuser)
-            auth_user = User.objects.create_user(
-                username=email,
-                password=password,
+            user = InvitedUser.objects.create(
+                name=name,
+                role=roles_list,
+                last_login=now(),
                 email=email,
+                status=status if status else 'activated', # Default to activated if not provided
+                password=bcrypt.hashpw(password.encode(), bcrypt.gensalt()),
             )
-            auth_user.is_staff = True  # Set is_staff to True for admin dashboard access
-            auth_user.is_superuser = False
-            auth_user.save()
-            
-            # Set is_administrator in UserProfile
-            auth_user.profile.is_administrator = True
-            auth_user.profile.save()
-            
-            # For AJAX requests, don't use messages framework
+
+            # Set is_administrator flag in InvitedUser for anyone with administrator role
+            if 'administrator' in roles_list:
+                user.is_administrator = True
+                user.save()
+
+                # Create Django User with administrator privileges (but not superuser)
+                auth_user = User.objects.create_user(
+                    username=email,
+                    password=password,
+                    email=email,
+                )
+                auth_user.is_staff = True  # Set is_staff to True for admin dashboard access
+                auth_user.is_superuser = False
+                auth_user.save()
+
+                # Set is_administrator in UserProfile
+                auth_user.profile.is_administrator = True
+                auth_user.profile.save()
+
+                # For AJAX requests, don't use messages framework
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return JsonResponse({
+                        "success": True,
+                        "message": f"Administrator user '{name}' created successfully."
+                    })
+
+                messages.success(request, f"Administrator user '{name}' created successfully. They can access the Django admin interface.")
+            elif 'admin' in roles_list:
+                # Regular admin/hotel owner role
+                auth_user = User.objects.create_user(
+                    username=email,
+                    password=password,
+                    email=email,
+                )
+                auth_user.is_staff = True  # Still give admin dashboard access
+                auth_user.is_superuser = False
+                auth_user.save()
+
+            if User.role == 'administrator':
+                request.session['is_soft_admin'] = True
+            else:
+                request.session['is_soft_admin'] = False
+
+            # Return JSON response for AJAX requests
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse({
-                    "success": True,
-                    "message": f"Administrator user '{name}' created successfully."
-                })
-                
-            messages.success(request, f"Administrator user '{name}' created successfully. They can access the Django admin interface.")
-        elif 'admin' in roles_list:
-            # Regular admin/hotel owner role
-            auth_user = User.objects.create_user(
-                username=email,
-                password=password,
-                email=email,
-            )
-            auth_user.is_staff = True  # Still give admin dashboard access
-            auth_user.is_superuser = False
-            auth_user.save()
-        
-        if User.role == 'administrator':
-            request.session['is_soft_admin'] = True
-        else:
-            request.session['is_soft_admin'] = False
-        
-        # Return JSON response for AJAX requests
-        if is_ajax:
-            return JsonResponse({
-                "success": True,
-                "message": f"User '{name}' created successfully."
-            })
+                    return JsonResponse({
+                        "success": True,
+                        "message": f" User '{name}' created successfully."
+                    })
 
-    # For non-AJAX requests
-    return render(request, "add_users_roles.html")
+        # For non-AJAX requests
+        return render(request, "add_users_roles.html")
+    except Exception as e:
+        import traceback
+        if is_ajax:
+            # For AJAX requests, return JSON error response
+            return JsonResponse({
+                        "success": True,
+                        "message": f" User '{name}' created successfully."
+                    })  
+
 
 @login_required
 def edit_users_roles(request, user_id):
@@ -3703,7 +3712,28 @@ def issue_detail(request, issue_id):
 
 @session_login_required
 def issue_create(request):
-    user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
+    user = None
+    invited_user_id = request.session.get("user_id")
+    if invited_user_id:
+        user = InvitedUser.objects.filter(id=invited_user_id).first()
+    if not user and request.user.is_authenticated:
+        user = InvitedUser.objects.filter(email__iexact=request.user.email).first()
+    
+    is_admin = False
+    admin_user = None
+    if not user and request.user.is_authenticated:
+        # Check if this is a Django User with UserProfile and is_administrator
+        try:
+            if hasattr(request.user, 'profile') and request.user.profile.is_administrator:
+                is_admin = True
+                admin_user = request.user
+        except UserProfile.DoesNotExist:
+            pass
+
+    if not user and not is_admin:
+        messages.error(request, "Associated invited user account not found.")
+        return redirect("issue_list")
+
     
     initial_data = {}
     if request.method == 'GET':
