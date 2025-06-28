@@ -189,7 +189,7 @@
 </div>
 
 <!-- Image Preview Modal -->
-<div id="imagePreviewModal">
+<div id="imagePreviewModal" style="display:none;visibility:hidden;">
     <div>
         <span id="closeImagePreview" style="position:absolute;top:-30px;right:0;font-size:2.2em;color:#fff;cursor:pointer;z-index:10;">&times;</span>
         <img id="previewImage" src="" style="max-width:90vw;max-height:80vh;border-radius:8px;box-shadow:0 2px 16px #0008;">
@@ -197,6 +197,10 @@
 </div>
 
 <script>
+// Ensure image preview modal is hidden on page load
+$(function() {
+    $('#imagePreviewModal').hide().css('visibility', 'hidden');
+});
 $(document).ready(function () {
     $('#modelLoader').hide();
     $('#roomModelTable').show();
@@ -210,11 +214,11 @@ $(document).ready(function () {
         pageLength: 10,
         lengthMenu: [5, 10, 15, 20],
         dom : 'Bfr<"row pt-5"<"col-sm-12"t>><"row pt-3"<"col-sm-12 col-md-5"i><"col-sm-12 col-md-7"p>>',
-			buttons : [{
-	            extend: 'excel',
-	            text: 'Export To Excel',
+            buttons : [{
+                extend: 'excel',
+                text: 'Export To Excel',
                 className:'custom-download-btn'
-	        }]
+            }]
     });
 
     $('#addModelBtn').click(function () {
@@ -359,13 +363,15 @@ $('#image').change(function() {
         var url = $('#currentImageInfo').data('image-url');
         if (url) {
             $('#previewImage').attr('src', url);
-            $('#imagePreviewModal').fadeIn();
+            $('#imagePreviewModal').css('visibility', 'visible').fadeIn();
         }
     });
     $('#closeImagePreview, #imagePreviewModal').on('click', function(e) {
         // Only close if clicking the close button or the overlay (not the image itself)
         if (e.target === this) {
-            $('#imagePreviewModal').fadeOut();
+            $('#imagePreviewModal').fadeOut(function() {
+                $(this).css('visibility', 'hidden');
+            });
             $('#previewImage').attr('src', '');
         }
     });

@@ -131,7 +131,7 @@
                 </div>
             </form>
             <!-- Full Image Modal -->
-            <div id="fullImageModal" style="display:none;position:fixed;z-index:9999;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.7);display:flex;justify-content:center;align-items:center;">
+            <div id="fullImageModal" style="display:none;visibility:hidden;position:fixed;z-index:9999;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.7);display:flex;justify-content:center;align-items:center;">
               <img id="fullImage" src="" style="max-width:90vw;max-height:90vh;border-radius:8px;">
             </div>
 <hr class="my-5">
@@ -201,6 +201,10 @@
 
 {% block extra_js %}
 <script>
+  // Ensure modal is hidden on page load
+  $(function() {
+    $('#fullImageModal').hide().css('visibility', 'hidden');
+  });
   $(document).ready(function () {
     // Store initial state of checkboxes to track changes during a session
     let initialCheckboxState = {};
@@ -528,11 +532,13 @@
     });
   });
   function showFullImage(url) {
-  $('#fullImage').attr('src', url);
-  $('#fullImageModal').fadeIn();
-}
-$('#fullImageModal').click(function() {
-  $(this).fadeOut();
-});
+    $('#fullImage').attr('src', url);
+    $('#fullImageModal').css('visibility', 'visible').fadeIn();
+  }
+  $('#fullImageModal').click(function() {
+    $(this).fadeOut(function() {
+      $(this).css('visibility', 'hidden');
+    });
+  });
 </script>
 {% endblock %}
