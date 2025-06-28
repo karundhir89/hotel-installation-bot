@@ -360,6 +360,28 @@
                                     </div>
                                 </div>
                             </div>
+                    {% if initial_comment_media %}
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <label class="form-label fw-bold">Initial Comment Media (Read-only Preview):</label>
+                            <div class="d-flex flex-wrap gap-3">
+                                {% for media in initial_comment_media %}
+                                    {% if media.type == 'image' %}
+                                        <div class="file-preview-item">
+                                            <img src="{{ media.url }}" alt="{{ media.name }}" style="max-width:120px; max-height:120px; border-radius:4px; border:1px solid #ccc;" />
+                                            <div class="text-muted small mt-1">{{ media.name }}</div>
+                                        </div>
+                                    {% elif media.type == 'video' %}
+                                        <div class="file-preview-item">
+                                            <video src="{{ media.url }}" controls style="max-width:180px; max-height:120px; border-radius:4px; border:1px solid #ccc;"></video>
+                                            <div class="text-muted small mt-1">{{ media.name }}</div>
+                                        </div>
+                                    {% endif %}
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
                             <!-- {# Render all fields except observers #}
                             {% for field in form %}
                                 {% if field.name != 'observers' %}                                

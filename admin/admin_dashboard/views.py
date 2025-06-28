@@ -28,7 +28,92 @@ from django.db import connection # Added for raw SQL
 from django.db.models import Min, Max
 
 
+import uuid
 # Create your views here.
+
+@login_required
+@user_passes_test(is_staff_user)
+def admin_issue_create(request):
+	import uuid
+	available_users = InvitedUser.objects.all()
+	is_ajax = request.headers.get('x-requested-with') == 'XMLHttpRequest'
+	if request.method == 'POST':
+		form = IssueForm(request.POST, request.FILES)
+		if form.is_valid():
+			issue = form.save(commit=False)
+			# Always assign a valid InvitedUser to issue.created_by
+			invited_user = InvitedUser.objects.filter(email__iexact=request.user.email).first()
+
+# If not found, fallback to a default system admin invited user
+			if not invited_user:
+				invited_user, _ = InvitedUser.objects.get_or_create(
+					email="system_admin@internal.local",
+					defaults={"name": "System Admin", "password": b"", "status": "activated"}
+					)
+			issue.created_by = invited_user
+
+			issue.save()
+			form.save_m2m()
+
+			# Handle observers
+			observer_ids = request.POST.getlist('observers')
+			if observer_ids:
+				issue.observers.set(InvitedUser.objects.filter(id__in=observer_ids))
+
+			# --- Process images and video like normal user flow ---
+			media_info = []
+			images = form.cleaned_data.get('images', [])
+			video = form.cleaned_data.get('video')
+			for img in images:
+				if img.size > 4 * 1024 * 1024:
+					continue
+				file_name = default_storage.save(f"issues/comments/admin/{issue.id}/{uuid.uuid4()}_{img.name}", img)
+				media_info.append({
+					"type": "image",
+					"url": default_storage.url(file_name),
+					"name": img.name,
+					"size": img.size
+				})
+			if video:
+				if video.size <= 100 * 1024 * 1024:
+					file_name = default_storage.save(f"issues/comments/admin/{issue.id}/{uuid.uuid4()}_{video.name}", video)
+					media_info.append({
+						"type": "video",
+						"url": default_storage.url(file_name),
+						"name": video.name,
+						"size": video.size
+					})
+
+			# Always create initial comment (even if no media) so chat is not empty
+			Comment.objects.create(
+				issue=issue,
+				commenter=request.user,
+				text_content=form.cleaned_data.get('description', ''),
+				media=media_info
+			)
+
+			success_message = f"Issue #{issue.id} created successfully."
+			if is_ajax:
+				return JsonResponse({
+					'success': True,
+					'message': success_message,
+					'redirect_url': reverse('admin_dashboard:admin_issue_detail', args=[issue.id])
+				})
+			messages.success(request, success_message)
+			return redirect('admin_dashboard:admin_issue_detail', issue_id=issue.id)
+		else:
+			error_message = "Please correct the errors below."
+			if is_ajax:
+				return JsonResponse({'success': False, 'errors': form.errors, 'message': error_message}, status=400)
+			messages.error(request, error_message)
+	else:
+		form = IssueForm()
+	context = {
+		'form': form,
+		'available_users': available_users,
+		'form_action': reverse('admin_dashboard:admin_issue_create'),
+	}
+	return render(request, 'admin_dashboard/issues/admin_issue_create.html', context)
 @login_required
 def my_view(request):
 	try:
@@ -178,12 +263,17 @@ def admin_issue_edit(request, issue_id):
 	else:
 		form = IssueUpdateForm(instance=issue)
 
+	# Fetch the initial comment (first by created_at) for previewing images/videos
+	initial_comment = issue.comments.order_by('created_at').first()
+	initial_comment_media = initial_comment.media if initial_comment and initial_comment.media else []
+
 	context = {
 		'form': form,
 		'issue': issue,
 		'available_users': available_users,
 		'observers': issue.observers.all(),
 		'form_action': reverse('admin_dashboard:admin_issue_edit', args=[issue.id]),
+		'initial_comment_media': initial_comment_media,
 	}
 	return render(request, 'admin_dashboard/issues/admin_issue_form.html', context)
 
@@ -200,18 +290,45 @@ def admin_issue_detail(request, issue_id):
 
 	comment_form = CommentForm()
 
-	current_user_commenter = request.user  # Assuming User model is used as commenter
+	# Determine both Django User and matching InvitedUser for current user
+	current_user = request.user
+	current_user_invited = None
+	if hasattr(current_user, 'email'):
+		current_user_invited = InvitedUser.objects.filter(email__iexact=current_user.email).first()
 
 	comment_data = []
 	for comment in comments:
 		commenter = comment.commenter
+		is_by_current_user = False
+		# Robustly check if the comment is by the current user (Django User or InvitedUser)
+		if commenter is not None:
+			if type(commenter) == type(current_user) and hasattr(commenter, 'pk') and hasattr(current_user, 'pk'):
+				if commenter.pk == current_user.pk:
+					is_by_current_user = True
+			# Also check for InvitedUser match if current_user_invited exists
+			elif current_user_invited and type(commenter) == type(current_user_invited) and hasattr(commenter, 'pk') and hasattr(current_user_invited, 'pk'):
+				if commenter.pk == current_user_invited.pk:
+					is_by_current_user = True
+
+		# Unify name for current user's comments: show email, else show name as before
+		if is_by_current_user:
+			# Prefer email if available
+			if hasattr(current_user, 'email') and current_user.email:
+				commenter_name = current_user.email
+			elif current_user_invited and hasattr(current_user_invited, 'email') and current_user_invited.email:
+				commenter_name = current_user_invited.email
+			else:
+				commenter_name = str(current_user)
+		else:
+			commenter_name = str(commenter)
+
 		comment_data.append({
 			"comment_id": comment.id,
 			"text_content": comment.text_content,
 			"media": comment.media,
 			"commenter_id": getattr(commenter, "id", None),
-			"commenter_name": str(commenter),
-			"is_by_current_user": commenter == current_user_commenter
+			"commenter_name": commenter_name,
+			"is_by_current_user": is_by_current_user
 		})
 
 	context = {
@@ -917,120 +1034,138 @@ def hotel_admin_issue_dashboard(request):
 @user_passes_test(is_staff_user)
 def admin_issue_create(request):
 	is_ajax = request.headers.get('x-requested-with') == 'XMLHttpRequest'
-	available_users = InvitedUser.objects.all() # Moved to top, needed for all paths
+	available_users = InvitedUser.objects.all()
 
 	if request.method == 'POST':
-		print(f"DEBUG: POST data for observers: {request.POST.getlist('observers')}") # DEBUG
 		form = IssueUpdateForm(request.POST, request.FILES)
-		if form.is_valid():
-			print(f"DEBUG: Form cleaned_data for observers: {form.cleaned_data.get('observers')}") # DEBUG
-			issue = form.save(commit=False)
-			invited_user_instance = None
-			try:
-				if isinstance(request.user, InvitedUser):
-					invited_user_instance = request.user
-				else:
-        			# Try by id first, then by email (case-insensitive)
-					invited_user_instance = InvitedUser.objects.filter(id=request.user.id).first()
-					if not invited_user_instance:
-						invited_user_instance = InvitedUser.objects.filter(email__iexact=request.user.email).first()
-			except Exception:
+		try:
+			if form.is_valid():
+				issue = form.save(commit=False)
+
+				# Determine creator (InvitedUser)
 				invited_user_instance = None
-				if not invited_user_instance:
-					messages.error(request, "Associated invited user account not found.")
+				try:
+					if isinstance(request.user, InvitedUser):
+						invited_user_instance = request.user
+					else:
+						invited_user_instance = InvitedUser.objects.filter(id=request.user.id).first()
+						if not invited_user_instance:
+							invited_user_instance = InvitedUser.objects.filter(email__iexact=request.user.email).first()
+
+					if not invited_user_instance:
+						error_msg = "Associated invited user account not found."
+						if is_ajax:
+							return JsonResponse({'success': False, 'message': error_msg}, status=400)
+						messages.error(request, error_msg)
+						return render(request, 'admin_dashboard/issues/admin_issue_form.html', {
+							'form': form,
+							'is_admin': True,
+							'form_action': reverse('admin_dashboard:admin_issue_create'),
+							'available_users': available_users,
+							'observers': [],
+						})
+
+					issue.created_by = invited_user_instance
+				except Exception as e:
+					error_msg = f"Error finding associated invited user: {str(e)}"
 					if is_ajax:
-						return JsonResponse({'success': False, 'message': "Associated invited user account not found."}, status=400)
-				# Non-AJAX falls through to render form with errors.
+						return JsonResponse({'success': False, 'message': error_msg}, status=400)
+					messages.error(request, error_msg)
+					return render(request, 'admin_dashboard/issues/admin_issue_form.html', {
+						'form': form,
+						'is_admin': True,
+						'form_action': reverse('admin_dashboard:admin_issue_create'),
+						'available_users': available_users,
+						'observers': [],
+					})
 
-			if invited_user_instance:
-				issue.created_by = invited_user_instance
-				issue.save() # Save the main issue instance first
-				print(f"DEBUG: Issue PK after save: {issue.pk}") # DEBUG
+				issue.save()
+				form.save_m2m()
 
-				# Explicitly handle saving observers from cleaned_data
+				# Set observers
 				if 'observers' in form.cleaned_data:
 					selected_observers = form.cleaned_data['observers']
-					print(f"DEBUG: Selected observers for .set(): {selected_observers}") # DEBUG
-					if selected_observers is not None: # Ensure it's not None before .set()
+					if selected_observers:
 						issue.observers.set(selected_observers)
-						print(f"DEBUG: Issue observers after .set(): {list(issue.observers.all())}") # DEBUG
 
-				form.save_m2m() # Save other M2M fields (like related_rooms, related_product)
-				print(f"DEBUG: Issue observers after save_m2m: {list(issue.observers.all())}") # DEBUG
+				# Ensure creator is observer
+				issue.observers.add(invited_user_instance)
+
+				# Process media files
+				media_urls = []
+				images = form.cleaned_data.get('images', [])
+				video = form.cleaned_data.get('video')
+
+				for image in images:
+					file_name = default_storage.save(f"issues/images/{uuid.uuid4()}_{image.name}", image)
+					file_url = default_storage.url(file_name)
+					media_urls.append({
+						'type': 'image',
+						'url': file_url,
+						'size': image.size,
+						'name': image.name
+					})
+
+				if video:
+					file_name = default_storage.save(f"issues/videos/{uuid.uuid4()}_{video.name}", video)
+					file_url = default_storage.url(file_name)
+					media_urls.append({
+						'type': 'video',
+						'url': file_url,
+						'size': video.size,
+						'name': video.name
+					})
+
+				# Create initial comment if media exists
+				if media_urls:
+					Comment.objects.create(
+						issue=issue,
+						commenter=invited_user_instance,
+						text_content=form.cleaned_data.get('description', ''),
+						media=media_urls
+					)
 
 				success_message = f"Issue #{issue.id} created successfully."
-				messages.success(request, success_message)
 				if is_ajax:
 					return JsonResponse({
 						'success': True,
 						'message': success_message,
 						'redirect_url': reverse('admin_dashboard:admin_issue_detail', args=[issue.id])
 					})
+				messages.success(request, success_message)
 				return redirect('admin_dashboard:admin_issue_detail', issue_id=issue.id)
-			else:
-				# This else handles invited_user_instance being None after try-except (e.g., non-AJAX InvitedUser.DoesNotExist)
-				# Message already added. For AJAX, this path is less likely due to earlier return.
-				if is_ajax: # Safeguard
-					return JsonResponse({'success': False, 'message': "Could not assign creator to the issue."}, status=400)
-				# Non-AJAX falls through to render form with errors.
 
-		# Form is invalid OR invited_user_instance was not found (for non-AJAX)
-		error_message = "Please correct the errors below."
-		# Add general error message only if no specific one (like 'user not found') was already added by messages.error
-		# and the form itself doesn't have errors that would make this redundant.
-		if not form.errors and not any(m.level == messages.ERROR for m in messages.get_messages(request)):
-			messages.error(request, error_message)
-		elif form.errors and not any(messages.get_messages(request)): # if form has errors but no message yet
+			# Form is invalid
+			error_message = "Please correct the errors below."
+			if is_ajax:
+				return JsonResponse({'success': False, 'errors': form.errors, 'message': error_message}, status=400)
 			messages.error(request, error_message)
 
-		if is_ajax:
-			return JsonResponse({'success': False, 'errors': form.errors, 'message': error_message}, status=400)
-		# Non-AJAX will fall through to render the form with errors (context setup below)
-	else: # GET request
-		form_initial_data = {}
-		current_user_as_observer_obj_list = [] # For context['observers']
+		except Exception as e:
+			if is_ajax:
+				return JsonResponse({'success': False, 'message': f"An unexpected error occurred. ({str(e)})"}, status=500)
+			messages.error(request, f"An unexpected error occurred. ({str(e)})")
+			form = IssueUpdateForm(request.POST, request.FILES)  # Re-init for rendering
+	else:
+		form = IssueUpdateForm()
 
-		if request.user.is_authenticated:
-			try:
-				invited_user_for_creator = None
-				if isinstance(request.user, InvitedUser):
-					invited_user_for_creator = request.user
-				else:
-					invited_user_for_creator = InvitedUser.objects.get(id=request.user.id)
-				
-				if invited_user_for_creator:
-					form_initial_data['observers'] = [invited_user_for_creator.pk]
-					current_user_as_observer_obj_list = [invited_user_for_creator]
-			except (InvitedUser.DoesNotExist, AttributeError, TypeError):
-				# Handles cases like user not being an InvitedUser, or not having 'id' (though login_required should prevent anon)
-				pass
-		form = IssueUpdateForm(initial=form_initial_data) # Changed to IssueUpdateForm
-
-	# Context setup for both GET and POST (when form is invalid)
+	# Populate observer users on error or GET
 	context_data_observers = []
-	if request.method == 'GET':
-		context_data_observers = current_user_as_observer_obj_list # From GET logic above
-	else: # POST request with errors
-		# For POST errors, populate from submitted data if possible, for display consistency.
-		# The form itself (in context.form) will render selections based on POST data.
+	if request.method != 'GET':
 		observer_pks_from_post = request.POST.getlist('observers')
 		if observer_pks_from_post:
 			try:
-				# Filter out empty strings or invalid PKs before querying
 				valid_pks = [pk for pk in observer_pks_from_post if pk.isdigit()]
 				if valid_pks:
 					context_data_observers = list(InvitedUser.objects.filter(pk__in=valid_pks))
-			except ValueError: # Handles if pk__in receives non-integer values after filtering
+			except ValueError:
 				context_data_observers = []
-		# If no observers in POST or error, it remains empty list.
 
 	context = {
 		'form': form,
-		'is_admin': True, # Can be used in template to differentiate create/edit views
+		'is_admin': True,
 		'form_action': reverse('admin_dashboard:admin_issue_create'),
-		'available_users': available_users, # For populating choices in select fields
-		'observers': context_data_observers, # List of InvitedUser objects for display
-		# 'issue' is not set for create mode; template should handle {% if issue %}
+		'available_users': available_users,
+		'observers': context_data_observers,
 	}
 	return render(request, 'admin_dashboard/issues/admin_issue_form.html', context)
-
