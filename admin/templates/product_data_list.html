@@ -183,13 +183,16 @@
                 <input type="hidden" id="deleteImageFlag" name="delete_image" value="0">
                 <div id="currentImageInfo" style="margin-top: 6px; font-size: 0.92em; color: #007bff;"></div>
             </div>
-            <button type="submit" class="btn float-right">Save Product Data</button>
+            <button type="submit" class="btn float-right" id="saveProductBtn">
+                <span id="saveProductSpinner" class="spinner-border spinner-border-sm mr-2" style="display:none;vertical-align:middle;" role="status" aria-hidden="true"></span>
+                Save Product Data
+            </button>
         </form>
     </div>
 </div>
 
 <!-- Image Preview Modal -->
-<div id="imagePreviewModal">
+<div id="imagePreviewModal" style="display:none;visibility:hidden;">
     <div>
         <span id="closeImagePreview" style="position:absolute;top:-30px;right:0;font-size:2.2em;color:#fff;cursor:pointer;z-index:10;">&times;</span>
         <img id="previewImage" src="" style="max-width:90vw;max-height:80vh;border-radius:8px;box-shadow:0 2px 16px #0008;">
@@ -197,6 +200,10 @@
 </div>
 
 <script>
+// Ensure image preview modal is hidden on page load
+$(function() {
+    $('#imagePreviewModal').hide().css('visibility', 'hidden');
+});
 $(document).ready(function () {
     $('#modelLoader').hide();
     $('#roomModelTable').show();
@@ -210,11 +217,11 @@ $(document).ready(function () {
         pageLength: 10,
         lengthMenu: [5, 10, 15, 20],
         dom : 'Bfr<"row pt-5"<"col-sm-12"t>><"row pt-3"<"col-sm-12 col-md-5"i><"col-sm-12 col-md-7"p>>',
-			buttons : [{
-	            extend: 'excel',
-	            text: 'Export To Excel',
+            buttons : [{
+                extend: 'excel',
+                text: 'Export To Excel',
                 className:'custom-download-btn'
-	        }]
+            }]
     });
 
     $('#addModelBtn').click(function () {
@@ -318,6 +325,10 @@ $('#image').change(function() {
         const formData = new FormData(form);
         const formAction = $(this).attr('action');
 
+        // Show spinner and disable button
+        $('#saveProductSpinner').show();
+        $('#saveProductBtn').prop('disabled', true);
+
         $.ajax({
             url: formAction,
             type: 'POST',
@@ -344,6 +355,14 @@ $('#image').change(function() {
                 } else {
                     toastr.error(response.error || 'Something went wrong!');
                 }
+            },
+            error: function () {
+                toastr.error('Something went wrong!');
+            },
+            complete: function () {
+                // Hide spinner and enable button
+                $('#saveProductSpinner').hide();
+                $('#saveProductBtn').prop('disabled', false);
             }
         });
     });
@@ -359,13 +378,15 @@ $('#image').change(function() {
         var url = $('#currentImageInfo').data('image-url');
         if (url) {
             $('#previewImage').attr('src', url);
-            $('#imagePreviewModal').fadeIn();
+            $('#imagePreviewModal').css('visibility', 'visible').fadeIn();
         }
     });
     $('#closeImagePreview, #imagePreviewModal').on('click', function(e) {
         // Only close if clicking the close button or the overlay (not the image itself)
         if (e.target === this) {
-            $('#imagePreviewModal').fadeOut();
+            $('#imagePreviewModal').fadeOut(function() {
+                $(this).css('visibility', 'hidden');
+            });
             $('#previewImage').attr('src', '');
         }
     });
