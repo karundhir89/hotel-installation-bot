@@ -1187,47 +1187,34 @@ def _get_installation_checklist_data(room_number, installation_id=None, user_for
 
         for prm in product_room_models:
             product = prm.product_id
-                # Get floor_quantity from Inventory
+            # Get floor_quantity and hotel_warehouse_quantity from Inventory
             inventory = Inventory.objects.filter(client_id__iexact=product.client_id).first()
             floor_quantity = inventory.floor_quantity if inventory else 0
+            hotel_warehouse_quantity = inventory.hotel_warehouse_quantity if inventory else 0
 
             install_detail_item = existing_details_map.get(product.id)
 
-            if not install_detail_item and installation_data and installation_data.id : # Only create if an installation record exists
-                # This product is in the room model but not yet in InstallDetail for this installation
+            if not install_detail_item and installation_data and installation_data.id:
                 install_detail_item = InstallDetail(
-                    installation_id=installation_data.id, # Link to existing/created Installation
+                    installation_id=installation_data.id,
                     product_id=product,
                     room_id=room_data,
                     room_model_id=room_model_instance,
-                    product_name=product.description or product.item, # Ensure product_name is set
-                    status="NO" # Default status
+                    product_name=product.description or product.item,
+                    status="NO"
                 )
-                # We can't bulk_create and then get IDs immediately if some items are new and installation_data was just created (no ID yet)
-                # Instead, we'll prepare them. If installation_data has an ID, we save.
-                # This part is tricky if installation_data was just created and doesn't have an ID.
-                # For admin edit, installation_data.id will always exist.
-                # For frontend, if InstallDetail items are crucial *before* first save, this needs care.
-                # Assuming for now that if InstallDetail are created, installation_data.id is valid.
-                if installation_data.id: # Ensure main installation record has an ID
-                    install_detail_item.save() # Save to get an install_id (PK)
-                    existing_details_map[product.id] = install_detail_item # Add to map
-                else:
-                    # If installation record is new (no ID), these won't be saved yet.
-                    # This scenario is more for the initial GET in the frontend form.
-                    # They will be properly created during the POST save.
-                    pass # Defer creation to the POST if main installation is new.
+                if installation_data.id:
+                    install_detail_item.save()
+                    existing_details_map[product.id] = install_detail_item
 
-            # print(f"install_detail_item: {install_detail_item}")
-            # Prepare data for saved_items and check_items
-            if install_detail_item: # If it exists or was just saved
+            if install_detail_item:
                 saved_items.append({
                     "install_id": install_detail_item.install_id,
                     "product_id": product.id,
                     "product_name": install_detail_item.product_id.description,
                     "room_id": room_data.id,
                     "room_model_id": room_model_instance.id,
-                    "product_room_model_id": prm.id, # ID of the ProductRoomModel mapping
+                    "product_room_model_id": prm.id,
                     "installed_by": install_detail_item.installed_by.name if install_detail_item.installed_by else None,
                     "installed_on": install_detail_item.installed_on.isoformat() if install_detail_item.installed_on else None,
                     "status": install_detail_item.status,
@@ -1235,28 +1222,28 @@ def _get_installation_checklist_data(room_number, installation_id=None, user_for
                     "product_image": product.image.url if product.image else None,
                 })
                 check_items.append({
-                    "id": install_detail_item.install_id, # This is InstallDetail PK
+                    "id": install_detail_item.install_id,
                     "label": f"({product.client_id or 'N/A'}) - {install_detail_item.product_id.description}",
                     "type": "detail",
                     "status": install_detail_item.status,
                     "checked_by": install_detail_item.installed_by.name if install_detail_item.installed_by else None,
                     "check_on": localtime(install_detail_item.installed_on).isoformat() if install_detail_item.installed_on else None,
                     "quantity_needed_per_room": prm.quantity,
-                    "floor_quantity": floor_quantity, 
-                    "image_url": product.image.url if product.image else None, 
+                    "floor_quantity": floor_quantity,
+                    "hotel_warehouse_quantity": hotel_warehouse_quantity,
+                    "image_url": product.image.url if product.image else None,
                 })
-            elif not installation_data.id : # Product from room model, but main installation record is new (no ID yet)
-                 # This is for the initial rendering of the frontend form for a NEW installation
-                 # Create temporary placeholder items
+            elif not installation_data.id:
                 check_items.append({
-                    "id": f"newproduct_{product.id}", # Temporary ID for unsaved items
-                    "label": f"({product.client_id or 'N/A'}) - {install_detail_item.product_id.description}",
+                    "id": f"newproduct_{product.id}",
+                    "label": f"({product.client_id or 'N/A'}) - {product.description}",
                     "type": "detail",
-                    "status": "NO", # Default
+                    "status": "NO",
                     "checked_by": None,
                     "check_on": None,
                     "quantity_needed_per_room": prm.quantity,
-                    "floor_quantity": floor_quantity, 
+                    "floor_quantity": floor_quantity,
+                    "hotel_warehouse_quantity": hotel_warehouse_quantity,
                 })
 
 
@@ -2018,7 +2005,7 @@ def inventory_shipment(request):
                 ).first()
                 
                 if inventory:
-                    inventory.qty_ordered = (inventory.qty_ordered or 0) + qty_shipped
+                    # inventory.qty_ordered = (inventory.qty_ordered or 0) + qty_shipped
                     inventory.save()
             
             if is_editing:
@@ -5313,46 +5300,65 @@ def update_inventory_shipped_quantities():
     and update the shipped_to_hotel_quantity in inventory table.
     
     This function:
-    1. Groups all warehouse shipments by client_id (case-insensitive)
-    2. Calculates the total ship_qty for each client_id
-    3. Updates the shipped_to_hotel_quantity in the inventory table for matching client_id
+    1. Groups all warehouse shipments by client_id and item (case-insensitive)
+    2. Calculates the total ship_qty for each (client_id, item)
+    3. Updates the shipped_to_hotel_quantity in the inventory table for matching (client_id, item)
     """
     from django.db.models import Sum, F
     from django.db.models.functions import Lower
     from hotel_bot_app.models import Inventory, WarehouseShipment
     
-    # Get all warehouse shipments grouped by client_id (converted to lowercase for case-insensitive grouping)
-    # We use Lower() function to make the comparison case-insensitive
+    # Get all warehouse shipments grouped by client_id and item (case-insensitive)
     shipment_sums = WarehouseShipment.objects.annotate(
-        client_id_lower=Lower('client_id')
-    ).values('client_id_lower').annotate(
+        client_id_lower=Lower('client_id'),
+        item_lower=Lower('item')
+    ).values('client_id_lower', 'item_lower').annotate(
         total_shipped=Sum('ship_qty'),
-        original_client_id=F('client_id')  # Keep one original client_id for reference
-    ).values('client_id_lower', 'total_shipped', 'original_client_id')
-    
+        original_client_id=F('client_id'),
+        original_item=F('item')
+    ).values('client_id_lower', 'item_lower', 'total_shipped', 'original_client_id', 'original_item')
+
     update_count = 0
+    updated_keys = set()
     # Update each inventory record with the calculated sum
     for shipment in shipment_sums:
-        # Get client_id and total
         client_id_lower = shipment['client_id_lower']
+        item_lower = shipment['item_lower']
         total_shipped = shipment['total_shipped']
         original_client_id = shipment['original_client_id']
-        
-        # Find and update all inventory records with this client_id (case-insensitive)
+        original_item = shipment['original_item']
+
+        # Update inventory for this (client_id, item) pair (case-insensitive)
         updated = Inventory.objects.filter(
-            client_id__iexact=original_client_id
+            client_id__iexact=original_client_id,
+            item__iexact=original_item
         ).update(shipped_to_hotel_quantity=total_shipped)
-        
+
         # If no records found with exact case, try with lowercase comparison
         if updated == 0:
             updated = Inventory.objects.filter(
-                client_id__iexact=client_id_lower
+                client_id__iexact=client_id_lower,
+                item__iexact=item_lower
             ).update(shipped_to_hotel_quantity=total_shipped)
-        
+
         update_count += updated
-        print(f"Client ID: {original_client_id} (lowercase: {client_id_lower}), Total: {total_shipped}, Updated: {updated} records")
-        
-    print(f"Updated shipped_to_hotel_quantity for {update_count} inventory items based on {len(shipment_sums)} unique client IDs")
+        updated_keys.add((client_id_lower, item_lower))
+        print(f"Client ID: {original_client_id} (lowercase: {client_id_lower}), Item: {original_item} (lowercase: {item_lower}), Total: {total_shipped}, Updated: {updated} records")
+
+    # Now, set shipped_to_hotel_quantity=0 for any inventory items whose (client_id, item) is not present in any shipment
+    all_inventory = Inventory.objects.values_list('client_id', 'item')
+    all_inventory_keys = set()
+    for cid, item in all_inventory:
+        if cid and item:
+            all_inventory_keys.add((cid.lower(), item.lower()))
+    not_shipped_keys = all_inventory_keys - updated_keys
+    for client_id_lower, item_lower in not_shipped_keys:
+        updated = Inventory.objects.filter(client_id__iexact=client_id_lower, item__iexact=item_lower).update(shipped_to_hotel_quantity=0)
+        if updated:
+            print(f"Client ID: {client_id_lower}, Item: {item_lower} had no shipments, set shipped_to_hotel_quantity=0 for {updated} records")
+        update_count += updated
+
+    print(f"Updated shipped_to_hotel_quantity for {update_count} inventory items based on {len(shipment_sums)} unique (client_id, item) pairs (including zeroed)")
     return update_count
 
 def update_inventory_hotel_warehouse_quantities():
