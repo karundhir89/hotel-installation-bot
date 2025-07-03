@@ -2005,7 +2005,7 @@ def inventory_shipment(request):
                 ).first()
                 
                 if inventory:
-                    inventory.qty_ordered = (inventory.qty_ordered or 0) + qty_shipped
+                    # inventory.qty_ordered = (inventory.qty_ordered or 0) + qty_shipped
                     inventory.save()
             
             if is_editing:
