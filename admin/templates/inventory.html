@@ -93,7 +93,6 @@
                                         <th>Received at Hotel</th>
                                         <th>Damaged at Hotel</th>
                                         <th>Hotel Warehouse Qty</th>
-                                        <th>Floor Qty</th>
                                         <th>Qty Installed</th>
                                         <th>Actions</th>
                                     </tr>
@@ -112,7 +111,6 @@
                                         <td>{{ model.received_at_hotel_quantity }}</td>
                                         <td>{{ model.damaged_quantity_at_hotel }}</td>
                                         <td>{{ model.hotel_warehouse_quantity }}</td>
-                                        <td>{{ model.floor_quantity }}</td>
                                         <td>{{ model.quantity_installed }}</td>
                                         <td>
                                             <button class="btn editModelBtn"
@@ -128,7 +126,6 @@
                                                     data-received_at_hotel_quantity="{{ model.received_at_hotel_quantity }}"
                                                     data-damaged_quantity_at_hotel="{{ model.damaged_quantity_at_hotel }}"
                                                     data-hotel_warehouse_quantity="{{ model.hotel_warehouse_quantity }}"
-                                                    data-floor_quantity="{{ model.floor_quantity }}"
                                                     data-quantity_installed="{{ model.quantity_installed }}">
                                                 Edit
                                             </button>
@@ -206,10 +203,6 @@
                 <input type="number" id="hotel_warehouse_quantity" name="hotel_warehouse_quantity" class="form-control">
             </div>
             <div class="form-group">
-                <label for="floor_quantity">Floor Quantity:</label>
-                <input type="number" id="floor_quantity" name="floor_quantity" class="form-control">
-            </div>
-            <div class="form-group">
                 <label for="quantity_installed">Quantity Installed:</label>
                 <input type="number" id="quantity_installed" name="quantity_installed" class="form-control">
             </div>
@@ -255,7 +248,6 @@ $(document).ready(function () {
         $('#received_at_hotel_quantity').val("");
         $('#damaged_quantity_at_hotel').val("");
         $('#hotel_warehouse_quantity').val("");
-        $('#floor_quantity').val("");
         $('#quantity_installed').val("");
         $('#modelModal').fadeIn();
         $('#modelModalOverlay').fadeIn();
@@ -277,7 +269,6 @@ $(document).ready(function () {
         $('#received_at_hotel_quantity').val($(this).data('received_at_hotel_quantity') || 0);
         $('#damaged_quantity_at_hotel').val($(this).data('damaged_quantity_at_hotel') || 0);
         $('#hotel_warehouse_quantity').val($(this).data('hotel_warehouse_quantity') || 0);
-        $('#floor_quantity').val($(this).data('floor_quantity') || 0);
         $('#quantity_installed').val($(this).data('quantity_installed') || 0);
         $('#modelModal').fadeIn();
         $('#modelModalOverlay').fadeIn();

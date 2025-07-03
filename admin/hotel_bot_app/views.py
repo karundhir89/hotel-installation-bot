@@ -1685,8 +1685,8 @@ def installation_form(request):
                     # Only increment install qty if not previously installed or not modified
                     # (a modification from unchecked to checked will add)
                     if not install_detail or install_detail.status != "YES" or modified_details.get(detail_id):
-                        if inventory_item.floor_quantity is not None:
-                            inventory_item.floor_quantity = max(0, inventory_item.floor_quantity - required_qty)
+                        if inventory_item.hotel_warehouse_quantity is not None:
+                            inventory_item.hotel_warehouse_quantity = max(0, inventory_item.hotel_warehouse_quantity - required_qty)
                         if inventory_item.quantity_installed is not None:
                             inventory_item.quantity_installed += required_qty
                         else:
@@ -1716,8 +1716,8 @@ def installation_form(request):
                     try:
                         # Revert the inventory - add back to floor, remove from installed
                         inventory_item = Inventory.objects.get(client_id=product_id)
-                        if inventory_item.floor_quantity is not None:
-                            inventory_item.floor_quantity += required_qty
+                        if inventory_item.hotel_warehouse_quantity is not None:
+                            inventory_item.hotel_warehouse_quantity += required_qty
                         if inventory_item.quantity_installed is not None:
                             inventory_item.quantity_installed = max(0, inventory_item.quantity_installed - required_qty)
                         inventory_item.save()
@@ -1786,7 +1786,7 @@ def installation_form(request):
                                 else:
                                     inventory_item.quantity_installed = max((inventory_item.quantity_installed or 0) - required_qty, 0)
                                 # Increment floor_quantity back
-                                inventory_item.floor_quantity = (inventory_item.floor_quantity or 0) + required_qty
+                                inventory_item.hotel_warehouse_quantity = (inventory_item.hotel_warehouse_quantity or 0) + required_qty
                                 inventory_item.save()
                             except Inventory.DoesNotExist:
                                 pass
