@@ -5329,30 +5329,45 @@ def update_inventory_shipped_quantities():
         total_shipped=Sum('ship_qty'),
         original_client_id=F('client_id')  # Keep one original client_id for reference
     ).values('client_id_lower', 'total_shipped', 'original_client_id')
-    
+
     update_count = 0
+    updated_client_ids = set()
     # Update each inventory record with the calculated sum
     for shipment in shipment_sums:
         # Get client_id and total
         client_id_lower = shipment['client_id_lower']
         total_shipped = shipment['total_shipped']
         original_client_id = shipment['original_client_id']
-        
+
         # Find and update all inventory records with this client_id (case-insensitive)
         updated = Inventory.objects.filter(
             client_id__iexact=original_client_id
         ).update(shipped_to_hotel_quantity=total_shipped)
-        
+
         # If no records found with exact case, try with lowercase comparison
         if updated == 0:
             updated = Inventory.objects.filter(
                 client_id__iexact=client_id_lower
             ).update(shipped_to_hotel_quantity=total_shipped)
-        
+
         update_count += updated
+        updated_client_ids.add(client_id_lower)
         print(f"Client ID: {original_client_id} (lowercase: {client_id_lower}), Total: {total_shipped}, Updated: {updated} records")
-        
-    print(f"Updated shipped_to_hotel_quantity for {update_count} inventory items based on {len(shipment_sums)} unique client IDs")
+
+    # Now, set shipped_to_hotel_quantity=0 for any inventory items whose client_id is not present in any shipment
+    # Get all unique client_ids in Inventory (case-insensitive)
+    all_inventory_client_ids = Inventory.objects.values_list('client_id', flat=True)
+    # Lowercase all for comparison
+    all_inventory_client_ids_lower = set([cid.lower() for cid in all_inventory_client_ids if cid])
+    # Find those not updated above
+    not_shipped_client_ids = all_inventory_client_ids_lower - updated_client_ids
+    for client_id_lower in not_shipped_client_ids:
+        updated = Inventory.objects.filter(client_id__iexact=client_id_lower).update(shipped_to_hotel_quantity=0)
+        if updated:
+            print(f"Client ID: {client_id_lower} had no shipments, set shipped_to_hotel_quantity=0 for {updated} records")
+        update_count += updated
+
+    print(f"Updated shipped_to_hotel_quantity for {update_count} inventory items based on {len(shipment_sums)} unique client IDs (including zeroed)")
     return update_count
 
 def update_inventory_hotel_warehouse_quantities():
