@@ -297,12 +297,10 @@
           <thead>
             <tr>
               <th>Item</th>
-              <th>Client ID</th>
               <th>Shipped to Hotel</th>
               <th>Received at Hotel</th>
               <th>Damaged at Hotel</th>
               <th>Hotel Warehouse Qty</th>
-              <th>Floor Qty</th>
               <th>Qty Installed</th>
             </tr>
           </thead>
@@ -310,12 +308,10 @@
             {% for row in hotel_warehouse_inventory %}
             <tr>
               <td>{{ row.item }}</td>
-              <td>{{ row.client_id }}</td>
               <td>{{ row.shipped_to_hotel_quantity }}</td>
               <td>{{ row.received_at_hotel_quantity }}</td>
               <td>{{ row.damaged_quantity_at_hotel }}</td>
               <td>{{ row.hotel_warehouse_quantity }}</td>
-              <td>{{ row.floor_quantity }}</td>
               <td>{{ row.quantity_installed }}</td>
             </tr>
             {% empty %}
