@@ -138,22 +138,16 @@
 
             <div class="form-group">
                 <label for="product_id">Product:</label>
-                <select id="product_id" name="product_id" class="form-control" required>
-                    <option value="">Select Product</option>
-                    {% for product in products %}
-                        <option value="{{ product.id }}">{{ product.description }} ({{ product.client_id }})</option>
-                    {% endfor %}
-                </select>
+                <input type="text" id="product_autocomplete" class="form-control mb-2" placeholder="Type to search product..." autocomplete="off">
+                <input type="hidden" id="product_id" name="product_id" required>
+                <div id="product_suggestions" class="list-group" style="position: absolute; z-index: 2000; width: 100%; display: none; max-height: 220px; overflow-y: auto; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.12); border: 1px solid #ddd;"></div>
             </div>
 
             <div class="form-group">
                 <label for="room_model_id">Room Model:</label>
-                <select id="room_model_id" name="room_model_id" class="form-control" required>
-                    <option value="">Select Room Model</option>
-                    {% for room_model in room_models %}
-                        <option value="{{ room_model.id }}">{{ room_model.room_model }}</option>
-                    {% endfor %}
-                </select>
+                <input type="text" id="room_model_autocomplete" class="form-control mb-2" placeholder="Type to search room model..." autocomplete="off">
+                <input type="hidden" id="room_model_id" name="room_model_id" required>
+                <div id="room_model_suggestions" class="list-group" style="position: absolute; z-index: 2000; width: 100%; display: none; max-height: 220px; overflow-y: auto; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.12); border: 1px solid #ddd;"></div>
             </div>
 
             <div class="form-group">
@@ -168,6 +162,120 @@
 
 <script>
 $(document).ready(function () {
+    // Prepare product data for autocomplete
+    var products = [];
+    {% for product in products %}
+    products.push({ id: '{{ product.id|escapejs }}', label: '{{ product.description|escapejs }} ({{ product.client_id|escapejs }})' });
+    {% endfor %}
+
+    // Autocomplete logic for product
+    $('#product_autocomplete').on('input', function() {
+        var val = $(this).val().toLowerCase();
+        var matches = products.filter(function(p) {
+            return p.label.toLowerCase().indexOf(val) !== -1;
+        });
+        var $suggestions = $('#product_suggestions');
+        $suggestions.empty();
+        if (val && matches.length > 0) {
+            matches.forEach(function(p) {
+                $suggestions.append('<a href="#" class="list-group-item list-group-item-action" data-id="'+p.id+'">'+p.label+'</a>');
+            });
+            $suggestions.show();
+        } else {
+            $suggestions.hide();
+        }
+    });
+
+    // Click on suggestion for product (use mousedown for instant fill)
+    $('#product_suggestions').on('mousedown', 'a', function(e) {
+        e.preventDefault();
+        var id = $(this).data('id');
+        var label = $(this).text();
+        $('#product_autocomplete').val(label);
+        $('#product_id').val(id);
+        $('#product_suggestions').hide();
+    });
+
+    // Hide suggestions on blur (with slight delay for click)
+    $('#product_autocomplete').on('blur', function() {
+        setTimeout(function() { $('#product_suggestions').hide(); }, 150);
+    });
+
+    // Autocomplete logic for room model
+    var roomModels = [];
+    {% for room_model in room_models %}
+    roomModels.push({ id: '{{ room_model.id|escapejs }}', label: '{{ room_model.room_model|escapejs }}' });
+    {% endfor %}
+
+    $('#room_model_autocomplete').on('input', function() {
+        var val = $(this).val().toLowerCase();
+        var matches = roomModels.filter(function(r) {
+            return r.label.toLowerCase().indexOf(val) !== -1;
+        });
+        var $suggestions = $('#room_model_suggestions');
+        $suggestions.empty();
+        if (val && matches.length > 0) {
+            matches.forEach(function(r) {
+                $suggestions.append('<a href="#" class="list-group-item list-group-item-action" data-id="'+r.id+'">'+r.label+'</a>');
+            });
+            $suggestions.show();
+        } else {
+            $suggestions.hide();
+        }
+    });
+
+    // Click on suggestion for room model (use mousedown for instant fill)
+    $('#room_model_suggestions').on('mousedown', 'a', function(e) {
+        e.preventDefault();
+        var id = $(this).data('id');
+        var label = $(this).text();
+        $('#room_model_autocomplete').val(label);
+        $('#room_model_id').val(id);
+        $('#room_model_suggestions').hide();
+    });
+
+    // Hide suggestions on blur (with slight delay for click)
+    $('#room_model_autocomplete').on('blur', function() {
+        setTimeout(function() { $('#room_model_suggestions').hide(); }, 150);
+    });
+
+    // When opening modal for add, clear fields
+    $('#addModelBtn').click(function () {
+        $('#product_autocomplete').val("");
+        $('#product_id').val("");
+        $('#room_model_autocomplete').val("");
+        $('#room_model_id').val("");
+    });
+
+    // When editing, set autocomplete field for product and room model
+    $(document).on('click', '.editModelBtn', function () {
+        var selectedProductId = $(this).data('product_id');
+        var selectedProduct = products.find(function(p) { return p.id == selectedProductId; });
+        if (selectedProduct) {
+            $('#product_autocomplete').val(selectedProduct.label);
+            $('#product_id').val(selectedProduct.id);
+        }
+        var selectedRoomModelId = $(this).data('room_model_id');
+        var selectedRoomModel = roomModels.find(function(r) { return r.id == selectedRoomModelId; });
+        if (selectedRoomModel) {
+            $('#room_model_autocomplete').val(selectedRoomModel.label);
+            $('#room_model_id').val(selectedRoomModel.id);
+        }
+    });
+    // Live filter for product dropdown
+    $('#product_search').on('keyup', function() {
+        var search = $(this).val().toLowerCase();
+        $('#product_id option').each(function() {
+            if ($(this).val() === "") return; // Always show the placeholder
+            var text = $(this).text().toLowerCase();
+            $(this).toggle(text.indexOf(search) !== -1);
+        });
+        // Optionally, select the first visible option
+        var firstVisible = $('#product_id option:visible').first();
+        if (firstVisible.length && firstVisible.val() !== "") {
+            $('#product_id').val(firstVisible.val());
+        }
+    });
     $('#modelLoader').hide();
     $('#productRoomModelTable').show();
 
@@ -180,11 +288,11 @@ $(document).ready(function () {
         pageLength: 10,
         lengthMenu: [5, 10, 15, 20],
         dom : 'Bfr<"row pt-5"<"col-sm-12"t>><"row pt-3"<"col-sm-12 col-md-5"i><"col-sm-12 col-md-7"p>>',
-			buttons : [{
-	            extend: 'excel',
-	            text: 'Export To Excel',
+            buttons : [{
+                extend: 'excel',
+                text: 'Export To Excel',
                 className:'custom-download-btn'
-	        }]
+            }]
     });
 
     // Open modal for adding new mapping

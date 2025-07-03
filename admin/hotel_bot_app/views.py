@@ -1108,16 +1108,24 @@ def delete_schedule(request):
     return JsonResponse({"error": "Invalid request."})
 
 
+
 @login_required
 def delete_products_data(request):
     if request.method == "POST":
         model_id = request.POST.get("model_id")
         try:
-            room_model = ProductData.objects.get(id=model_id)
-            room_model.delete()
-            return JsonResponse({"success": "Room Model deleted."})
+            product = ProductData.objects.get(id=model_id)
+            client_id = product.client_id
+            product.delete()
+            # Also delete corresponding Inventory entry (case-insensitive client_id match)
+            if client_id:
+                from .models import Inventory
+                Inventory.objects.filter(client_id__iexact=client_id).delete()
+            return JsonResponse({"success": "Product and inventory deleted if present."})
         except ProductData.DoesNotExist:
-            return JsonResponse({"error": "Room Model not found."})
+            return JsonResponse({"error": "Product not found."})
+        except Exception as e:
+            return JsonResponse({"error": str(e)})
     return JsonResponse({"error": "Invalid request."})
 
 def _get_installation_checklist_data(room_number, installation_id=None, user_for_prefill=None):
@@ -1931,7 +1939,14 @@ def inventory_shipment(request):
             print(f"Client items: {client_items}")
             print(f"Suppliers: {suppliers}")
             
-            # Check if we have items to process
+            # If editing and all items are deleted, delete the container completely
+            if is_editing and editing_container_id and not client_items:
+                deleted_count = Shipping.objects.filter(bol=editing_container_id).count()
+                Shipping.objects.filter(bol=editing_container_id).delete()
+                messages.success(request, f"Container '{editing_container_id}' deleted as all items were removed.")
+                return redirect("inventory_shipment")
+
+            # If not editing, or not all items deleted, require at least one item
             if not client_items:
                 messages.error(request, "No items added to shipment.")
                 return redirect("inventory_shipment")
@@ -2024,38 +2039,43 @@ def inventory_shipment(request):
     # Get previous submissions (grouped by container ID/BOL)
     previous_submissions = []
     try:
-        # Get unique container IDs
-        containers = Shipping.objects.values('bol').distinct().order_by('-ship_date')
-        
+        # Get unique container IDs and annotate with total quantity
+        containers = Shipping.objects.values('bol').annotate(
+            product_count=Count('id'),
+            total_quantity=Sum('ship_qty'),
+            first_id=Min('id')
+        ).order_by('-first_id')
+
         for container in containers:
             if not container['bol']:  # Skip empty BOLs
                 continue
-                
+
             # Get all items for this container
             items = Shipping.objects.filter(bol=container['bol']).order_by('-ship_date')
             if not items:
                 continue
-                
+
             first_item = items.first()  # Get the first item to extract common data
-            
+
             # Format the dates for display
             ship_date_display = first_item.ship_date.strftime('%Y-%m-%d') if first_item.ship_date else 'N/A'
             expected_arrival_display = first_item.expected_arrival_date.strftime('%Y-%m-%d') if first_item.expected_arrival_date else 'N/A'
-            
+
             # Get the checker name
             checker = first_item.checked_by.name if first_item.checked_by else 'Unknown'
-            
+
             # Create submission summary
             submission = {
                 'id': first_item.id,  # Use the first item's ID as reference
                 'container_id': first_item.bol,
                 'ship_date': ship_date_display,
                 'expected_arrival': expected_arrival_display,
-                'product_count': items.count(),
+                'product_count': container['product_count'],
+                'total_quantity': container['total_quantity'] or 0,
                 'checked_by': checker,
                 # Add other fields as needed
             }
-            
+
             previous_submissions.append(submission)
     except Exception as e:
         print(f"Error fetching previous submissions: {e}")
@@ -2361,17 +2381,18 @@ def inventory_received(request):
                 continue
                 
             first_item = items[0]
-            product_count = len(items)
-            damaged_count = sum(1 for item in items if item.damaged_qty > 0)
+            # Calculate total quantities
+            total_quantity_received = sum(item.received_qty for item in items)
+            total_damaged_quantity = sum(item.damaged_qty for item in items)
             received_date = first_item.received_date.strftime('%Y-%m-%d') if first_item.received_date else 'N/A'
-            
+
             previous_submissions.append({
                 'id': first_item.id,
                 'container_id': container_id,
                 'client_id': first_item.client_id,
                 'received_date': received_date,
-                'product_count': product_count,
-                'damaged_count': damaged_count,
+                'total_quantity_received': total_quantity_received,
+                'total_damaged_quantity': total_damaged_quantity,
                 'checked_by': first_item.checked_by.name if first_item.checked_by else 'Unknown'
             })
     except Exception as e:
@@ -3029,9 +3050,10 @@ def save_product_data(request):
                 if image:  # Only update if a new image is uploaded
                     installation.image = image
                 installation.save()
+
             else:
                 print("Adding new row")
-                ProductData.objects.create(
+                new_product = ProductData.objects.create(
                     item=item,
                     client_id=client_id,
                     description=description,
@@ -3039,6 +3061,23 @@ def save_product_data(request):
                     client_selected=client_selected,
                     image=image,
                 )
+                # Auto-add to Inventory if not already present
+                from hotel_bot_app.models import Inventory
+                if item and client_id:
+                    if not Inventory.objects.filter(client_id__iexact=client_id).exists():
+                        Inventory.objects.create(
+                            item=item,
+                            client_id=client_id,
+                            shipped_to_hotel_quantity=0,
+                            received_at_hotel_quantity=0,
+                            damaged_quantity_at_hotel=0,
+                            hotel_warehouse_quantity=0,
+                            floor_quantity=0,
+                            quantity_installed=0,
+                            qty_received=0,
+                            damaged_quantity=0,
+                            quantity_available=0,
+                        )
 
             return JsonResponse({"success": True})
 
@@ -4461,7 +4500,15 @@ def warehouse_receiver(request):
             messages.error(request, f"Error: {str(e)}")
             return redirect("warehouse_receiver")
     
-    return render(request, "warehouse_receiver.html", {"user_name": user.name if user else ""})
+    # For DataTables: pass all inventory rows (no pagination, no search)
+    hotel_warehouse_inventory = Inventory.objects.all()
+    
+    context = {
+        "user_name": user.name if user else "",
+        "hotel_warehouse_inventory": hotel_warehouse_inventory,
+        "request": request,  # For other template needs
+    }
+    return render(request, "warehouse_receiver.html", context)
 
 @session_login_required
 def get_warehouse_receipt_details(request):
@@ -4741,10 +4788,11 @@ def get_previous_warehouse_requests(request):
 @session_login_required
 def get_warehouse_receipts(request):
     """
-    API endpoint to get paginated warehouse receipts for AJAX loading
+    API endpoint to get paginated warehouse receipts for AJAX loading, with server-side search support
     """
     page = request.GET.get('page', 1)
-    
+    search = request.GET.get('search', '').strip()
+
     try:
         # More efficient query: Get the most recent receipts first with date ordering
         recent_receipts = (
@@ -4758,27 +4806,41 @@ def get_warehouse_receipts(request):
             )
             .order_by('-latest_date')
         )
-        
+
+        # If search is provided, filter the queryset
+        if search:
+            # Find all reference_ids that match the search in reference_id, checked_by__name, or product_name
+            # First, get all reference_ids that match product_name in any HotelWarehouse row
+            product_name_matches = HotelWarehouse.objects.filter(product_name__icontains=search).values_list('reference_id', flat=True)
+            # Get all reference_ids that match checked_by__name
+            checked_by_matches = HotelWarehouse.objects.filter(checked_by__name__icontains=search).values_list('reference_id', flat=True)
+            # Now filter recent_receipts
+            recent_receipts = [r for r in recent_receipts if (
+                search.lower() in r['reference_id'].lower() or
+                r['reference_id'] in product_name_matches or
+                r['reference_id'] in checked_by_matches
+            )]
+
         # Get the prefetched items in a single query
         receipt_ids = [r['first_id'] for r in recent_receipts]
         receipt_items = HotelWarehouse.objects.filter(id__in=receipt_ids).select_related('checked_by')
         receipt_dict = {item.id: item for item in receipt_items}
-        
+
         # Process the results without additional queries
         receipts_list = []
         for receipt in recent_receipts:
             ref_id = receipt['reference_id']
             first_item = receipt_dict.get(receipt['first_id'])
-            
+
             if first_item:
                 # Get received date
                 received_date = receipt['latest_date'].strftime('%Y-%m-%d') if receipt['latest_date'] else now().strftime('%Y-%m-%d')
-                
+
                 # Get user name if available
                 received_by = "System"  # Default value
                 if first_item.checked_by:
                     received_by = first_item.checked_by.name
-                
+
                 receipts_list.append({
                     'id': ref_id,  # Use reference_id as the ID for the receipt
                     'reference_id': ref_id,
@@ -4787,17 +4849,17 @@ def get_warehouse_receipts(request):
                     'total_quantity': receipt['total_quantity'] or 0,
                     'received_by': received_by
                 })
-        
+
         # Create paginator
         paginator = Paginator(receipts_list, 10)  # 10 receipts per page
-        
+
         try:
             receipts_page = paginator.page(page)
         except PageNotAnInteger:
             receipts_page = paginator.page(1)
         except EmptyPage:
             receipts_page = paginator.page(paginator.num_pages)
-        
+
         # Return paginated data as JSON
         return JsonResponse({
             'success': True,
@@ -4809,7 +4871,7 @@ def get_warehouse_receipts(request):
             'has_next': receipts_page.has_next(),
             'next_page': receipts_page.next_page_number() if receipts_page.has_next() else None
         })
-        
+
     except Exception as e:
         logger.error(f"Error in get_warehouse_receipts: {e}", exc_info=True)
         return JsonResponse({
@@ -4926,8 +4988,21 @@ def warehouse_shipment(request):
             
             # Check if we have items to process
             if not client_items:
-                messages.error(request, "No items added to shipment.")
-                return redirect("warehouse_shipment")
+                # If editing and all items are deleted, delete the container (all items with this reference_id)
+                if is_editing and editing_reference_id:
+                    # Delete all items for this container
+                    deleted_count, _ = WarehouseShipment.objects.filter(reference_id__iexact=editing_reference_id).delete()
+                    messages.success(request, f"All items removed. Container '{editing_reference_id}' deleted successfully.")
+                    # After deletion, update inventory shipped quantities
+                    update_inventory_shipped_quantities()
+                    # Clear any editing session data
+                    if request.session.get("editing_warehouse_shipment"):
+                        del request.session["editing_warehouse_shipment"]
+                        request.session.save()
+                    return redirect("warehouse_shipment")
+                else:
+                    messages.error(request, "No items added to shipment.")
+                    return redirect("warehouse_shipment")
             
             # Check if this reference ID already exists (regardless of edit flag)
             container_exists = False
@@ -5079,17 +5154,18 @@ def warehouse_shipment(request):
     # Get previous submissions (grouped by reference ID)
     previous_submissions = []
     
-    # Use values to get unique reference IDs and annotate to count items
+    # Use values to get unique reference IDs and annotate to count items and sum quantities
     container_data = WarehouseShipment.objects.values('reference_id').annotate(
         product_count=Count('id'),
+        total_quantity=Sum('ship_qty'),
         id=Min('id')  # Use the lowest ID as a reference
     ).order_by('-id')  # Sort by newest first
-    
+
     # For each container, get additional details from a representative item
     for container in container_data:
         # Get the first item for this container
         reference_item = WarehouseShipment.objects.filter(reference_id=container['reference_id']).first()
-        
+
         if reference_item:
             previous_submissions.append({
                 'id': reference_item.id,
@@ -5097,6 +5173,7 @@ def warehouse_shipment(request):
                 'ship_date': reference_item.ship_date,
                 'expected_arrival': reference_item.expected_arrival_date,
                 'product_count': container['product_count'],
+                'total_quantity': container['total_quantity'] or 0,
                 'checked_by': reference_item.checked_by.name if reference_item.checked_by else "Unknown"
             })
     

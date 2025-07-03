@@ -205,6 +205,7 @@
                   <th>Ship Date</th>
                   <th>Expected Arrival</th>
                   <th>Product Count</th>
+                  <th>Total Quantity</th>
                   <th>Checked By</th>
                   <th>Action</th>
                 </tr>
@@ -216,6 +217,7 @@
                   <td>{{ submission.ship_date }}</td>
                   <td>{{ submission.expected_arrival }}</td>
                   <td>{{ submission.product_count }}</td>
+                  <td>{{ submission.total_quantity }}</td>
                   <td>{{ submission.checked_by }}</td>
                   <td>
                     <button type="button" class="btn btn-secondary btn-sm w-100 edit-submission" data-id="{{ submission.id }}">Edit</button>
@@ -446,17 +448,18 @@
       $('#form-data-container').empty();
       
       // Read the edit mode flags (now separate from the container)
-      const isEditing = $('#is_editing').val();
+      const isEditing = $('#is_editing').val() === '1';
       const editingContainerId = $('#editing_container_id').val();
-      
       // Debug logging
       console.log(`Form submission - is_editing: ${isEditing}, editing_container_id: ${editingContainerId}`);
-      
-      // Check if there are items in the table
       if ($('#item_list tr').length === 0) {
-        e.preventDefault();
-        toastr.error("Please add at least one item to the shipment");
-        return false;
+        if (isEditing && editingContainerId) {
+          // Allow submission, backend will handle container deletion
+        } else {
+          e.preventDefault();
+          toastr.error("Please add at least one item to the shipment");
+          return false;
+        }
       }
       
       // No need to re-add the edit mode fields since they're now outside the cleared container
