@@ -91,4 +91,6 @@ urlpatterns = [
     path('restore_warehouse_inventory/', restore_warehouse_inventory, name='restore_warehouse_inventory'),
     path('revert_warehouse_inventory/', revert_warehouse_inventory, name='revert_warehouse_inventory'),
     path('hotel_inventory/', hotel_inventory, name='hotel_inventory'),
+    path('delete_warehouse_container/', delete_warehouse_container, name='delete_warehouse_container'),
+    path('delete_inventory_container/', delete_inventory_container, name='delete_inventory_container'),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

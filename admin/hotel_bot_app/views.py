@@ -5941,3 +5941,53 @@ def recalculate_hotel_warehouse_quantity(client_id):
         received_date=received_date
     )
     
+@csrf_exempt
+def delete_warehouse_container(request):
+    if request.method == "POST":
+        reference_id = request.POST.get("reference_id")
+        if not reference_id:
+            return JsonResponse({"success": False, "message": "No reference ID provided."})
+        try:
+            from .models import WarehouseShipment, Inventory
+            # Restore inventory quantities for each item in the container
+            items = WarehouseShipment.objects.filter(reference_id=reference_id)
+            for item in items:
+                client_id = item.client_id
+                ship_qty = item.ship_qty
+                inventory_item = Inventory.objects.filter(client_id__iexact=client_id).first()
+                if inventory_item:
+                    # Add back to available
+                    if inventory_item.quantity_available is not None:
+                        inventory_item.quantity_available += ship_qty
+                    else:
+                        inventory_item.quantity_available = ship_qty
+                    # Subtract from shipped_to_hotel_quantity if present
+                    if inventory_item.shipped_to_hotel_quantity is not None:
+                        inventory_item.shipped_to_hotel_quantity = max(0, inventory_item.shipped_to_hotel_quantity - ship_qty)
+                    inventory_item.save()
+            deleted, _ = items.delete()
+            if deleted:
+                return JsonResponse({"success": True})
+            else:
+                return JsonResponse({"success": False, "message": "Container not found."})
+        except Exception as e:
+            return JsonResponse({"success": False, "message": str(e)})
+    return JsonResponse({"success": False, "message": "Invalid request."})
+    
+@csrf_exempt
+def delete_inventory_container(request):
+    if request.method == "POST":
+        container_id = request.POST.get("container_id")
+        if not container_id:
+            return JsonResponse({"success": False, "message": "No container ID provided."})
+        try:
+            from .models import Shipping
+            deleted, _ = Shipping.objects.filter(bol=container_id).delete()
+            if deleted:
+                return JsonResponse({"success": True})
+            else:
+                return JsonResponse({"success": False, "message": "Container not found."})
+        except Exception as e:
+            return JsonResponse({"success": False, "message": str(e)})
+    return JsonResponse({"success": False, "message": "Invalid request."})
+    
