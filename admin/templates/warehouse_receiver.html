@@ -130,8 +130,8 @@
             <label class="form-label">Reference ID</label>
             <div class="input-group">
             <input type="text" class="form-control" name="reference_id" id="reference_id" placeholder="Enter Reference ID" required>
-              <button type="button" class="btn btn-secondary" id="load-items-btn">
-                <span class="material-icons">search</span>
+              <button type="button" class="btn btn-secondary" id="load-items-btn" style="height: 38px; padding-top: 0.375rem; padding-bottom: 0.375rem;">
+                <span class="material-icons" style="vertical-align: middle;">search</span>
               </button>
             </div>
             <small class="form-text text-muted">Enter a Reference ID from Warehouse Shipment to automatically load items</small>
@@ -283,50 +283,7 @@
   </div>
 </div>
 
-<!-- Third Card: Hotel Warehouse Inventory (moved outside modal) -->
-<div class="container-lg my-5">
-  <div class="card shadow-sm rounded-4 mt-4">
-    <div class="card-body p-4">
-      <h4 class="mb-3">Hotel Warehouse</h4>
-      <!-- DataTables Search and Export Controls -->
-      <div class="d-flex flex-wrap align-items-center mb-3 gap-2">
-        <button id="warehouse-export-btn" class="btn btn-success" type="button">Export to Excel</button>
-      </div>
-      <div class="table-responsive">
-        <table id="hotel-warehouse-table" class="table table-bordered table-striped">
-          <thead>
-            <tr>
-              <th>Item</th>
-              <th>Client ID</th>
-              <th>Shipped to Hotel</th>
-              <th>Received at Hotel</th>
-              <th>Damaged at Hotel</th>
-              <th>Hotel Warehouse Qty</th>
-              <th>Floor Qty</th>
-              <th>Qty Installed</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in hotel_warehouse_inventory %}
-            <tr>
-              <td>{{ row.item }}</td>
-              <td>{{ row.client_id }}</td>
-              <td>{{ row.shipped_to_hotel_quantity }}</td>
-              <td>{{ row.received_at_hotel_quantity }}</td>
-              <td>{{ row.damaged_quantity_at_hotel }}</td>
-              <td>{{ row.hotel_warehouse_quantity }}</td>
-              <td>{{ row.floor_quantity }}</td>
-              <td>{{ row.quantity_installed }}</td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="8" class="text-center">No inventory data found.</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-</div>
+<!-- Hotel Warehouse Inventory table moved to hotel_inventory.html -->
 {% endblock %}
 
 {% block extra_head %}

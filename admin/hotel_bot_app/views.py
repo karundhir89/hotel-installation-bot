@@ -4382,6 +4382,18 @@ def get_container_received_items(request):
         return JsonResponse({'success': False, 'message': str(e)})
 
 @session_login_required
+def hotel_inventory(request):
+    """
+    View for displaying hotel warehouse inventory in a dedicated page (same table as warehouse_receiver).
+    """
+    hotel_warehouse_inventory = Inventory.objects.all()
+    context = {
+        "hotel_warehouse_inventory": hotel_warehouse_inventory,
+    }
+    return render(request, "hotel_inventory.html", context)
+
+
+@session_login_required
 def warehouse_receiver(request):
     """
     View for receiving warehouse shipments.

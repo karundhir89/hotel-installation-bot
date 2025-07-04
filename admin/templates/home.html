@@ -115,7 +115,20 @@
         </div>
     {% endif %}
 
-        
+    {% if 'hotel_warehouse' in roles %}
+    <div class="col-lg-6 col-md-9 col-12 mb-4">
+        <div class="card action-card shadow border-0 h-100">
+            <div class="card-body text-center">
+                <div class="icon-circle mb-3 bg-secondary text-white">
+                    <span class="material-icons md-36">warehouse</span>
+                </div>
+                <h5 class="card-title text-secondary font-weight-bold">Hotel Inventory</h5>
+                <p class="card-text text-muted">View hotel warehouse inventory and status.</p>
+                <a href="{% url 'hotel_inventory' %}" class="btn btn-secondary btn-block btn-lg">View Hotel Inventory</a>
+            </div>
+        </div>
+    </div>
+    {% endif %}
         {# The Room Wise Products and Floor Wise Products cards have been moved to the header in frontend_base.html #}
 
 </div>
