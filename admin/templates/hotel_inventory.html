@@ -1,0 +1,80 @@
+{% extends "frontend_base.html" %}
+{% load static %}
+
+{% block title %}Hotel Inventory{% endblock %}
+
+{% block content %}
+<div class="container-lg my-5">
+  <div class="card shadow-sm rounded-4 mt-4">
+    <div class="card-body p-4">
+      <h4 class="mb-3 text-center fw-bold">Hotel Inventory</h4>
+      <div class="d-flex flex-wrap align-items-center mb-3 gap-2">
+        <button id="hotel-inventory-export-btn" class="btn btn-success" type="button">Export to Excel</button>
+      </div>
+      <div class="table-responsive">
+        <table id="hotel-inventory-table" class="table table-bordered table-striped">
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Shipped to Hotel</th>
+              <th>Received at Hotel</th>
+              <th>Damaged at Hotel</th>
+              <th>Hotel Warehouse Qty</th>
+              <th>Qty Installed</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in hotel_warehouse_inventory %}
+            <tr>
+              <td>{{ row.item }}</td>
+              <td>{{ row.shipped_to_hotel_quantity }}</td>
+              <td>{{ row.received_at_hotel_quantity }}</td>
+              <td>{{ row.damaged_quantity_at_hotel }}</td>
+              <td>{{ row.hotel_warehouse_quantity }}</td>
+              <td>{{ row.quantity_installed }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="8" class="text-center">No inventory data found.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_head %}
+{{ block.super }}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.dataTables.min.css">
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.html5.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.3/jszip.min.js"></script>
+<script>
+$(document).ready(function() {
+    $('#hotel-inventory-table').DataTable({
+        paging: true,
+        searching: true,
+        ordering: true,
+        info: true,
+        pageLength: 10,
+        lengthMenu: [5, 10, 20, 50, 100],
+        dom: 'Bfrtip',
+        buttons: [
+            {
+                extend: 'excelHtml5',
+                text: 'Export To Excel',
+                className: 'btn btn-success',
+                title: 'Hotel Inventory'
+            }
+        ]
+    });
+    $('#hotel-inventory-export-btn').hide();
+});
+</script>
+{% endblock %}

@@ -90,4 +90,5 @@ urlpatterns = [
     # Inventory restoration/reversion APIs for warehouse shipments
     path('restore_warehouse_inventory/', restore_warehouse_inventory, name='restore_warehouse_inventory'),
     path('revert_warehouse_inventory/', revert_warehouse_inventory, name='revert_warehouse_inventory'),
+    path('hotel_inventory/', hotel_inventory, name='hotel_inventory'),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
