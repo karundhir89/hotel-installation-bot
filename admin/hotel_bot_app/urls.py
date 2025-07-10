@@ -2,6 +2,7 @@ from django.urls import path
 from .views import *
 from django.conf import settings
 from django.conf.urls.static import static
+from hotel_bot_app import views
 
 urlpatterns = [
     path('chat/', chatbot, name='chatbot'),
@@ -93,4 +94,10 @@ urlpatterns = [
     path('hotel_inventory/', hotel_inventory, name='hotel_inventory'),
     path('delete_warehouse_container/', delete_warehouse_container, name='delete_warehouse_container'),
     path('delete_inventory_container/', delete_inventory_container, name='delete_inventory_container'),
+    path('export_warehouse_shipment_excel/', views.export_warehouse_shipment_excel, name='export_warehouse_shipment_excel'),
+    path('export-warehouse-receipt-excel/', views.export_warehouse_receipt_excel, name='export_warehouse_receipt_excel'),
+    path('check-availability/', views.check_availability, name='check_availability'),
+
+    path('get-install-start-dates/', views.get_install_start_dates, name='get_install_start_dates'),
+    path('get-availability-data/', views.get_availability_data, name='get_availability_data'),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

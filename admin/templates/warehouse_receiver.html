@@ -685,7 +685,10 @@ $(document).ready(function() {
                     <td>${receipt.total_quantity}</td>
                     <td>${receipt.received_by}</td>
                     <td>
-                      <button type="button" class="btn btn-secondary btn-sm edit-receipt" data-reference-id="${receipt.reference_id}" data-receipt-id="${receipt.id}">Edit</button>
+                      <div class="d-flex flex-row gap-2">
+                        <button type="button" class="btn btn-secondary btn-sm w-100 edit-receipt mr-2" data-id="${receipt.id}">Edit</button>
+                        <button type="button" class="btn btn-success btn-sm w-100 export-receipt" data-reference="${receipt.reference_id}">Export</button>
+                      </div>
                     </td>
                   </tr>
                 `);
@@ -1025,5 +1028,40 @@ $(document).ready(function() {
       });
     }
   });
+</script>
+<script>
+    // Export Receipt to Excel
+    $(document).on('click', '.export-receipt', function() {
+        var referenceId = $(this).data('reference');
+        var $btn = $(this);
+        $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Export');
+        $.ajax({
+            url: '/export-warehouse-receipt-excel/?reference_id=' + referenceId,
+            method: 'GET',
+            xhrFields: {
+                responseType: 'blob'
+            },
+            success: function(data, status, xhr) {
+                var filename = "Warehouse_Receipt_" + referenceId + ".xls";
+                var blob = new Blob([data], { type: 'application/vnd.ms-excel' });
+                if (window.navigator && window.navigator.msSaveOrOpenBlob) {
+                    window.navigator.msSaveOrOpenBlob(blob, filename);
+                } else {
+                    var link = document.createElement('a');
+                    link.href = window.URL.createObjectURL(blob);
+                    link.download = filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+            },
+            error: function() {
+                alert('Failed to export receipt.');
+            },
+            complete: function() {
+                $btn.prop('disabled', false).html('Export');
+            }
+        });
+    });
 </script>
 {% endblock %}
