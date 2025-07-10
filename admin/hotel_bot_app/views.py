@@ -35,6 +35,7 @@ from openai import OpenAI
 from html import escape
 import xlwt
 import pytz
+from django.views.decorators.http import require_GET
 
 from django.db.models import Q
 from django.contrib.auth import get_user_model # Use this if settings.AUTH_USER_MODEL is Django's default
@@ -3432,7 +3433,7 @@ def get_floor_products(request):
 
 # Helper function to generate XLS response
 def _generate_xls_response(data, filename, sheet_name="Sheet1"):
-    response = HttpResponse(content_type='application/ms-excel')
+    response = HttpResponse(content_type='application/vnd.ms-excel')
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
 
     wb = xlwt.Workbook(encoding='utf-8')
@@ -5990,4 +5991,230 @@ def delete_inventory_container(request):
         except Exception as e:
             return JsonResponse({"success": False, "message": str(e)})
     return JsonResponse({"success": False, "message": "Invalid request."})
+
+@session_login_required
+def export_warehouse_shipment_excel(request):
+    """
+    Export warehouse shipment data to Excel format.
+    Expects reference_id parameter to identify the specific shipment.
+    """
+    reference_id = request.GET.get('reference_id', '').strip()
     
+    if not reference_id:
+        return JsonResponse({'success': False, 'message': 'Reference ID is required'})
+    
+    try:
+        # Get all items for this reference ID (case-insensitive)
+        items = WarehouseShipment.objects.filter(reference_id__iexact=reference_id)
+        
+        if not items.exists():
+            return JsonResponse({'success': False, 'message': 'No shipment found with this reference ID'})
+        
+        # Get the first item to get shipment details
+        first_item = items.first()
+        
+        # Prepare data for Excel export
+        export_data = []
+        
+        for item in items:
+            # Get product name from ProductData if available
+            try:
+                product = ProductData.objects.filter(client_id__iexact=item.client_id).first()
+                product_name = product.description if product else None
+                if not product_name:
+                    product_name = item.item or "Unknown Product"
+            except ProductData.DoesNotExist:
+                product_name = item.item or "Unknown Product"
+            
+            export_data.append({
+                'Reference ID': item.reference_id,
+                'Client Item #': item.client_id,
+                'Product Name': product_name,
+                'Ship Date': item.ship_date.strftime('%Y-%m-%d') if item.ship_date else '',
+                'Quantity Shipped': item.ship_qty,
+                'Expected Arrival Date': item.expected_arrival_date.strftime('%Y-%m-%d') if item.expected_arrival_date else '',
+                'Checked By': item.checked_by.name if item.checked_by else ''
+            })
+        
+        # Generate Excel file
+        filename = f"warehouse_shipment_{reference_id}.xls"
+        
+        # Use the existing helper function to generate Excel response
+        return _generate_xls_response(export_data, filename, sheet_name="Warehouse Shipment")
+        
+    except Exception as e:
+        print(f"Error exporting warehouse shipment: {e}")
+        return JsonResponse({'success': False, 'message': f'Error exporting shipment: {str(e)}'})
+
+@session_login_required
+def export_warehouse_receipt_excel(request):
+    """
+    Export warehouse receipt data to Excel format.
+    Expects reference_id parameter to identify the specific receipt.
+    """
+    reference_id = request.GET.get('reference_id', '').strip()
+    
+    if not reference_id:
+        return JsonResponse({'success': False, 'message': 'Reference ID is required'})
+    
+    try:
+        # Get all items for this reference ID (case-insensitive)
+        items = HotelWarehouse.objects.filter(reference_id__iexact=reference_id)
+        
+        if not items.exists():
+            return JsonResponse({'success': False, 'message': 'No receipt found with this reference ID'})
+        
+        # Prepare data for Excel export
+        export_data = []
+        
+        for item in items:
+            # Get product name from ProductData if available
+            try:
+                product = ProductData.objects.filter(client_id__iexact=item.client_item).first()
+                product_name = product.description if product else None
+                if not product_name:
+                    product_name = item.client_item or "Unknown Product"
+            except ProductData.DoesNotExist:
+                product_name = item.client_item or "Unknown Product"
+            
+            # Get shipped quantity from WarehouseShipment
+            shipped_qty = 0
+            try:
+                shipment_item = WarehouseShipment.objects.filter(
+                    reference_id__iexact=reference_id,
+                    client_id__iexact=item.client_item
+                ).first()
+                if shipment_item:
+                    shipped_qty = shipment_item.ship_qty
+            except Exception as e:
+                print(f"Error looking up shipped quantity for {item.client_item}: {e}")
+            
+            export_data.append({
+                'Reference ID': item.reference_id,
+                'Received Date': item.received_date.strftime('%Y-%m-%d') if item.received_date else '',
+                'Client Item #': item.client_item,
+                'Product Name': product_name,
+                'Shipped Quantity': shipped_qty,
+                'Good Received Quantity': item.quantity_received,
+                'Damaged Quantity': item.damaged_qty,
+                'Received By': item.checked_by.name if item.checked_by else ''
+            })
+        
+        # Generate Excel file
+        filename = f"warehouse_receipt_{reference_id}.xls"
+        
+        # Use the existing helper function to generate Excel response
+        return _generate_xls_response(export_data, filename, sheet_name="Warehouse Receipt")
+        
+    except Exception as e:
+        print(f"Error exporting warehouse receipt: {e}")
+        return JsonResponse({'success': False, 'message': f'Error exporting data: {str(e)}'})
+    
+def check_availability(request):
+    """
+    Render the Product Availability report page.
+    """
+    return render(request, "check_availability.html")
+
+@session_login_required
+def get_install_start_dates(request):
+    # Get unique install start dates, sorted
+    dates = Schedule.objects.values_list('install_starts', flat=True).distinct().order_by('install_starts')
+    # Convert to string for JSON serialization
+    date_list = [d.strftime('%Y-%m-%d') for d in dates if d]
+    return JsonResponse({'dates': date_list})
+
+
+
+@session_login_required
+def get_availability_data(request):
+    from django.db.models import Sum
+    from django.db.models.functions import Lower
+    dates_param = request.GET.get('dates', '')
+    dates = [d.strip() for d in dates_param.split(',') if d.strip()]
+    if not dates:
+        return JsonResponse({'floors': [], 'items': [], 'shipping_details': {}})
+
+    # Get all floors for these dates
+    floors = list(Schedule.objects.filter(install_starts__in=dates).values_list('floor', flat=True).distinct())
+    floor_list = [f for f in floors if f]
+
+    # Get all rooms on these floors, with their room_model_id
+    rooms = RoomData.objects.filter(floor__in=floors).select_related('room_model_id')
+    room_model_counts = {}
+    for room in rooms:
+        rm_id = room.room_model_id_id
+        if rm_id:
+            room_model_counts[rm_id] = room_model_counts.get(rm_id, 0) + 1
+
+    # Get all ProductRoomModel for these room_model_ids, and count required per product
+    prms = ProductRoomModel.objects.filter(room_model_id__in=room_model_counts.keys()).select_related('product_id')
+    product_required = {}
+    for prm in prms:
+        client_id = prm.product_id.client_id.lower() if prm.product_id and prm.product_id.client_id else None
+        qty_per_room = prm.quantity if hasattr(prm, 'quantity') and prm.quantity else 1
+        total_required = qty_per_room * room_model_counts.get(prm.room_model_id_id, 0)
+        if client_id:
+            product_required[client_id] = product_required.get(client_id, 0) + total_required
+
+    client_ids = list(product_required.keys())
+
+    # Inventory: sum qty_ordered for all client_ids (case-insensitive, using Lower for both filter and aggregation)
+    inventory_agg = (
+        Inventory.objects
+        .annotate(client_id_lower=Lower('client_id'))
+        .filter(client_id_lower__in=client_ids)
+        .values('client_id_lower')
+        .annotate(total=Sum('qty_ordered'))
+    )
+    inventory_map = {row['client_id_lower']: row['total'] or 0 for row in inventory_agg}
+
+    # Shipping: sum ship_qty for all client_ids (case-insensitive, using Lower for both filter and aggregation)
+    shipping_agg = (
+        Shipping.objects
+        .annotate(client_id_lower=Lower('client_id'))
+        .filter(client_id_lower__in=client_ids)
+        .values('client_id_lower')
+        .annotate(total=Sum('ship_qty'))
+    )
+    shipping_map = {row['client_id_lower']: row['total'] or 0 for row in shipping_agg}
+
+    # ProductData: get descriptions for all client_ids (lowercase)
+    productdata_qs = ProductData.objects.all()
+    productdata_map = {p.client_id.lower(): p.client_id for p in productdata_qs if p.client_id}
+
+    # --- Shipping details for tooltip ---
+    shipping_details_qs = (
+        Shipping.objects
+        .annotate(client_id_lower=Lower('client_id'))
+        .filter(client_id_lower__in=client_ids)
+        .values('client_id_lower', 'bol', 'client_id', 'ship_qty')
+    )
+    shipping_details = {}
+    for row in shipping_details_qs:
+        cid = row['client_id_lower']
+        if cid not in shipping_details:
+            shipping_details[cid] = []
+        shipping_details[cid].append({
+            'bol': row['bol'],
+            'client_id': row['client_id'],
+            'ship_qty': row['ship_qty'],
+        })
+
+    # Build the result
+    items = []
+    for client_id, required in product_required.items():
+        product_ordered = inventory_map.get(client_id, 0)
+        expected_arrival_qty = shipping_map.get(client_id, 0)
+        item_name = productdata_map.get(client_id, client_id)
+        difference = product_ordered - required
+        items.append({
+            'item': item_name,
+            'product_ordered': product_ordered,
+            'product_required': required,
+            'expected_arrival_qty': expected_arrival_qty,
+            'difference': difference,
+            'client_id': client_id,  # Add client_id for tooltip lookup
+        })
+
+    return JsonResponse({'floors': floor_list, 'items': items, 'shipping_details': shipping_details})
