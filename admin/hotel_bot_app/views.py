@@ -6110,13 +6110,14 @@ def export_warehouse_receipt_excel(request):
         print(f"Error exporting warehouse receipt: {e}")
         return JsonResponse({'success': False, 'message': f'Error exporting data: {str(e)}'})
     
+@login_required
 def check_availability(request):
     """
     Render the Product Availability report page.
     """
     return render(request, "check_availability.html")
 
-@session_login_required
+@login_required
 def get_install_start_dates(request):
     # Get unique install start dates, sorted
     dates = Schedule.objects.values_list('install_starts', flat=True).distinct().order_by('install_starts')
@@ -6126,7 +6127,7 @@ def get_install_start_dates(request):
 
 
 
-@session_login_required
+@login_required
 def get_availability_data(request):
     from django.db.models import Sum
     from django.db.models.functions import Lower
