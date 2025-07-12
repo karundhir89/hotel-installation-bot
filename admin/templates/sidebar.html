@@ -68,14 +68,14 @@
                     <p class="chat-link">Chat Bot</p>
                 </a>
             </li>
-			{% if request.user.is_superuser %}
+			{% if request.user.is_superuser  or  request.user.profile.is_administrator %}
 				<li class="nav-item display_prompts li-elements-js" id="prompt">
 					<a class="nav-link" id="prompt-link" href="{% url 'edit_prompts' %}">
 						<i class="material-icons">edit</i>
 						<p class="display_prompts-link">Edit Prompt</p>
 					</a>
 				</li>
-				{% if request.user.is_superuser or 'administrator' in request.session.user_roles %}
+				{% if request.user.is_superuser  %}
 				<li class="nav-item user_management li-elements-js" id="management">
 					<a class="nav-link" id="management-link" href="{% url 'user_management' %}">
 						<i class="material-icons">management</i>
