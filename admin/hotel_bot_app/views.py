@@ -1111,18 +1111,30 @@ def delete_schedule(request):
 
 
 @login_required
+@login_required
 def delete_products_data(request):
     if request.method == "POST":
         model_id = request.POST.get("model_id")
         try:
+            # 1. Get the product instance
             product = ProductData.objects.get(id=model_id)
             client_id = product.client_id
-            product.delete()
-            # Also delete corresponding Inventory entry (case-insensitive client_id match)
+
+            # 2. Delete related InstallDetail entries
+            from .models import InstallDetail, ProductRoomModel, Inventory
+            InstallDetail.objects.filter(product_id=product).delete()
+
+            # 3. Delete related ProductRoomModel entries
+            ProductRoomModel.objects.filter(product_id=product).delete()
+
+            # 4. Delete related Inventory entry (case-insensitive client_id match)
             if client_id:
-                from .models import Inventory
                 Inventory.objects.filter(client_id__iexact=client_id).delete()
-            return JsonResponse({"success": "Product and inventory deleted if present."})
+
+            # 5. Delete the product itself
+            product.delete()
+
+            return JsonResponse({"success": "Product and all related data deleted."})
         except ProductData.DoesNotExist:
             return JsonResponse({"error": "Product not found."})
         except Exception as e:
@@ -6208,7 +6220,7 @@ def get_availability_data(request):
         product_ordered = inventory_map.get(client_id, 0)
         expected_arrival_qty = shipping_map.get(client_id, 0)
         item_name = productdata_map.get(client_id, client_id)
-        difference = product_ordered - required
+        difference = expected_arrival_qty - required
         items.append({
             'item': item_name,
             'product_ordered': product_ordered,
