@@ -686,7 +686,7 @@ $(document).ready(function() {
                     <td>${receipt.received_by}</td>
                     <td>
                       <div class="d-flex flex-row gap-2">
-                        <button type="button" class="btn btn-secondary btn-sm w-100 edit-receipt mr-2" data-id="${receipt.id}">Edit</button>
+                        <button type="button" class="btn btn-secondary btn-sm w-100 edit-receipt mr-2" data-id="${receipt.id}" data-reference="${receipt.reference_id}">Edit</button>
                         <button type="button" class="btn btn-success btn-sm w-100 export-receipt" data-reference="${receipt.reference_id}">Export</button>
                       </div>
                     </td>
@@ -752,8 +752,8 @@ $(document).ready(function() {
             
             // Set up edit buttons for previous receipts
             $('.edit-receipt').on('click', function() {
-              const receiptId = $(this).data('receipt-id');
-              const referenceId = $(this).data('reference-id');
+              const receiptId = $(this).data('id');
+              const referenceId = $(this).data('reference');
               
               console.log("Edit button clicked for receipt ID:", receiptId, "with reference ID:", referenceId);
               
