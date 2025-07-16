@@ -211,8 +211,10 @@
                   <td>{{ submission.total_damaged_quantity }}</td>
                   <td>{{ submission.checked_by }}</td>
                   <td>
+                    {% if submission.checked_by == user_name %}
                     <button type="button" class="btn btn-secondary btn-sm w-100 edit-submission" data-id="{{ submission.id }}" 
                             data-container="{{ submission.container_id }}" data-client="{{ submission.client_id }}">Edit</button>
+                    {% endif %}
                   </td>
                 </tr>
                 {% empty %}
