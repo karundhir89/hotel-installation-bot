@@ -2179,8 +2179,7 @@ def inventory_received(request):
             # Check if this container ID already exists in InventoryReceived for this user
             if not is_editing and final_container_id:
                 existing_records = InventoryReceived.objects.filter(
-                    container_id__iexact=final_container_id,
-                    checked_by=user
+                    container_id__iexact=final_container_id
                 )
                 if existing_records.exists():
                     is_editing = True
@@ -2196,8 +2195,7 @@ def inventory_received(request):
                     
                     # Get all records for this container with their IDs
                     container_records = InventoryReceived.objects.filter(
-                        container_id=container_id,
-                        checked_by=user
+                        container_id=container_id
                     )
                     print(f"Found {container_records.count()} records for container {container_id}")
                     
@@ -2355,11 +2353,10 @@ def inventory_received(request):
                     ir.container_id as display_container_id,
                     MAX(ir.received_date) as newest_date
                 FROM inventory_received ir
-                WHERE ir.checked_by_id = %s
-                AND ir.container_id IS NOT NULL AND ir.container_id != ''
+                WHERE ir.container_id IS NOT NULL AND ir.container_id != ''
                 GROUP BY ir.container_id
                 ORDER BY MAX(ir.received_date) DESC
-            """, [user.id])
+            """)
             
             containers = cursor.fetchall()
             
@@ -2371,8 +2368,6 @@ def inventory_received(request):
                 continue
                 
             items = InventoryReceived.objects.filter(
-                checked_by=user
-            ).filter(
                 Q(container_id=container_id) | 
                 (Q(client_id=container_id) & (Q(container_id__isnull=True) | Q(container_id='')))
             ).order_by('-received_date')
