@@ -1680,7 +1680,7 @@ def installation_form(request):
                 
             if product_id:
                 try:
-                    inventory_item = Inventory.objects.get(client_id=product_id)
+                    inventory_item = Inventory.objects.get(client_id__iexact=product_id)
                     
                     # Only increment install qty if not previously installed or not modified
                     # (a modification from unchecked to checked will add)
@@ -1715,7 +1715,7 @@ def installation_form(request):
                     
                     try:
                         # Revert the inventory - add back to floor, remove from installed
-                        inventory_item = Inventory.objects.get(client_id=product_id)
+                        inventory_item = Inventory.objects.get(client_id__iexact = product_id)
                         if inventory_item.hotel_warehouse_quantity is not None:
                             inventory_item.hotel_warehouse_quantity += required_qty
                         if inventory_item.quantity_installed is not None:
@@ -5451,83 +5451,58 @@ def update_inventory_damaged_quantities():
     from hotel_bot_app.models import Inventory, InventoryReceived
     
     # Get all inventory received records grouped by client_id (converted to lowercase for case-insensitive grouping)
-    damaged_sums = InventoryReceived.objects.annotate(
-        client_id_lower=Lower('client_id')
-    ).values('client_id_lower').annotate(
-        total_damaged=Sum('damaged_qty'),
-        original_client_id=F('client_id')  # Keep one original client_id for reference
-    ).values('client_id_lower', 'total_damaged', 'original_client_id')
-    
+    damaged_sum = (
+        InventoryReceived.objects
+        .annotate(client_id_lower=Lower('client_id'))
+        .values('client_id_lower')
+        .annotate(total_damaged=Sum('damaged_qty'))
+        .values('client_id_lower', 'total_damaged')
+    )
     update_count = 0
-    # Update each inventory record with the calculated sum
-    for damaged in damaged_sums:
-        # Get client_id and total
+    for damaged in damaged_sum:
         client_id_lower = damaged['client_id_lower']
         total_damaged = damaged['total_damaged']
-        original_client_id = damaged['original_client_id']
-        
-        # Find and update all inventory records with this client_id (case-insensitive)
-        updated = Inventory.objects.filter(
-            client_id__iexact=original_client_id
-        ).update(damaged_quantity=total_damaged)
-        
-        # If no records found with exact case, try with lowercase comparison
-        if updated == 0:
-            updated = Inventory.objects.filter(
-                client_id__iexact=client_id_lower
-            ).update(damaged_quantity=total_damaged)
-        
+        # Update ALL inventory records matching this client_id (case-insensitive)
+        updated = Inventory.objects.filter(client_id__iexact=client_id_lower).update(damaged_quantity=total_damaged)
         update_count += updated
-        print(f"Client ID: {original_client_id} (lowercase: {client_id_lower}), Total Damaged: {total_damaged}, Updated: {updated} records")
-        
-    print(f"Updated damaged_quantity for {update_count} inventory items based on {len(damaged_sums)} unique client IDs")
+        print(f"Client ID (lowercase): {client_id_lower}, Total Received: {total_damaged}, Updated: {updated} records")
+
+    print(f"Updated qty_damaged for {update_count} inventory items based on {len(damaged_sum)} unique client IDs (case-insensitive)")
     return update_count
+
 
 def update_inventory_received_quantities():
     """
     Calculate the sum of received_qty from inventory_received table
     and update the qty_received column in inventory table.
-    
     This function:
     1. Groups all inventory received records by client_id (case-insensitive)
-    2. Calculates the total received_qty for each client_id
-    3. Updates the qty_received in the inventory table for matching client_id
+    2. Calculates the total received_qty for each client_id (case-insensitive)
+    3. Updates the qty_received in inventory table for ALL matching client_id (case-insensitive)
     """
-    from django.db.models import Sum, F
+    from django.db.models import Sum
     from django.db.models.functions import Lower
     from hotel_bot_app.models import Inventory, InventoryReceived
-    
-    # Get all inventory received records grouped by client_id (converted to lowercase for case-insensitive grouping)
-    received_sums = InventoryReceived.objects.annotate(
-        client_id_lower=Lower('client_id')
-    ).values('client_id_lower').annotate(
-        total_received=Sum('received_qty'),
-        original_client_id=F('client_id')  # Keep one original client_id for reference
-    ).values('client_id_lower', 'total_received', 'original_client_id')
-    
+
+    # Group received records by lowercased client_id
+    received_sums = (
+        InventoryReceived.objects
+        .annotate(client_id_lower=Lower('client_id'))
+        .values('client_id_lower')
+        .annotate(total_received=Sum('received_qty'))
+        .values('client_id_lower', 'total_received')
+    )
+
     update_count = 0
-    # Update each inventory record with the calculated sum
     for received in received_sums:
-        # Get client_id and total
         client_id_lower = received['client_id_lower']
         total_received = received['total_received']
-        original_client_id = received['original_client_id']
-        
-        # Find and update all inventory records with this client_id (case-insensitive)
-        updated = Inventory.objects.filter(
-            client_id__iexact=original_client_id
-        ).update(qty_received=total_received)
-        
-        # If no records found with exact case, try with lowercase comparison
-        if updated == 0:
-            updated = Inventory.objects.filter(
-                client_id__iexact=client_id_lower
-            ).update(qty_received=total_received)
-        
+        # Update ALL inventory records matching this client_id (case-insensitive)
+        updated = Inventory.objects.filter(client_id__iexact=client_id_lower).update(qty_received=total_received)
         update_count += updated
-        print(f"Client ID: {original_client_id} (lowercase: {client_id_lower}), Total Received: {total_received}, Updated: {updated} records")
-        
-    print(f"Updated qty_received for {update_count} inventory items based on {len(received_sums)} unique client IDs")
+        print(f"Client ID (lowercase): {client_id_lower}, Total Received: {total_received}, Updated: {updated} records")
+
+    print(f"Updated qty_received for {update_count} inventory items based on {len(received_sums)} unique client IDs (case-insensitive)")
     return update_count
 
 @session_login_required

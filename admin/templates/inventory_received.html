@@ -211,10 +211,8 @@
                   <td>{{ submission.total_damaged_quantity }}</td>
                   <td>{{ submission.checked_by }}</td>
                   <td>
-                    {% if submission.checked_by == user_name %}
                     <button type="button" class="btn btn-secondary btn-sm w-100 edit-submission" data-id="{{ submission.id }}" 
                             data-container="{{ submission.container_id }}" data-client="{{ submission.client_id }}">Edit</button>
-                    {% endif %}
                   </td>
                 </tr>
                 {% empty %}
@@ -453,6 +451,7 @@
                           '<td>' +
                             '<input type="number" class="form-control" name="received_qty_' + index + '" min="0" value="0" required>' +
                             '<input type="hidden" name="client_item_' + index + '" value="' + item.client_id + '">' +
+                            '<input type="hidden" name="record_id_' + index + '" value="' + item.id + '">' +
                           '</td>' +
                           '<td>' +
                             '<input type="number" class="form-control" name="damaged_qty_' + index + '" min="0" value="0">' +
