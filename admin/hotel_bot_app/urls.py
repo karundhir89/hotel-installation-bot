@@ -97,7 +97,9 @@ urlpatterns = [
     path('export_warehouse_shipment_excel/', views.export_warehouse_shipment_excel, name='export_warehouse_shipment_excel'),
     path('export-warehouse-receipt-excel/', views.export_warehouse_receipt_excel, name='export_warehouse_receipt_excel'),
     path('check-availability/', views.check_availability, name='check_availability'),
-
+    path('delete_inventory_received_container/', views.delete_inventory_received_container, name='delete_inventory_received_container'),
+    path('delete_warehouse_receiver_container/', views.delete_warehouse_receiver_container, name='delete_warehouse_receiver_container'),
+    
     path('get-install-start-dates/', views.get_install_start_dates, name='get_install_start_dates'),
     path('get-availability-data/', views.get_availability_data, name='get_availability_data'),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
