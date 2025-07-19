@@ -36,7 +36,7 @@ from html import escape
 import xlwt
 import pytz
 from django.views.decorators.http import require_GET
-
+from django.views.decorators.http import require_POST
 from django.db.models import Q
 from django.contrib.auth import get_user_model # Use this if settings.AUTH_USER_MODEL is Django's default
 from django.contrib.auth.decorators import login_required, user_passes_test # For permission checking
@@ -665,7 +665,9 @@ def inventory_list(request):
         
         # Update the qty_received from inventory_received data
         update_inventory_received_quantities()
-    
+
+        recalculate_quantity_available_all()
+
     # Fetch room data from the database
     inventory = Inventory.objects.all()
     # Pass the room data to the template
@@ -2028,6 +2030,7 @@ def inventory_shipment(request):
             
             # After successful shipment creation/update, update inventory quantities
             update_inventory_shipped_quantities()
+            recalculate_quantity_available_all()
             
             # Return redirect instead of JSON response to avoid displaying JSON to user
             return redirect('inventory_shipment')
@@ -2253,6 +2256,7 @@ def inventory_received(request):
                     # Update inventory calculated quantities
                     update_inventory_damaged_quantities()
                     update_inventory_received_quantities()
+                    recalculate_quantity_available_all()
                     
                     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                         return JsonResponse({
@@ -2313,6 +2317,7 @@ def inventory_received(request):
                 # Update inventory calculated quantities
                 update_inventory_damaged_quantities()
                 update_inventory_received_quantities()
+                recalculate_quantity_available_all()
                 
                 if success_count > 0:
                     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -2412,6 +2417,38 @@ def inventory_received(request):
         "page_obj": previous_submissions_page,
     })
 
+
+@require_POST
+@session_login_required
+def delete_inventory_received_container(request):
+    container_id = request.POST.get("container_id")
+    if not container_id:
+        return JsonResponse({"success": False, "message": "No container ID provided."})
+    try:
+        # Get all InventoryReceived records for this container
+        received_items = InventoryReceived.objects.filter(container_id__iexact=container_id)
+        if not received_items.exists():
+            return JsonResponse({"success": False, "message": "Container not found."})
+
+        # For each item, subtract received_qty from Inventory.quantity_available
+        for item in received_items:
+            try:
+                inventory = Inventory.objects.get(client_id__iexact=item.client_id)
+                # Subtract, but don't go below zero
+                inventory.quantity_available = max(0, (inventory.quantity_available or 0) - (item.received_qty or 0))
+                inventory.qty_received = max(0, (inventory.qty_received or 0) - (item.received_qty or 0))
+                inventory.damaged_quantity = max(0, (inventory.damaged_quantity or 0) - (item.damaged_qty or 0))
+                inventory.save()
+            except Inventory.DoesNotExist:
+                pass  # If inventory record doesn't exist, skip
+
+        # Now delete the InventoryReceived records
+        deleted_count, _ = received_items.delete()
+        return JsonResponse({"success": True, "message": f"Deleted {deleted_count} items and updated inventory."})
+    except Exception as e:
+        return JsonResponse({"success": False, "message": str(e)})
+
+        
 @session_login_required
 def get_received_item_details(request):
     """API endpoint to get details of a specific received item"""
@@ -4328,25 +4365,14 @@ def get_container_data(request):
 def get_container_received_items(request):
     """API endpoint to get all received items for a specific container ID"""
     container_id = request.GET.get('container_id')
-    user_id = request.session.get("user_id")
     if not container_id:
         return JsonResponse({'success': False, 'message': 'Container ID is required'})
     container_id_lower = container_id.lower()
     try:
         # Debug info
         print(f"Fetching received items for container_id: {container_id_lower}")
-        # Get the current user
-        user = None
-        if user_id:
-            user = InvitedUser.objects.get(id=user_id)
-        # Get all inventory received records for this container AND this user (case-insensitive)
-        query = Q(container_id__iexact=container_id_lower)
-        # Add user filter if available
-        received_items = InventoryReceived.objects
-        if user:
-            received_items = received_items.filter(checked_by=user)
-        # Apply the container query
-        received_items = received_items.filter(query).order_by('client_id')
+        # Get all inventory received records for this container (case-insensitive)
+        received_items = InventoryReceived.objects.filter(container_id__iexact=container_id_lower).order_by('client_id')
             
         if not received_items.exists():
             return JsonResponse({'success': False, 'message': f'No received items found for container {container_id}'})
@@ -4516,6 +4542,38 @@ def warehouse_receiver(request):
         "request": request,  # For other template needs
     }
     return render(request, "warehouse_receiver.html", context)
+
+from django.views.decorators.http import require_POST
+
+@require_POST
+@session_login_required
+def delete_warehouse_receiver_container(request):
+    reference_id = request.POST.get("reference_id")
+    if not reference_id:
+        return JsonResponse({"success": False, "message": "No reference ID provided."})
+    try:
+        # Get all HotelWarehouse records for this reference_id (case-insensitive)
+        warehouse_items = HotelWarehouse.objects.filter(reference_id__iexact=reference_id)
+        if not warehouse_items.exists():
+            return JsonResponse({"success": False, "message": "Reference ID not found."})
+
+        # For each item, subtract its quantity from Inventory.hotel_warehouse_quantity
+        for item in warehouse_items:
+            try:
+                inventory = Inventory.objects.get(client_id__iexact=item.client_item)
+                # Subtract, but don't go below zero
+                inventory.hotel_warehouse_quantity = max(0, (inventory.hotel_warehouse_quantity or 0) - (item.quantity_received or 0))
+                inventory.damaged_quantity_at_hotel = max(0, (inventory.damaged_quantity_at_hotel or 0) - (item.damaged_qty or 0))
+                inventory.received_at_hotel_quantity = max(0, (inventory.received_at_hotel_quantity or 0) - (item.quantity_received or 0))
+                inventory.save()
+            except Inventory.DoesNotExist:
+                pass  # If inventory record doesn't exist, skip
+
+        # Now delete the HotelWarehouse records
+        deleted_count, _ = warehouse_items.delete()
+        return JsonResponse({"success": True, "message": f"Deleted {deleted_count} items and updated hotel warehouse inventory."})
+    except Exception as e:
+        return JsonResponse({"success": False, "message": str(e)})
 
 @session_login_required
 def get_warehouse_receipt_details(request):
@@ -4957,19 +5015,7 @@ def warehouse_shipment(request):
                     client_id = existing_item.client_id
                     ship_qty = existing_item.ship_qty
                     
-                    # Find inventory item
-                    inventory_item = Inventory.objects.filter(client_id__iexact=client_id).first()
-                    if inventory_item and inventory_item.quantity_available is not None:
-                        # Add back the original quantity
-                        inventory_item.quantity_available += ship_qty
-                        # Use direct SQL update to bypass signals
-                        from django.db import connection
-                        with connection.cursor() as cursor:
-                            cursor.execute(
-                                "UPDATE inventory SET quantity_available = %s WHERE id = %s",
-                                [inventory_item.quantity_available, inventory_item.id]
-                            )
-                        print(f"Restored {ship_qty} to inventory for {client_id}, new available: {inventory_item.quantity_available}")
+                    revert_inventory_when_shipping(client_id, ship_qty)
             
             # Parse dates
             if ship_date_str:
@@ -4997,11 +5043,14 @@ def warehouse_shipment(request):
             if not client_items:
                 # If editing and all items are deleted, delete the container (all items with this reference_id)
                 if is_editing and editing_reference_id:
+                    # Restore inventory for all items before deleting
+                    items_to_delete = WarehouseShipment.objects.filter(reference_id__iexact=editing_reference_id)
+                    for item in items_to_delete:
+                        revert_inventory_when_shipping(item.client_id, item.ship_qty)
                     # Delete all items for this container
-                    deleted_count, _ = WarehouseShipment.objects.filter(reference_id__iexact=editing_reference_id).delete()
+                    deleted_count, _ = items_to_delete.delete()
                     messages.success(request, f"All items removed. Container '{editing_reference_id}' deleted successfully.")
-                    # After deletion, update inventory shipped quantities
-                    update_inventory_shipped_quantities()
+                    # No need to call recalculate_quantity_available_all()
                     # Clear any editing session data
                     if request.session.get("editing_warehouse_shipment"):
                         del request.session["editing_warehouse_shipment"]
@@ -5143,8 +5192,6 @@ def warehouse_shipment(request):
                 
                 messages.success(request, f"New warehouse shipment with {len(client_items)} items submitted!")
             
-            # After successful shipment creation/update, update inventory quantities
-            update_inventory_shipped_quantities()
             
             # Clear any editing session data
             if request.session.get("editing_warehouse_shipment"):
@@ -5196,6 +5243,26 @@ def warehouse_shipment(request):
     }
     
     return render(request, 'warehouse_shipment.html', context)
+
+
+def revert_inventory_when_shipping(client_id, ship_qty):
+    """
+    Add back the shipped quantity to inventory (used when editing or deleting a shipment).
+    Also subtract from shipped_to_hotel_quantity.
+    """
+    try:
+        inventory_item = Inventory.objects.filter(client_id__iexact=client_id).first()
+        if inventory_item and inventory_item.quantity_available is not None:
+            inventory_item.quantity_available += ship_qty
+            # Subtract from shipped_to_hotel_quantity, but don't go below zero
+            inventory_item.shipped_to_hotel_quantity = max(0, (inventory_item.shipped_to_hotel_quantity or 0) - ship_qty)
+            inventory_item.save()
+            print(f"Reverted quantity_available for {client_id}: {inventory_item.quantity_available} (+{ship_qty}), shipped_to_hotel_quantity: {inventory_item.shipped_to_hotel_quantity} (-{ship_qty})")
+        return True
+    except Exception as e:
+        print(f"Error reverting inventory quantity_available for {client_id}: {str(e)}")
+        return False
+
 
 @session_login_required
 def check_warehouse_container_exists(request):
@@ -5595,44 +5662,20 @@ def get_available_quantity(request):
         return JsonResponse({'success': False, 'message': str(e)})
 
 def update_inventory_when_shipping(client_id, ship_qty, is_new=True, old_qty=0):
-    """
-    Update the quantity_available in the inventory table when items are shipped to the hotel.
-    
-    Args:
-        client_id (str): The client ID of the item being shipped
-        ship_qty (int): The quantity being shipped
-        is_new (bool): Whether this is a new shipment (True) or an edit (False)
-        old_qty (int): If editing, the previous shipped quantity (not used anymore)
-    
-    Returns:
-        bool: True if inventory was updated successfully, False otherwise
-    """
-    try:
-        # Find the inventory record with case-insensitive matching
-        inventory_item = Inventory.objects.filter(client_id__iexact=client_id).first()
-        
-        if inventory_item:
-            # Simply subtract the shipped quantity
-            if inventory_item.quantity_available is not None:
-                # First make sure we don't go negative
-                if inventory_item.quantity_available >= ship_qty:
-                    inventory_item.quantity_available -= ship_qty
-                    inventory_item.save()
-                    print(f"Updated quantity_available for {client_id}: {inventory_item.quantity_available}")
-                else:
-                    print(f"Warning: Not enough quantity available for {client_id}. Available: {inventory_item.quantity_available}, Requested: {ship_qty}")
-                    # Just set to 0 to avoid negative values
-                    inventory_item.quantity_available = 0
-                    inventory_item.save()
-            
-            return True
+    inventory_item = Inventory.objects.filter(client_id__iexact=client_id).first()
+    if inventory_item:
+        # Update quantity_available as before
+        if is_new:
+            inventory_item.quantity_available = max(0, (inventory_item.quantity_available or 0) - ship_qty)
+            # Also update shipped_to_hotel_quantity
+            inventory_item.shipped_to_hotel_quantity = (inventory_item.shipped_to_hotel_quantity or 0) + ship_qty
         else:
-            print(f"Warning: No inventory record found for client ID {client_id}")
-            return False
-    
-    except Exception as e:
-        print(f"Error updating inventory quantity_available for {client_id}: {str(e)}")
-        return False
+            # For edit: revert old, apply new
+            inventory_item.quantity_available = max(0, (inventory_item.quantity_available or 0) + old_qty - ship_qty)
+            inventory_item.shipped_to_hotel_quantity = max(0, (inventory_item.shipped_to_hotel_quantity or 0) - old_qty + ship_qty)
+        inventory_item.save()
+
+
 
 def update_inventory_when_receiving(client_id, received_qty, damaged_qty, is_new=True, old_received=0, old_damaged=0):
     """
@@ -6201,3 +6244,21 @@ def get_availability_data(request):
         })
 
     return JsonResponse({'floors': floor_list, 'items': items, 'shipping_details': shipping_details})
+
+def recalculate_quantity_available_all():
+    """
+    For all Inventory rows, set quantity_available = qty_received - shipped_to_hotel_quantity.
+    This ensures quantity_available is always correct after receiving or shipping.
+    """
+    from hotel_bot_app.models import Inventory
+    update_count = 0
+    for inventory in Inventory.objects.all():
+        qty_received = inventory.qty_received or 0
+        shipped_to_hotel_quantity = inventory.shipped_to_hotel_quantity or 0
+        new_quantity_available = qty_received - shipped_to_hotel_quantity
+        if inventory.quantity_available != new_quantity_available:
+            inventory.quantity_available = new_quantity_available
+            inventory.save(update_fields=["quantity_available"])
+            update_count += 1
+    print(f"Recalculated quantity_available for {update_count} inventory items.")
+    return update_count
