@@ -99,7 +99,9 @@ urlpatterns = [
     path('check-availability/', views.check_availability, name='check_availability'),
     path('delete_inventory_received_container/', views.delete_inventory_received_container, name='delete_inventory_received_container'),
     path('delete_warehouse_receiver_container/', views.delete_warehouse_receiver_container, name='delete_warehouse_receiver_container'),
-    
+    path('ajax/available-container-ids/', views.available_container_ids, name='available_container_ids'),
+    path('ajax/available-warehouse-reference-ids/', views.available_warehouse_reference_ids, name='available_warehouse_reference_ids'),
+
     path('get-install-start-dates/', views.get_install_start_dates, name='get_install_start_dates'),
     path('get-availability-data/', views.get_availability_data, name='get_availability_data'),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

@@ -1895,6 +1895,10 @@ def installation_form(request):
 def inventory_shipment(request):
     user_id = request.session.get("user_id")
     user_name = ""
+    received_container_ids = set(
+        InventoryReceived.objects.values_list('container_id', flat=True)
+    )
+    received_container_ids = set(cid.lower() for cid in received_container_ids if cid)
 
     if user_id:
         try:
@@ -1913,6 +1917,12 @@ def inventory_shipment(request):
             # Check if this is an edit operation
             is_editing = request.POST.get("is_editing") == "1"
             editing_container_id = request.POST.get("editing_container_id", "").strip()
+
+            # Block edit/delete if container_id is already received
+            container_id_to_check = (editing_container_id if is_editing and editing_container_id else tracking_info)
+            if container_id_to_check and container_id_to_check.strip().lower() in received_container_ids:
+                messages.error(request, f"This container (ID '{container_id_to_check}') has already been received and cannot be edited or deleted.")
+                return redirect("inventory_shipment")
             
             # Debug logging
             print(f"Form submission - is_editing value: '{request.POST.get('is_editing')}'")
@@ -2097,12 +2107,26 @@ def inventory_shipment(request):
         "previous_submissions": previous_submissions_page,
         "is_paginated": previous_submissions_page.has_other_pages(),
         "page_obj": previous_submissions_page,  # For pagination in the template
+        "received_container_ids": received_container_ids,
     })
 
-    return render(request, "inventory_shipment.html", {
-        "user_name": user_name,
-        "previous_submissions": previous_submissions
-    })
+def available_container_ids(request):
+    term = request.GET.get('term', '').strip().lower()
+    # Get all BOLs from Shipping not in InventoryReceived (case-insensitive)
+    received_ids = set(InventoryReceived.objects.values_list('container_id', flat=True))
+    qs = Shipping.objects.all()
+    if received_ids:
+        from django.db.models import Q
+        q = Q()
+        for rid in received_ids:
+            if rid:
+                q |= Q(bol__iexact=rid)
+        qs = qs.exclude(q)
+    if term:
+        qs = qs.filter(bol__icontains=term)
+    suggestions = list(qs.values_list('bol', flat=True).distinct()[:10])
+    return JsonResponse({'results': suggestions})
+    
 
 @session_login_required
 def get_product_item_num(request):
@@ -4948,6 +4972,10 @@ def get_warehouse_receipts(request):
 def warehouse_shipment(request):
     user_id = request.session.get("user_id")
     user_name = ""
+    received_reference_ids = set(
+        HotelWarehouse.objects.values_list('reference_id', flat=True)
+    )
+    received_reference_ids_lower = set(rid.lower() for rid in received_reference_ids if rid)
 
     # Check if there was an abandoned edit that needs cleanup
     abandoned_edit_id = request.session.get("editing_warehouse_shipment")
@@ -4993,10 +5021,16 @@ def warehouse_shipment(request):
             ship_date_str = request.POST.get("ship_date")
             expected_arrival_date_str = request.POST.get("expected_arrival_date")
             tracking_info = request.POST.get("tracking_info")
-            
+
+            if tracking_info and tracking_info.lower() in received_reference_ids_lower:
+                messages.error(request, f"This container (Reference ID '{tracking_info}') has already been received and cannot be edited or deleted.")
+                return redirect("warehouse_shipment")   
+
+
             # Check if this is an edit operation
             is_editing = request.POST.get("is_editing") == "1"
             editing_reference_id = request.POST.get("editing_reference_id", "").strip()
+
             
             # Debug logging
             print(f"Form submission - is_editing value: '{request.POST.get('is_editing')}'")
@@ -5239,7 +5273,8 @@ def warehouse_shipment(request):
         'user_name': user_name,
         'previous_submissions': page_obj,
         'is_paginated': page_obj.has_other_pages(),
-        'page_obj': page_obj
+        'page_obj': page_obj,
+        'received_reference_ids': received_reference_ids_lower
     }
     
     return render(request, 'warehouse_shipment.html', context)
@@ -5262,6 +5297,24 @@ def revert_inventory_when_shipping(client_id, ship_qty):
     except Exception as e:
         print(f"Error reverting inventory quantity_available for {client_id}: {str(e)}")
         return False
+
+def available_warehouse_reference_ids(request):
+    term = request.GET.get('term', '').strip().lower()
+    # Get all received reference_ids (case-insensitive)
+    used_ids = set(HotelWarehouse.objects.values_list('reference_id', flat=True))
+    # Use __iexact for case-insensitive exclusion
+    qs = WarehouseShipment.objects.all()
+    if used_ids:
+        # Exclude all reference_ids that match (case-insensitive)
+        q = Q()
+        for ref in used_ids:
+            if ref:
+                q |= Q(reference_id__iexact=ref)
+        qs = qs.exclude(q)
+    if term:
+        qs = qs.filter(reference_id__icontains=term)
+    suggestions = list(qs.values_list('reference_id', flat=True).distinct()[:10])
+    return JsonResponse({'results': suggestions})
 
 
 @session_login_required
