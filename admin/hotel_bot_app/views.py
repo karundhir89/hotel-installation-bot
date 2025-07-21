@@ -1914,15 +1914,16 @@ def inventory_shipment(request):
             expected_arrival_date_str = request.POST.get("expected_arrival_date")
             tracking_info = request.POST.get("tracking_info")
             
-            # Check if this is an edit operation
-            is_editing = request.POST.get("is_editing") == "1"
-            editing_container_id = request.POST.get("editing_container_id", "").strip()
-
             # Block edit/delete if container_id is already received
             container_id_to_check = (editing_container_id if is_editing and editing_container_id else tracking_info)
             if container_id_to_check and container_id_to_check.strip().lower() in received_container_ids:
                 messages.error(request, f"This container (ID '{container_id_to_check}') has already been received and cannot be edited or deleted.")
                 return redirect("inventory_shipment")
+
+            # Check if this is an edit operation
+            is_editing = request.POST.get("is_editing") == "1"
+            editing_container_id = request.POST.get("editing_container_id", "").strip()
+
             
             # Debug logging
             print(f"Form submission - is_editing value: '{request.POST.get('is_editing')}'")
@@ -4331,6 +4332,11 @@ def get_container_data(request):
             'message': 'Container ID is required'
         })
     container_id_lower = container_id.lower()
+    if InventoryReceived.objects.filter(container_id__iexact=container_id).exists():
+        return JsonResponse({
+           'success': False,
+           'message': 'This container has already been received and cannot be edited or deleted.'
+       })
     try:
         # Get all items with this container ID (case-insensitive)
         items = Shipping.objects.filter(bol__iexact=container_id_lower)
@@ -5342,6 +5348,12 @@ def get_warehouse_container_data(request):
     reference_id = request.GET.get('reference_id')
     if not reference_id:
         return JsonResponse({'success': False, 'message': 'Reference ID is required'})
+
+    if HotelWarehouse.objects.filter(reference_id__iexact=reference_id).exists():
+        return JsonResponse({
+            'success': False,
+            'message': 'This container has already been received and cannot be edited or deleted.'
+        })
     
     try:
         # Get all items with this reference ID (case-insensitive)

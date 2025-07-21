@@ -792,6 +792,18 @@
       $('#container_id').val($(this).text());
       $('#container-id-suggestions').empty().hide();
     });
+    // Hide suggestions when clicking outside the input or suggestion box
+    $('#container_id').on('blur', function() {
+      setTimeout(function() {
+        $('#container-id-suggestions').empty().hide();
+      }, 150); // Delay to allow click on suggestion
+    });
+    // Optional: Show suggestions only when input is focused and has value
+    $('#container_id').on('focus', function() {
+      if ($(this).val().trim()) {
+        $('#container-id-suggestions').show();
+      }
+    });
   });
 </script>
 <script>

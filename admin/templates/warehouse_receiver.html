@@ -678,6 +678,18 @@ $(document).ready(function() {
       $('#reference_id').val($(this).text());
       $('#reference-id-suggestions').empty().hide();
     });
+    // Hide suggestions when clicking outside the input or suggestion box
+    $('#reference_id').on('blur', function() {
+      setTimeout(function() {
+        $('#reference-id-suggestions').empty().hide();
+      }, 150); // Delay to allow click on suggestion
+    });
+    // Optional: Show suggestions only when input is focused and has value
+    $('#reference_id').on('focus', function() {
+      if ($(this).val().trim()) {
+        $('#reference-id-suggestions').show();
+      }
+    });
     
     // Load previous receipts via AJAX
     let currentPage = 1;
