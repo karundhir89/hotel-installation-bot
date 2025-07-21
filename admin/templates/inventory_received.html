@@ -115,8 +115,8 @@
               <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true" id="search_spinner"></span>
               <span id="search_text">Search</span>
             </button>
-            
-          </div>
+            </div>
+            <div id="container-id-suggestions" class="list-group" style="position: absolute; z-index: 1000;"></div>
           </div>
           <div class="col-md-6">
             <label class="form-label d-md-block d-none">Total Items</label>
@@ -761,6 +761,37 @@
       {% endif %}
     {% endfor %}
     {% endif %}
+
+    // Autocomplete for Container ID
+    $('#container_id').on('input', function() {
+      const query = $(this).val().trim();
+      if (!query) {
+        $('#container-id-suggestions').empty().hide();
+        return;
+      }
+      $.ajax({
+        url: "{% url 'available_container_ids' %}",
+        data: { term: query },
+        success: function(data) {
+          const suggestions = data.results || [];
+          let html = '';
+          suggestions.forEach(function(bol) {
+            html += `<a href='#' class='list-group-item list-group-item-action suggestion-item'>${bol}</a>`;
+          });
+          if (html) {
+            $('#container-id-suggestions').html(html).show();
+          } else {
+            $('#container-id-suggestions').empty().hide();
+          }
+        }
+      });
+    });
+    // When a suggestion is clicked, fill the input
+    $(document).on('click', '.suggestion-item', function(e) {
+      e.preventDefault();
+      $('#container_id').val($(this).text());
+      $('#container-id-suggestions').empty().hide();
+    });
   });
 </script>
 <script>
