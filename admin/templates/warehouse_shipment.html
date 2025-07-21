@@ -218,9 +218,20 @@
                   <td>{{ submission.checked_by }}</td>
                   <td>
                      <div class="d-flex flex-row gap-2">
-                    <button type="button" class="btn btn-secondary btn-sm w-100 edit-submission mr-2" data-id="{{ submission.id }}">Edit</button>
-                    <button type="button" class="btn btn-danger btn-sm w-100 delete-submission mr-2" data-id="{{ submission.id }}" data-reference="{{ submission.reference_id }}">Delete</button>
-                    <button type="button" class="btn btn-success btn-sm w-100 export-submission" data-reference="{{ submission.reference_id }}">Export</button>
+                      {% with ref_id=submission.reference_id|lower %}
+                        <button type="button" class="btn btn-secondary btn-sm w-100 edit-submission mr-2"
+                                data-id="{{ submission.id }}"
+                                {% if ref_id in received_reference_ids %}disabled title="Cannot edit: already received"{% endif %}>
+                            Edit
+                        </button>
+                        <button type="button" class="btn btn-danger btn-sm w-100 delete-submission mr-2"
+                                data-id="{{ submission.id }}"
+                                data-reference="{{ submission.reference_id }}"
+                                {% if ref_id in received_reference_ids %}disabled title="Cannot delete: already received"{% endif %}>
+                            Delete
+                        </button>
+                      {% endwith %}
+                      <button type="button" class="btn btn-success btn-sm w-100 export-submission" data-reference="{{ submission.reference_id }}">Export</button>
                      </div>
                   </td>
                 </tr>

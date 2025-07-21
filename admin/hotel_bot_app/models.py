@@ -10,7 +10,7 @@ from django.dispatch import receiver
 from PIL import Image
 from django.core.exceptions import ValidationError
 import os
-
+from auditlog.registry import auditlog
 
 class InvitedUser(models.Model):
     id = models.AutoField(primary_key=True)
@@ -85,7 +85,8 @@ class Inventory(models.Model):
 
     def __str__(self):
         return f"Item: {self.item} - Available: {self.quantity_available}"
-    
+auditlog.register(Inventory)
+
 class HotelWarehouse(models.Model):
     id = models.AutoField(primary_key=True)
     reference_id = models.CharField(max_length=255)  # Warehouse Container ID 
@@ -100,6 +101,8 @@ class HotelWarehouse(models.Model):
 
     class Meta:
         db_table = "hotel_warehouse"
+
+auditlog.register(HotelWarehouse)
 
 class WarehouseRequest(models.Model):
     id = models.AutoField(primary_key=True)
@@ -281,6 +284,8 @@ class Shipping(models.Model):
         return f"Shipment {self.bol} - {self.item} to Client {self.client_id}"
     class Meta:
         db_table = "shipping"
+auditlog.register(Shipping)
+
 
 class WarehouseShipment(models.Model):
     client_id = models.CharField(max_length=255)
@@ -296,6 +301,8 @@ class WarehouseShipment(models.Model):
     
     class Meta:
         db_table = "warehouse_shipment"
+auditlog.register(WarehouseShipment)
+
 
 class PullInventory(models.Model):
     client_id =  models.CharField(max_length=255)
@@ -351,6 +358,7 @@ class InventoryReceived(models.Model):
 
     class Meta:
         db_table = "inventory_received"
+auditlog.register(InventoryReceived)
 
 class IssueStatus(models.TextChoices):
     OPEN = 'OPEN', _('Open')

@@ -52,6 +52,16 @@
       background-image: url("data:image/svg+xml;utf8,<svg viewBox='0 0 30 30' xmlns='http://www.w3.org/2000/svg'><path stroke='rgba(0, 0, 0, 0.5)' stroke-width='2' stroke-linecap='round' d='M4 7h22M4 15h22M4 23h22'/></svg>");
     }
   </style>
+    {% if not debug %}
+    <script src="https://cdn.lgrckt-in.com/LogRocket.min.js" crossorigin="anonymous"></script>
+    <script>
+      window.LogRocket && window.LogRocket.init('k5xvmo/hotel-installation-bot');
+      LogRocket.identify('{{ current_user.id }}', {
+        name: '{{ current_user.name }}',
+        email: '{{ current_user.email }}',
+    });
+    </script>
+    {% endif %}
 </head>
 
 <body style="background-color: #f7f7f7; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
