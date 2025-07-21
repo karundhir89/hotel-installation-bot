@@ -687,7 +687,8 @@ $(document).ready(function() {
                     <td>
                       <div class="d-flex flex-row gap-2">
                         <button type="button" class="btn btn-secondary btn-sm w-100 edit-receipt mr-2" data-id="${receipt.id}" data-reference="${receipt.reference_id}">Edit</button>
-                        <button type="button" class="btn btn-success btn-sm w-100 export-receipt" data-reference="${receipt.reference_id}">Export</button>
+                        <button type="button" class="btn btn-success btn-sm w-100 export-receipt mr-2 " data-reference="${receipt.reference_id}">Export</button>
+                        <button type="button" class="btn btn-danger btn-sm w-100 delete-receipt-btn" data-reference="${receipt.reference_id}">Delete</button>
                       </div>
                     </td>
                   </tr>
@@ -1062,6 +1063,38 @@ $(document).ready(function() {
                 $btn.prop('disabled', false).html('Export');
             }
         });
+    });
+
+    // Delete button handler
+// With this:
+    $(document).on('click', '.delete-receipt-btn', function() {
+      const referenceId = $(this).data('reference');
+      if (!referenceId) {
+        toastr.error('Reference ID not found.');
+        return;
+      }
+      if (!confirm('Are you sure you want to delete this receipt and all its items? This action cannot be undone.')) {
+        return;
+      }
+      $.ajax({
+        url: '{% url "delete_warehouse_receiver_container" %}',
+        type: 'POST',
+        data: {
+          reference_id: referenceId,
+          csrfmiddlewaretoken: '{{ csrf_token }}'
+        },
+        success: function(response) {
+          if (response.success) {
+            toastr.success(response.message);
+            setTimeout(function() { location.reload(); }, 1200);
+          } else {
+            toastr.error(response.message || 'Failed to delete receipt.');
+          }
+        },
+        error: function() {
+          toastr.error('Server error while deleting receipt.');
+        }
+      });
     });
 </script>
 {% endblock %}

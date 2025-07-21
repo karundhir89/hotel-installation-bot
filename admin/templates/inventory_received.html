@@ -211,8 +211,9 @@
                   <td>{{ submission.total_damaged_quantity }}</td>
                   <td>{{ submission.checked_by }}</td>
                   <td>
-                    <button type="button" class="btn btn-secondary btn-sm w-100 edit-submission" data-id="{{ submission.id }}" 
+                    <button type="button" class="btn btn-secondary btn-sm w-100 edit-submission mb-1" data-id="{{ submission.id }}" 
                             data-container="{{ submission.container_id }}" data-client="{{ submission.client_id }}">Edit</button>
+                    <button type="button" class="btn btn-danger btn-sm w-100 delete-container-btn" data-container="{{ submission.container_id }}">Delete</button>
                   </td>
                 </tr>
                 {% empty %}
@@ -585,98 +586,83 @@
     $('.edit-submission').on('click', function() {
       const submissionId = $(this).data('id');
       const containerId = $(this).data('container');
-      const clientId = $(this).data('client');
-      
-      console.log("Edit button clicked. Submission ID:", submissionId, "Container ID:", containerId);
-      
-      if (containerId) {
-        // Set the container ID in both visible field and hidden field
-        $('#container_id').val(containerId);
-        $('#container_id_field').val(containerId);
-        
-        // Set edit mode flags
-        $('#is_editing').val('1');
-        $('#editing_record_id').val(submissionId);
-        
-        // Update form title
-        $('.form-title').text('Editing Receiving Record: Container ID ' + containerId);
-        
-        // First get original shipping data to get correct quantities shipped
-        $.ajax({
-          url: "{% url 'get_container_data' %}",
-          type: "GET",
-          data: { container_id: containerId },
-          success: function(shipmentData) {
-            // Create a lookup map for shipped quantities by client ID
-            const shippedQtyMap = {};
-            if (shipmentData.success && shipmentData.items) {
-              shipmentData.items.forEach(function(item) {
-                shippedQtyMap[item.client_id] = item.quantity;
-              });
-            }
-            
-            // Now fetch the received items for this container
-            $.ajax({
-              url: "{% url 'get_container_received_items' %}",
-              type: "GET",
-              data: { container_id: containerId },
-              success: function(receivedData) {
-                if (receivedData.success) {
-                  console.log("Received items data:", receivedData);
-                  
-                  // Clear the container items
-                  $('#container_items').empty();
-                  
-                  // Create table rows for each received item with actual values
-                  if (receivedData.items && receivedData.items.length > 0) {
-                    // Show the table when items exist
-                    $('#container_table_section').show();
-                    
-                    receivedData.items.forEach(function(item, index) {
-                      // Get the shipped quantity from our map, default to "N/A" if not found
-                      const shippedQty = shippedQtyMap[item.client_id] || "N/A";
-                      
-                      $('#container_items').append(
-                        '<tr>' +
-                          '<td class="client-item">' + item.client_id + '</td>' +
-                          '<td class="product-name">' + item.product_name + '</td>' +
-                          '<td class="qty-shipped">' + shippedQty + '</td>' +
-                          '<td>' +
-                            '<input type="number" class="form-control" name="received_qty_' + index + '" min="0" value="' + item.received_qty + '" required>' +
-                            '<input type="hidden" name="client_item_' + index + '" value="' + item.client_id + '">' +
-                            '<input type="hidden" name="record_id_' + index + '" value="' + item.id + '">' +
-                          '</td>' +
-                          '<td>' +
-                            '<input type="number" class="form-control" name="damaged_qty_' + index + '" min="0" value="' + item.damaged_qty + '">' +
-                          '</td>' +
-                        '</tr>'
-                      );
-                    });
-                    // Calculate total received quantity
-                    let totalReceived = 0;
-                    $('#container_items input[name^="received_qty_"]').each(function() {
-                      totalReceived += parseInt($(this).val()) || 0;
-                    });
-                    $('#total_items_box').val(totalReceived);
-                  } else {
-                    toastr.error("No received items found for this container");
-                  }
-                } else {
-                  toastr.error(receivedData.message || "Failed to load received items");
-                }
-              },
-              error: function() {
-                toastr.error("Error loading received items");
-              }
-            });
-          },
-          error: function() {
-            toastr.error("Error loading container shipping data");
-          }
-        });
-      } else {
+      if (!containerId) {
         toastr.error("Could not determine container ID from the table row.");
+        return;
       }
+
+      // Set form to edit mode
+      $('#is_editing').val('1');
+      $('#editing_record_id').val(submissionId);
+      $('#container_id').val(containerId);
+      $('#container_id_field').val(containerId);
+
+      // Update form title
+      $('.form-title').text('Editing Receiving Record: Container ID ' + containerId);
+
+      // Fetch shipping data for shipped quantities
+      $.ajax({
+        url: "{% url 'get_container_data' %}",
+        type: "GET",
+        data: { container_id: containerId },
+        success: function(shipmentData) {
+          // Build a map of shipped quantities by client_id
+          const shippedQtyMap = {};
+          if (shipmentData.success && shipmentData.items) {
+            shipmentData.items.forEach(function(item) {
+              shippedQtyMap[item.client_id] = item.quantity;
+            });
+          }
+
+          // Now fetch the received items for this container
+          $.ajax({
+            url: "{% url 'get_container_received_items' %}",
+            type: "GET",
+            data: { container_id: containerId },
+            success: function(receivedData) {
+              if (receivedData.success && receivedData.items && receivedData.items.length > 0) {
+                $('#container_items').empty();
+                receivedData.items.forEach(function(item, index) {
+                  // Use shipped quantity from the map, or "N/A" if not found
+                  const shippedQty = shippedQtyMap[item.client_id] || "N/A";
+                  $('#container_items').append(
+                    '<tr>' +
+                      '<td class="client-item">' + item.client_id + '</td>' +
+                      '<td class="product-name">' + item.product_name + '</td>' +
+                      '<td class="qty-shipped">' + shippedQty + '</td>' +
+                      '<td>' +
+                        '<input type="number" class="form-control" name="received_qty_' + index + '" min="0" value="' + item.received_qty + '" required>' +
+                        '<input type="hidden" name="client_item_' + index + '" value="' + item.client_id + '">' +
+                        '<input type="hidden" name="record_id_' + index + '" value="' + item.id + '">' +
+                      '</td>' +
+                      '<td>' +
+                        '<input type="number" class="form-control" name="damaged_qty_' + index + '" min="0" value="' + item.damaged_qty + '">' +
+                      '</td>' +
+                    '</tr>'
+                  );
+                });
+                $('#container_table_section').show();
+                $('#hidden_product_count').html('<input type="hidden" name="product_count" value="' + receivedData.items.length + '">');
+                // Update total items box
+                let totalReceived = 0;
+                receivedData.items.forEach(function(item) {
+                  totalReceived += parseInt(item.received_qty) || 0;
+                });
+                $('#total_items_box').val(totalReceived);
+                toastr.success("Loaded " + receivedData.items.length + " items for editing");
+              } else {
+                toastr.error("No received items found for this container");
+              }
+            },
+            error: function() {
+              toastr.error("Error loading received items");
+            }
+          });
+        },
+        error: function() {
+          toastr.error("Error loading shipping data");
+        }
+      });
     });
 
     // Handle form submission
@@ -776,5 +762,31 @@
     {% endfor %}
     {% endif %}
   });
+</script>
+<script>
+$(document).on('click', '.delete-container-btn', function() {
+  var containerId = $(this).data('container');
+  if (!containerId) return;
+  if (!confirm('Are you sure you want to delete all records for container "' + containerId + '"? This cannot be undone.')) return;
+  $.ajax({
+    url: '{% url "delete_inventory_received_container" %}',
+    type: 'POST',
+    data: {
+      'container_id': containerId,
+      'csrfmiddlewaretoken': '{{ csrf_token }}'
+    },
+    success: function(response) {
+      if (response.success) {
+        toastr.success(response.message || 'Container deleted.');
+        setTimeout(function() { location.reload(); }, 1200);
+      } else {
+        toastr.error(response.message || 'Failed to delete container.');
+      }
+    },
+    error: function() {
+      toastr.error('Error deleting container.');
+    }
+  });
+});
 </script>
 {% endblock %}
