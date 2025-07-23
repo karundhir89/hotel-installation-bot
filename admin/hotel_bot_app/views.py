@@ -1914,15 +1914,16 @@ def inventory_shipment(request):
             expected_arrival_date_str = request.POST.get("expected_arrival_date")
             tracking_info = request.POST.get("tracking_info")
             
-            # Check if this is an edit operation
-            is_editing = request.POST.get("is_editing") == "1"
-            editing_container_id = request.POST.get("editing_container_id", "").strip()
-
             # Block edit/delete if container_id is already received
             container_id_to_check = (editing_container_id if is_editing and editing_container_id else tracking_info)
             if container_id_to_check and container_id_to_check.strip().lower() in received_container_ids:
                 messages.error(request, f"This container (ID '{container_id_to_check}') has already been received and cannot be edited or deleted.")
                 return redirect("inventory_shipment")
+
+            # Check if this is an edit operation
+            is_editing = request.POST.get("is_editing") == "1"
+            editing_container_id = request.POST.get("editing_container_id", "").strip()
+
             
             # Debug logging
             print(f"Form submission - is_editing value: '{request.POST.get('is_editing')}'")
@@ -4331,6 +4332,11 @@ def get_container_data(request):
             'message': 'Container ID is required'
         })
     container_id_lower = container_id.lower()
+    if InventoryReceived.objects.filter(container_id__iexact=container_id).exists():
+        return JsonResponse({
+           'success': False,
+           'message': 'This container has already been received and cannot be edited or deleted.'
+       })
     try:
         # Get all items with this container ID (case-insensitive)
         items = Shipping.objects.filter(bol__iexact=container_id_lower)
@@ -4397,14 +4403,18 @@ def get_container_received_items(request):
         print(f"Fetching received items for container_id: {container_id_lower}")
         # Get all inventory received records for this container (case-insensitive)
         received_items = InventoryReceived.objects.filter(container_id__iexact=container_id_lower).order_by('client_id')
-            
         if not received_items.exists():
             return JsonResponse({'success': False, 'message': f'No received items found for container {container_id}'})
-        
+
+        # Build a map of shipped quantities from Shipping table for this container
+        shipped_map = {}
+        for ship in Shipping.objects.filter(bol__iexact=container_id_lower):
+            shipped_map[(ship.client_id or '').lower()] = ship.ship_qty
+
         # Get the received date from the first item
         first_item = received_items.first()
         received_date = first_item.received_date.strftime('%Y-%m-%d') if first_item.received_date else ''
-        
+
         # Format items for response
         items_data = []
         for item in received_items:
@@ -4414,25 +4424,27 @@ def get_container_received_items(request):
                 product_name = product.description or product.item or item.item
             except ProductData.DoesNotExist:
                 product_name = item.item or "Unknown Product"
-                
+
+            shipped_qty = shipped_map.get((item.client_id or '').lower(), 0)
+
             items_data.append({
                 'id': item.id,
                 'client_id': item.client_id,
                 'product_name': product_name,
                 'received_qty': item.received_qty,
                 'damaged_qty': item.damaged_qty,
+                'shipped_qty': shipped_qty,
                 'checked_by': item.checked_by.name if item.checked_by else 'Unknown'
             })
-        
+
         print(f"Found {len(items_data)} received items")
-        
+
         return JsonResponse({
             'success': True,
             'container_id': container_id,
             'items': items_data,
             'received_date': received_date
         })
-    
     except Exception as e:
         print(f"Error in get_container_received_items: {e}")
         import traceback
@@ -5342,6 +5354,12 @@ def get_warehouse_container_data(request):
     reference_id = request.GET.get('reference_id')
     if not reference_id:
         return JsonResponse({'success': False, 'message': 'Reference ID is required'})
+
+    if HotelWarehouse.objects.filter(reference_id__iexact=reference_id).exists():
+        return JsonResponse({
+            'success': False,
+            'message': 'This container has already been received and cannot be edited or deleted.'
+        })
     
     try:
         # Get all items with this reference ID (case-insensitive)
