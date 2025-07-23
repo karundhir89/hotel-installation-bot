@@ -1913,16 +1913,18 @@ def inventory_shipment(request):
             ship_date_str = request.POST.get("ship_date")
             expected_arrival_date_str = request.POST.get("expected_arrival_date")
             tracking_info = request.POST.get("tracking_info")
-            
+
+            # Check if this is an edit operation
+            is_editing = request.POST.get("is_editing") == "1"
+            editing_container_id = request.POST.get("editing_container_id", "").strip()            
+
             # Block edit/delete if container_id is already received
             container_id_to_check = (editing_container_id if is_editing and editing_container_id else tracking_info)
             if container_id_to_check and container_id_to_check.strip().lower() in received_container_ids:
                 messages.error(request, f"This container (ID '{container_id_to_check}') has already been received and cannot be edited or deleted.")
                 return redirect("inventory_shipment")
 
-            # Check if this is an edit operation
-            is_editing = request.POST.get("is_editing") == "1"
-            editing_container_id = request.POST.get("editing_container_id", "").strip()
+
 
             
             # Debug logging
