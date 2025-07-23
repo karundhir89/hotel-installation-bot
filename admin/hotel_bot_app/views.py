@@ -4403,14 +4403,18 @@ def get_container_received_items(request):
         print(f"Fetching received items for container_id: {container_id_lower}")
         # Get all inventory received records for this container (case-insensitive)
         received_items = InventoryReceived.objects.filter(container_id__iexact=container_id_lower).order_by('client_id')
-            
         if not received_items.exists():
             return JsonResponse({'success': False, 'message': f'No received items found for container {container_id}'})
-        
+
+        # Build a map of shipped quantities from Shipping table for this container
+        shipped_map = {}
+        for ship in Shipping.objects.filter(bol__iexact=container_id_lower):
+            shipped_map[(ship.client_id or '').lower()] = ship.ship_qty
+
         # Get the received date from the first item
         first_item = received_items.first()
         received_date = first_item.received_date.strftime('%Y-%m-%d') if first_item.received_date else ''
-        
+
         # Format items for response
         items_data = []
         for item in received_items:
@@ -4420,25 +4424,27 @@ def get_container_received_items(request):
                 product_name = product.description or product.item or item.item
             except ProductData.DoesNotExist:
                 product_name = item.item or "Unknown Product"
-                
+
+            shipped_qty = shipped_map.get((item.client_id or '').lower(), 0)
+
             items_data.append({
                 'id': item.id,
                 'client_id': item.client_id,
                 'product_name': product_name,
                 'received_qty': item.received_qty,
                 'damaged_qty': item.damaged_qty,
+                'shipped_qty': shipped_qty,
                 'checked_by': item.checked_by.name if item.checked_by else 'Unknown'
             })
-        
+
         print(f"Found {len(items_data)} received items")
-        
+
         return JsonResponse({
             'success': True,
             'container_id': container_id,
             'items': items_data,
             'received_date': received_date
         })
-    
     except Exception as e:
         print(f"Error in get_container_received_items: {e}")
         import traceback
