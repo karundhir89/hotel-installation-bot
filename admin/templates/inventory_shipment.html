@@ -227,11 +227,15 @@
                                 {% if cid in received_container_ids %}disabled title="Cannot edit: already received"{% endif %}>
                             Edit
                         </button>
-                        <button type="button" class="btn btn-danger btn-sm delete-submission"
+                        <button type="button" class="btn btn-danger btn-sm delete-submission mr-2"
                                 data-id="{{ submission.id }}"
                                 data-container="{{ submission.container_id }}"
                                 {% if cid in received_container_ids %}disabled title="Cannot delete: already received"{% endif %}>
                             Delete
+                        </button>
+                        <button type="button" class="btn btn-info btn-sm view-submission"
+                                data-container="{{ submission.container_id }}">
+                            View
                         </button>
                       {% endwith %}
                     </div>
@@ -301,6 +305,37 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
         <button type="button" class="btn btn-danger" id="confirmDeleteContainerBtn">Yes, Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- View Container Modal -->
+<div class="modal fade" id="viewContainerModal" tabindex="-1" aria-labelledby="viewContainerModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="viewContainerModalLabel">Container Details</h5>
+      </div>
+      <div class="modal-body">
+        <h6>Container ID: <span id="view-container-id"></span></h6>
+        <div class="table-responsive">
+          <table class="table table-bordered">
+            <thead>
+              <tr>
+                <th>Client Item #</th>
+                <th>Product Name</th>
+                <th>Supplier</th>
+                <th>Quantity Shipped</th>
+              </tr>
+            </thead>
+            <tbody id="view-container-items">
+              <!-- Populated by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
       </div>
     </div>
   </div>
@@ -470,6 +505,44 @@
         }
       });
     });
+
+    $(document).on('click', '.view-submission', function() {
+      const containerId = $(this).data('container');
+      if (!containerId) {
+        toastr.error("Could not determine container ID.");
+        return;
+      }
+      // Fetch container data from backend
+      $.ajax({
+        url: "{% url 'get_container_data' %}",
+        type: "GET",
+        data: { container_id: containerId, mode: 'view' },
+        success: function(data) {
+          if (data.success && data.items && data.items.length > 0) {
+            $('#view-container-id').text(data.container_id);
+            let html = '';
+            data.items.forEach(function(item) {
+              html += `<tr>
+                <td>${item.client_id}</td>
+                <td>${item.product_name || ''}</td>
+                <td>${item.supplier || ''}</td>
+                <td>${item.quantity}</td>
+              </tr>`;
+            });
+            $('#view-container-items').html(html);
+            var modal = new bootstrap.Modal(document.getElementById('viewContainerModal'));
+            modal.show();
+          } else {
+            toastr.error(data.message || "No items found for this container.");
+          }
+        },
+        error: function() {
+          toastr.error("Error loading container data.");
+        }
+      });
+    });
+
+    
 
     // Set up the form submission
     $('#shipment-form').on('submit', function(e) {

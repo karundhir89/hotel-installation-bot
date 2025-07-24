@@ -644,13 +644,11 @@
         const receivedQty = $(this).find('input[name^="received_qty_"]').val();
         const damagedQty = $(this).find('input[name^="damaged_qty_"]').val();
         const clientItem = $(this).find('.client-item').text().trim();
-        
-        if (receivedQty && receivedQty !== "0") {
-          formData.append('received_qty_' + productCount, receivedQty);
-          formData.append('damaged_qty_' + productCount, damagedQty || "0");
-          formData.append('client_item_' + productCount, clientItem);
-          productCount++;
-        }
+
+        formData.append('received_qty_' + productCount, receivedQty || "0");
+        formData.append('damaged_qty_' + productCount, damagedQty || "0");
+        formData.append('client_item_' + productCount, clientItem);
+        productCount++;
       });
       
       // Add the product count

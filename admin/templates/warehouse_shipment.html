@@ -231,6 +231,7 @@
                             Delete
                         </button>
                       {% endwith %}
+                      <button type="button" class="btn btn-info btn-sm w-100 view-warehouse-submission mr-2" data-reference="{{ submission.reference_id }}">View</button>
                       <button type="button" class="btn btn-success btn-sm w-100 export-submission" data-reference="{{ submission.reference_id }}">Export</button>
                      </div>
                   </td>
@@ -299,6 +300,69 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
         <button type="button" class="btn btn-danger" id="confirmDeleteContainerBtn">Yes, Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- View Warehouse Container Modal -->
+<div class="modal fade" id="viewWarehouseContainerModal" tabindex="-1" aria-labelledby="viewWarehouseContainerModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="viewWarehouseContainerModalLabel">Warehouse Container Details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <h6>Reference ID: <span id="view-warehouse-reference-id"></span></h6>
+        <div class="table-responsive">
+          <table class="table table-bordered">
+            <thead>
+              <tr>
+                <th>Client Item #</th>
+                <th>Product Name</th>
+                <th>Quantity Shipped</th>
+              </tr>
+            </thead>
+            <tbody id="view-warehouse-container-items">
+              <!-- Populated by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- View Warehouse Container Modal -->
+<div class="modal fade" id="viewWarehouseContainerModal" tabindex="-1" aria-labelledby="viewWarehouseContainerModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="viewWarehouseContainerModalLabel">Warehouse Container Details</h5>
+      </div>
+      <div class="modal-body">
+        <h6>Reference ID: <span id="view-warehouse-reference-id"></span></h6>
+        <div class="table-responsive">
+          <table class="table table-bordered">
+            <thead>
+              <tr>
+                <th>Client Item #</th>
+                <th>Product Name</th>
+                <th>Quantity Shipped</th>
+              </tr>
+            </thead>
+            <tbody id="view-warehouse-container-items">
+              <!-- Populated by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
       </div>
     </div>
   </div>
@@ -1008,6 +1072,41 @@
         },
         complete: function() {
           btn.prop('disabled', false).html(originalHtml);
+        }
+      });
+    });
+
+    $(document).on('click', '.view-warehouse-submission', function() {
+      const referenceId = $(this).data('reference');
+      if (!referenceId) {
+        toastr.error("Could not determine reference ID.");
+        return;
+      }
+      // Fetch warehouse container data from backend
+      $.ajax({
+        url: "{% url 'get_warehouse_container_data' %}",
+        type: "GET",
+        data: { reference_id: referenceId, mode: 'view' },
+        success: function(data) {
+          if (data.success && data.items && data.items.length > 0) {
+            $('#view-warehouse-reference-id').text(data.reference_id);
+            let html = '';
+            data.items.forEach(function(item) {
+              html += `<tr>
+                <td>${item.client_id}</td>
+                <td>${item.product_name || ''}</td>
+                <td>${item.ship_qty}</td>
+              </tr>`;
+            });
+            $('#view-warehouse-container-items').html(html);
+            var modal = new bootstrap.Modal(document.getElementById('viewWarehouseContainerModal'));
+            modal.show();
+          } else {
+            toastr.error(data.message || "No items found for this warehouse container.");
+          }
+        },
+        error: function() {
+          toastr.error("Error loading warehouse container data.");
         }
       });
     });
