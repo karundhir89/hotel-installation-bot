@@ -1913,18 +1913,16 @@ def inventory_shipment(request):
             ship_date_str = request.POST.get("ship_date")
             expected_arrival_date_str = request.POST.get("expected_arrival_date")
             tracking_info = request.POST.get("tracking_info")
-
-            # Check if this is an edit operation
-            is_editing = request.POST.get("is_editing") == "1"
-            editing_container_id = request.POST.get("editing_container_id", "").strip()            
-
+            
             # Block edit/delete if container_id is already received
             container_id_to_check = (editing_container_id if is_editing and editing_container_id else tracking_info)
             if container_id_to_check and container_id_to_check.strip().lower() in received_container_ids:
                 messages.error(request, f"This container (ID '{container_id_to_check}') has already been received and cannot be edited or deleted.")
                 return redirect("inventory_shipment")
 
-
+            # Check if this is an edit operation
+            is_editing = request.POST.get("is_editing") == "1"
+            editing_container_id = request.POST.get("editing_container_id", "").strip()
 
             
             # Debug logging
@@ -2115,16 +2113,7 @@ def inventory_shipment(request):
 
 def available_container_ids(request):
     term = request.GET.get('term', '').strip().lower()
-    # Get all BOLs from Shipping not in InventoryReceived (case-insensitive)
-    received_ids = set(InventoryReceived.objects.values_list('container_id', flat=True))
     qs = Shipping.objects.all()
-    if received_ids:
-        from django.db.models import Q
-        q = Q()
-        for rid in received_ids:
-            if rid:
-                q |= Q(bol__iexact=rid)
-        qs = qs.exclude(q)
     if term:
         qs = qs.filter(bol__icontains=term)
     suggestions = list(qs.values_list('bol', flat=True).distinct()[:10])
@@ -2238,16 +2227,20 @@ def inventory_received(request):
                         record_id = request.POST.get(f"record_id_{i}")  # Get the unique record ID
                         
                         print(f"Processing item {i}: client_item={client_item}, received_qty={received_qty}, damaged_qty={damaged_qty}, record_id={record_id}")
-                        
-                        if received_qty == 0:
-                            continue
+
                         
                         # Find the specific record using its unique ID
-                        record = InventoryReceived.objects.filter(
-                            id=record_id,
+                        record_qs = InventoryReceived.objects.filter(
                             container_id=container_id,
                             client_id=client_item
-                        ).first()
+                        )
+                        if record_id and record_id not in [None, '', 'null']:
+                            try:
+                                record_id_int = int(record_id)
+                                record_qs = record_qs.filter(id=record_id_int)
+                            except ValueError:
+                                pass  # ignore if record_id is not a valid int
+                        record = record_qs.first()
                         
                         if record:
                             print(f"Found record to update: ID={record.id}, client_id={record.client_id}")
@@ -2276,7 +2269,24 @@ def inventory_received(request):
                             recalculate_quantity_available(client_item)
                             success_count += 1
                         else:
-                            print(f"No record found for ID={record_id}, client_item={client_item} in container {container_id}")
+                            InventoryReceived.objects.create(
+                                client_id=client_item,
+                                item=client_item,
+                                received_date=received_date,
+                                received_qty=received_qty,
+                                damaged_qty=damaged_qty,
+                                checked_by=user,
+                                container_id=container_id
+                            )
+                            update_inventory_when_receiving(
+                                client_id=client_item, 
+                                received_qty=received_qty, 
+                                damaged_qty=damaged_qty,
+                                is_new=True
+                            )
+                            recalculate_quantity_available(client_item)
+                            success_count += 1
+                            # print(f"No record found for ID={record_id}, client_item={client_item} in container {container_id}")
                     
                     print(f"Successfully updated {success_count} items")
                     
@@ -4334,7 +4344,8 @@ def get_container_data(request):
             'message': 'Container ID is required'
         })
     container_id_lower = container_id.lower()
-    if InventoryReceived.objects.filter(container_id__iexact=container_id).exists():
+    mode = request.GET.get('mode')
+    if mode != 'view' and InventoryReceived.objects.filter(container_id__iexact=container_id).exists():
         return JsonResponse({
            'success': False,
            'message': 'This container has already been received and cannot be edited or deleted.'
@@ -4418,25 +4429,32 @@ def get_container_received_items(request):
         received_date = first_item.received_date.strftime('%Y-%m-%d') if first_item.received_date else ''
 
         # Format items for response
+# Get all shipped items for this container
+        shipped_items = list(Shipping.objects.filter(bol__iexact=container_id_lower))
+
+        # Build a map of received items by client_id
+        received_map = {}
+        for rec in InventoryReceived.objects.filter(container_id__iexact=container_id_lower):
+            received_map[(rec.client_id or '').strip().lower()] = rec
+
         items_data = []
-        for item in received_items:
+        for ship in shipped_items:
+            key = (ship.client_id or '').strip().lower()
+            rec = received_map.get(key)
             # Get product name from ProductData if available
             try:
-                product = ProductData.objects.get(client_id__iexact=item.client_id)
-                product_name = product.description or product.item or item.item
+                product = ProductData.objects.get(client_id__iexact=ship.client_id)
+                product_name = product.description or product.item or ship.item
             except ProductData.DoesNotExist:
-                product_name = item.item or "Unknown Product"
-
-            shipped_qty = shipped_map.get((item.client_id or '').lower(), 0)
-
+                product_name = ship.item or "Unknown Product"
             items_data.append({
-                'id': item.id,
-                'client_id': item.client_id,
+                'id': rec.id if rec else None,
+                'client_id': ship.client_id,
                 'product_name': product_name,
-                'received_qty': item.received_qty,
-                'damaged_qty': item.damaged_qty,
-                'shipped_qty': shipped_qty,
-                'checked_by': item.checked_by.name if item.checked_by else 'Unknown'
+                'received_qty': rec.received_qty if rec else 0,
+                'damaged_qty': rec.damaged_qty if rec else 0,
+                'shipped_qty': ship.ship_qty,
+                'checked_by': rec.checked_by.name if rec and rec.checked_by else 'Unknown'
             })
 
         print(f"Found {len(items_data)} received items")
@@ -5314,17 +5332,7 @@ def revert_inventory_when_shipping(client_id, ship_qty):
 
 def available_warehouse_reference_ids(request):
     term = request.GET.get('term', '').strip().lower()
-    # Get all received reference_ids (case-insensitive)
-    used_ids = set(HotelWarehouse.objects.values_list('reference_id', flat=True))
-    # Use __iexact for case-insensitive exclusion
     qs = WarehouseShipment.objects.all()
-    if used_ids:
-        # Exclude all reference_ids that match (case-insensitive)
-        q = Q()
-        for ref in used_ids:
-            if ref:
-                q |= Q(reference_id__iexact=ref)
-        qs = qs.exclude(q)
     if term:
         qs = qs.filter(reference_id__icontains=term)
     suggestions = list(qs.values_list('reference_id', flat=True).distinct()[:10])
@@ -5354,10 +5362,11 @@ def get_warehouse_container_data(request):
     Uses case-insensitive matching for consistent results.
     """
     reference_id = request.GET.get('reference_id')
+    mode = request.GET.get('mode')
     if not reference_id:
         return JsonResponse({'success': False, 'message': 'Reference ID is required'})
 
-    if HotelWarehouse.objects.filter(reference_id__iexact=reference_id).exists():
+    if mode != 'view' and HotelWarehouse.objects.filter(reference_id__iexact=reference_id).exists():
         return JsonResponse({
             'success': False,
             'message': 'This container has already been received and cannot be edited or deleted.'
@@ -5393,7 +5402,7 @@ def get_warehouse_container_data(request):
                 'id': item.id,
                 'client_id': item.client_id,
                 'product_name': product_name,
-                'quantity': item.ship_qty or 1
+                'ship_qty': item.ship_qty or 0
             })
         
         return JsonResponse({
