@@ -933,7 +933,7 @@
         success: function(quantityData) {
           // Get the latest quantity info from the server (already updated on backend)
           const availableQty = quantityData.success ? quantityData.quantity_available : 0;
-          const originalQty = parseInt(item.quantity) || 0;
+          const originalQty = parseInt(item.ship_qty) || 0;
           
           console.log(`Item ${item.client_id}: Current Available=${availableQty} (includes restored quantity), Original Shipped=${originalQty}`);
           
