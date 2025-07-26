@@ -1919,11 +1919,11 @@ def inventory_shipment(request):
             is_editing = request.POST.get("is_editing") == "1"
             editing_container_id = request.POST.get("editing_container_id", "").strip()
             
-            # Block edit/delete if container_id is already received
+            # Check if container is received (for validation purposes)
             container_id_to_check = (editing_container_id if is_editing and editing_container_id else tracking_info)
+            is_received_container = False
             if container_id_to_check and container_id_to_check.strip().lower() in received_container_ids:
-                messages.error(request, f"This container (ID '{container_id_to_check}') has already been received and cannot be edited or deleted.")
-                return redirect("inventory_shipment")
+                is_received_container = True
 
 
             
@@ -2013,6 +2013,18 @@ def inventory_shipment(request):
                 client_item = client_items[i]
                 supplier = suppliers[i] if i < len(suppliers) else ""
                 qty_shipped = int(quantities[i]) if i < len(quantities) and quantities[i] else 0
+                
+                # For received containers, validate that quantities are not reduced
+                if is_received_container and is_editing:
+                    # Get the original quantity for this item
+                    original_item = Shipping.objects.filter(
+                        bol=tracking_info,
+                        client_id=client_item
+                    ).first()
+                    
+                    if original_item and qty_shipped < original_item.ship_qty:
+                        messages.error(request, f"Cannot reduce quantity for item '{client_item}' from {original_item.ship_qty} to {qty_shipped}. Only increases are allowed for received containers.")
+                        return redirect("inventory_shipment")
                 
                 # Save the shipping entry
                 Shipping.objects.create(
@@ -4347,11 +4359,18 @@ def get_container_data(request):
         })
     container_id_lower = container_id.lower()
     mode = request.GET.get('mode')
-    if mode != 'view' and InventoryReceived.objects.filter(container_id__iexact=container_id).exists():
-        return JsonResponse({
-           'success': False,
-           'message': 'This container has already been received and cannot be edited or deleted.'
-       })
+    
+    # Check if container is received
+    is_received = InventoryReceived.objects.filter(container_id__iexact=container_id).exists()
+    
+    # For view mode, always allow access
+    # For edit mode, allow access even if received (new behavior)
+    if mode == 'view':
+        pass  # Allow view access
+    elif is_received:
+        # Container is received - will be handled in frontend with restrictions
+        pass
+    
     try:
         # Get all items with this container ID (case-insensitive)
         items = Shipping.objects.filter(bol__iexact=container_id_lower)
@@ -4397,7 +4416,8 @@ def get_container_data(request):
             'ship_date': ship_date,
             'expected_arrival': expected_arrival,
             'items': item_list,
-            'count': len(item_list)
+            'count': len(item_list),
+            'is_received': is_received
         })
         
     except Exception as e:
