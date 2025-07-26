@@ -207,6 +207,7 @@
                   <th>Product Count</th>
                   <th>Total Quantity</th>
                   <th>Checked By</th>
+                  <th>Status</th>
                   <th>Action</th>
                 </tr>
               </thead>
@@ -220,11 +221,20 @@
                   <td>{{ submission.total_quantity }}</td>
                   <td>{{ submission.checked_by }}</td>
                   <td>
+                    {% with cid=submission.container_id|lower %}
+                      {% if cid in received_container_ids %}
+                        <span class="badge bg-success">Received</span>
+                      {% else %}
+                        <span class="badge bg-warning">Shipped</span>
+                      {% endif %}
+                    {% endwith %}
+                  </td>
+                  <td>
                     <div class="d-flex flex-row gap-2">
                       {% with cid=submission.container_id|lower %}
                         <button type="button" class="btn btn-secondary btn-sm edit-submission mr-2"
                                 data-id="{{ submission.id }}"
-                                {% if cid in received_container_ids %}disabled title="Cannot edit: already received"{% endif %}>
+                                {% if cid in received_container_ids %}title="Edit received container (quantity increases only)"{% else %}title="Edit container"{% endif %}>
                             Edit
                         </button>
                         <button type="button" class="btn btn-danger btn-sm delete-submission mr-2"
@@ -243,7 +253,7 @@
                 </tr>
                 {% empty %}
                 <tr>
-                  <td colspan="6" class="text-center">No previous submissions found.</td>
+                  <td colspan="8" class="text-center">No previous submissions found.</td>
                 </tr>
                 {% endfor %}
               </tbody>
@@ -619,11 +629,32 @@
 
     // Update total quantity when quantity changes
     $(document).on('input', '.qty-input', function() {
+      const $row = $(this).closest('tr');
+      const isReceived = $row.data('is-received');
+      const originalQty = parseInt($row.data('original-qty')) || 0;
+      const currentQty = parseInt($(this).val()) || 0;
+      
+      // For received containers, prevent quantity reduction
+      if (isReceived && currentQty < originalQty) {
+        toastr.error(`Cannot reduce quantity below ${originalQty} for received containers.`);
+        $(this).val(originalQty);
+        return;
+      }
+      
       updateTotalQuantity();
     });
 
     // Update total quantity when row is deleted
     $('#item_list').on('click', '.delete-row', function () {
+      const $row = $(this).closest('tr');
+      const isReceived = $row.data('is-received');
+      
+      // Prevent deletion for received containers
+      if (isReceived) {
+        toastr.error("Cannot delete items from received containers.");
+        return;
+      }
+      
       $(this).closest('tr').remove();
       updateTotalQuantity();
       
@@ -743,7 +774,12 @@
             $('#editing_container_id').val(data.container_id);
             
             // Update form title to show we're editing
-            $('.form-title').text(`Editing Container: ${data.container_id}`);
+            let titleText = `Editing Container: ${data.container_id}`;
+            if (data.is_received) {
+              titleText += ' (Received - Quantity increases only)';
+              toastr.warning("This container has been received. You can only increase quantities and add new items. Existing items cannot be deleted.");
+            }
+            $('.form-title').text(titleText);
             
             // Add items to the table
             data.items.forEach(function(item, index) {
@@ -751,16 +787,25 @@
               console.log(`  - client_id: ${item.client_id}`);
               console.log(`  - product_name: ${item.product_name}`);
               
+              let deleteButton = `<button type="button" class="btn btn-danger btn-sm delete-row">Delete</button>`;
+              let quantityInput = `<input type="number" class="form-control qty-input" min="1" value="${item.quantity}" required/>`;
+              
+              // If container is received, disable delete button and set min quantity
+              if (data.is_received) {
+                deleteButton = `<button type="button" class="btn btn-danger btn-sm delete-row" disabled title="Cannot delete items from received container">Delete</button>`;
+                quantityInput = `<input type="number" class="form-control qty-input" min="${item.quantity}" value="${item.quantity}" required title="Cannot reduce quantity for received container"/>`;
+              }
+              
               $('#item_list').append(`
-                <tr>
+                <tr data-original-qty="${item.quantity}" data-is-received="${data.is_received}">
                   <td class="client-item">${item.client_id}</td>
                   <td class="product-name">${item.product_name || "Unknown Product"}</td>
                   <td class="supplier">${item.supplier}</td>
                   <td>
-                    <input type="number" class="form-control qty-input" min="1" value="${item.quantity}" required/>
+                    ${quantityInput}
                   </td>
                   <td>
-                    <button type="button" class="btn btn-danger btn-sm delete-row">Delete</button>
+                    ${deleteButton}
                   </td>
                 </tr>
               `);
