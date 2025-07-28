@@ -120,9 +120,8 @@ $(document).ready(function () {
                     }
                     if (data.items && data.items.length > 0) {
                         const rows = data.items.map(item => {
-                            // If difference < 0, add red bg to the cell
-                            const diff = parseFloat(item.difference);
-                            const diffCell = diff < 0
+                            // Use mark_red from backend to determine if cell should be red
+                            const diffCell = item.mark_red
                                 ? `<span class="bg-danger text-white px-2 py-1 rounded">${item.difference}</span>`
                                 : item.difference;
                             return [

@@ -6318,9 +6318,19 @@ def get_availability_data(request):
         Shipping.objects
         .annotate(client_id_lower=Lower('client_id'))
         .filter(client_id_lower__in=client_ids)
-        .values('client_id_lower', 'bol', 'client_id', 'ship_qty')
+        .values('client_id_lower', 'bol', 'client_id', 'ship_qty', 'expected_arrival_date')
     )
     shipping_details = {}
+    # For each client_id, track if any container is late
+    late_container_map = {}
+    # Find the latest selected install date
+    latest_install_date = None
+    if dates:
+        try:
+            latest_install_date = max([datetime.strptime(d, '%Y-%m-%d').date() for d in dates])
+        except Exception:
+            latest_install_date = None
+
     for row in shipping_details_qs:
         cid = row['client_id_lower']
         if cid not in shipping_details:
@@ -6329,7 +6339,20 @@ def get_availability_data(request):
             'bol': row['bol'],
             'client_id': row['client_id'],
             'ship_qty': row['ship_qty'],
+            'expected_arrival_date': row.get('expected_arrival_date').strftime('%Y-%m-%d') if row.get('expected_arrival_date') else None,
         })
+        # Check if this container is late
+        if latest_install_date and row.get('expected_arrival_date'):
+            try:
+                arrival_date = row['expected_arrival_date']
+                if isinstance(arrival_date, str):
+                    arrival_date = datetime.strptime(arrival_date, '%Y-%m-%d').date()
+                elif isinstance(arrival_date, datetime):
+                    arrival_date = arrival_date.date()
+                if arrival_date > latest_install_date:
+                    late_container_map[cid] = True
+            except Exception:
+                pass
 
     # Build the result
     items = []
@@ -6338,6 +6361,8 @@ def get_availability_data(request):
         expected_arrival_qty = shipping_map.get(client_id, 0)
         item_name = productdata_map.get(client_id, client_id)
         difference = expected_arrival_qty - required
+        # Mark as red if difference < 0 OR any container for this product is late
+        mark_red = difference < 0 or late_container_map.get(client_id, False)
         items.append({
             'item': item_name,
             'product_ordered': product_ordered,
@@ -6345,6 +6370,7 @@ def get_availability_data(request):
             'expected_arrival_qty': expected_arrival_qty,
             'difference': difference,
             'client_id': client_id,  # Add client_id for tooltip lookup
+            'mark_red': mark_red,
         })
 
     return JsonResponse({'floors': floor_list, 'items': items, 'shipping_details': shipping_details})
