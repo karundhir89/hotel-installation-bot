@@ -434,6 +434,9 @@
             }, 500);
             
             toastr.success("Loaded " + receivedData.items.length + " items for editing");
+            
+            // Reset loading state for existing data case
+            setLoading('search_container', false);
           } else {
             // No existing received data, treat as new entry
             // Search for items with this container ID in the shipping table
