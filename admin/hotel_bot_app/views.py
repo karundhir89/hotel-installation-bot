@@ -6313,13 +6313,32 @@ def get_availability_data(request):
     productdata_qs = ProductData.objects.all()
     productdata_map = {p.client_id.lower(): p.client_id for p in productdata_qs if p.client_id}
 
-    # --- Shipping details for tooltip ---
+
+    # --- Shipping details for tooltip, now with expected_arrival_date, received_date, received_qty ---
     shipping_details_qs = (
         Shipping.objects
         .annotate(client_id_lower=Lower('client_id'))
         .filter(client_id_lower__in=client_ids)
         .values('client_id_lower', 'bol', 'client_id', 'ship_qty', 'expected_arrival_date')
     )
+    # Preload all InventoryReceived for these containers and client_ids
+    from collections import defaultdict
+    inventory_received_map = defaultdict(dict)  # { (container_id, client_id_lower): {received_date, received_qty} }
+    invrec_qs = (
+        InventoryReceived.objects
+        .annotate(client_id_lower=Lower('client_id'))
+        .filter(client_id_lower__in=client_ids)
+        .values('container_id', 'client_id', 'client_id_lower', 'received_date', 'received_qty')
+    )
+    for rec in invrec_qs:
+        # Ensure both container_id and client_id are compared as strings, case-insensitive, and whitespace-insensitive
+        container_id_str = str(rec['container_id']).strip().lower() if rec['container_id'] is not None else ''
+        client_id_lower = rec['client_id_lower'].strip().lower() if rec['client_id_lower'] else ''
+        inventory_received_map[(container_id_str, client_id_lower)] = {
+            'received_date': rec['received_date'].strftime('%Y-%m-%d') if rec['received_date'] else '-',
+            'received_qty': rec['received_qty'] if rec['received_qty'] is not None else '-',
+        }
+
     shipping_details = {}
     # For each client_id, track on-time and late container quantities
     ontime_qty_map = {}  # client_id_lower -> sum of ship_qty for on-time containers
@@ -6332,14 +6351,24 @@ def get_availability_data(request):
             latest_install_date = None
 
     for row in shipping_details_qs:
-        cid = row['client_id_lower']
+        cid = row['client_id_lower'].strip().lower() if row['client_id_lower'] else ''
         if cid not in shipping_details:
             shipping_details[cid] = []
+        # Only show received info if BOTH container_id (InventoryReceived) matches bol (Shipping) AND client_id matches (case-insensitive)
+        bol_str = str(row['bol']).strip().lower() if row['bol'] is not None else ''
+        invrec = inventory_received_map.get((bol_str, cid), None)
+        received_date = '-'
+        received_qty = '-'
+        if invrec:
+            received_date = invrec['received_date']
+            received_qty = invrec['received_qty']
         shipping_details[cid].append({
             'bol': row['bol'],
             'client_id': row['client_id'],
             'ship_qty': row['ship_qty'],
-            'expected_arrival_date': row.get('expected_arrival_date').strftime('%Y-%m-%d') if row.get('expected_arrival_date') else None,
+            'expected_arrival_date': row.get('expected_arrival_date').strftime('%Y-%m-%d') if row.get('expected_arrival_date') else '-',
+            'received_date': received_date,
+            'received_qty': received_qty,
         })
         # Check if this container is late or on-time
         arrival_date = row.get('expected_arrival_date')

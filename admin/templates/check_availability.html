@@ -124,15 +124,23 @@ $(document).ready(function () {
                             const diffCell = item.mark_red
                                 ? `<span class="bg-danger text-white px-2 py-1 rounded">${item.difference}</span>`
                                 : item.difference;
-                            return [
-                                `<span class="item-cell" data-client-id="${item.client_id}">${item.item}</span>`,
-                                item.product_ordered,
-                                item.product_required,
-                                item.expected_arrival_qty,
-                                diffCell
-                            ];
+                            // Store client_id as a data attribute on the row
+                            return {
+                                rowData: [
+                                    item.item,
+                                    item.product_ordered,
+                                    item.product_required,
+                                    item.expected_arrival_qty,
+                                    diffCell
+                                ],
+                                clientId: item.client_id
+                            };
                         });
-                        dataTable.clear().rows.add(rows).draw();
+                        dataTable.clear();
+                        rows.forEach(r => {
+                            const rowNode = dataTable.row.add(r.rowData).draw(false).node();
+                            $(rowNode).attr('data-client-id', r.clientId);
+                        });
                     } else {
                         dataTable.draw();
                     }
@@ -140,11 +148,25 @@ $(document).ready(function () {
         }
     });
 
-    // Helper to build popover HTML table
+    // Helper to build popover HTML table with new columns
     function buildShippingPopoverTable(details) {
-        let html = '<table class="table table-bordered table-sm mb-0"><thead><tr><th>Container</th><th>Client ID</th><th>Ship Qty</th></tr></thead><tbody>';
+        let html = '<table class="table table-bordered table-sm mb-0"><thead><tr>' +
+            '<th>Container</th>' +
+            '<th>Client ID</th>' +
+            '<th>Ship Qty</th>' +
+            '<th style="min-width: 100px;">Expected Arrival</th>' +
+            '<th style="min-width: 100px;">Received Date</th>' +
+            '<th>Received Qty</th>' +
+            '</tr></thead><tbody>';
         details.forEach(row => {
-            html += `<tr><td>${row.bol}</td><td>${row.client_id}</td><td>${row.ship_qty}</td></tr>`;
+            html += `<tr>` +
+                `<td>${row.bol}</td>` +
+                `<td>${row.client_id}</td>` +
+                `<td>${row.ship_qty}</td>` +
+                `<td>${row.expected_arrival_date || '-'}</td>` +
+                `<td style="min-width: 130px;">${row.received_date || '-'}</td>` +
+                `<td>${row.received_qty || '-'}</td>` +
+                `</tr>`;
         });
         html += '</tbody></table>';
         return html;
@@ -153,26 +175,28 @@ $(document).ready(function () {
     // Destroy all popovers before redraw
     $productTable.on('draw.dt', function () {
         // Remove any existing popovers
-        $('.item-cell').each(function () {
+        $('#productRequirementsTable tbody tr').each(function () {
             if ($(this).data('bs.popover')) {
                 $(this).popover('dispose');
             }
         });
-        // Attach popover to each item cell
-        $('.item-cell').each(function () {
-            const $cell = $(this);
-            const clientId = $cell.data('client-id');
+        // Attach popover to each row
+        $('#productRequirementsTable tbody tr').each(function () {
+            const $row = $(this);
+            const clientId = $row.attr('data-client-id');
             const details = shippingDetails[clientId];
             if (details && details.length > 0) {
-                $cell.popover({
+                $row.popover({
                     trigger: 'hover',
                     html: true,
-                    placement: 'right',
+                    placement: 'top', // Centered above the row
                     container: 'body',
                     title: 'Shipping Details',
                     content: buildShippingPopoverTable(details),
                     sanitize: false, // Allow HTML
-                    delay: { show: 200, hide: 100 }
+                    delay: { show: 200, hide: 100 },
+                    boundary: 'viewport',
+                    offset: [0, 0]
                 });
             }
         });
@@ -217,7 +241,7 @@ $(document).ready(function () {
 }
 /* Optional: Make popover wider for table */
 .popover {
-    max-width: 500px;
+    max-width: 650px;
 }
 </style>
 {% endblock %}
