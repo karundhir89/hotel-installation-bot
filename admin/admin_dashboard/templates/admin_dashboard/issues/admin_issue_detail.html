@@ -73,12 +73,12 @@
     </div>
     <div class="comments-section" style="max-height: 520px; overflow-y: auto; border-radius: 10px;">
         {% for comment in comment_data %}
-            <div class="d-flex mb-3 {% if comment.is_by_current_user %}justify-content-end{% else %}justify-content-start{% endif %}">
+            <div class="d-flex mb-3">
                 {% if comment.is_by_current_user %}
-                    <div class="d-flex align-items-start flex-row-reverse" style="max-width: 70%;">
+                    <div class="d-flex align-items-start flex-row-reverse ms-auto" style="max-width: 70%;">
                         <div class="ms-2">
                             <div class="comment-avatar comment-avatar-current">
-                                {{ comment.commenter_name|slice:":2"|upper }}
+                                {{ comment.commenter_name|slice:"0:2"|upper }}
                             </div>
                         </div>
                         <div class="comment-bubble-current text-dark p-3 rounded-3">
@@ -107,10 +107,10 @@
                         </div>
                     </div>
                 {% else %}
-                    <div class="d-flex align-items-start" style="max-width: 70%;">
+                    <div class="d-flex align-items-start me-auto" style="max-width: 70%;">
                         <div class="me-2">
                             <div class="comment-avatar comment-avatar-other" style="background: {{ comment.commenter_id|bubble_color }};">
-                                {{ comment.commenter_name|slice:":2"|upper }}
+                                {{ comment.commenter_name|slice:"0:2"|upper }}
                             </div>
                         </div>
                         <div class="comment-bubble-other text-dark p-3 rounded-3">

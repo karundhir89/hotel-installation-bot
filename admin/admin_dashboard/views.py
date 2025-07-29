@@ -300,15 +300,20 @@ def admin_issue_detail(request, issue_id):
 	for comment in comments:
 		commenter = comment.commenter
 		is_by_current_user = False
-		# Robustly check if the comment is by the current user (Django User or InvitedUser)
+		# Check by email (case-insensitive) if available, else by PK
 		if commenter is not None:
-			if type(commenter) == type(current_user) and hasattr(commenter, 'pk') and hasattr(current_user, 'pk'):
-				if commenter.pk == current_user.pk:
+			# Check for email match (works for both Django User and InvitedUser)
+			commenter_email = getattr(commenter, 'email', None)
+			current_user_email = getattr(current_user, 'email', None)
+			if commenter_email and current_user_email and commenter_email.lower() == current_user_email.lower():
+				is_by_current_user = True
+			elif current_user_invited:
+				invited_email = getattr(current_user_invited, 'email', None)
+				if commenter_email and invited_email and commenter_email.lower() == invited_email.lower():
 					is_by_current_user = True
-			# Also check for InvitedUser match if current_user_invited exists
-			elif current_user_invited and type(commenter) == type(current_user_invited) and hasattr(commenter, 'pk') and hasattr(current_user_invited, 'pk'):
-				if commenter.pk == current_user_invited.pk:
-					is_by_current_user = True
+			# Fallback to PK match if email is not available
+			elif hasattr(commenter, 'pk') and hasattr(current_user, 'pk') and commenter.pk == current_user.pk:
+				is_by_current_user = True
 
 		# Unify name for current user's comments: show email, else show name as before
 		if is_by_current_user:

@@ -44,9 +44,12 @@
                             </div>
                             <div class="col-6 col-md-2 mb-2 mb-md-0">
                                 <select name="status" class="form-select">
-                                    <option value="" class="text-secondary">All Statuses</option>
                                     {% for value, label in all_statuses %}
-                                        <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
+                                        {% if value == 'OPEN' and not selected_status %}
+                                            <option value="{{ value }}" selected>{{ label }}</option>
+                                        {% else %}
+                                            <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
+                                        {% endif %}
                                     {% endfor %}
                                 </select>
                             </div>
