@@ -92,6 +92,47 @@
     height: 38px;
     font-size: 16px; /* Prevents iOS zoom on focus */
   }
+  
+  /* Container ID suggestions styling */
+  #container-id-suggestions {
+    display: none;
+  }
+  
+  #container-id-suggestions .suggestion-item {
+    cursor: pointer;
+    padding: 8px 12px;
+    border-bottom: 1px solid #eee;
+    transition: background-color 0.2s;
+  }
+  
+  #container-id-suggestions .suggestion-item:hover {
+    background-color: #f8f9fa;
+  }
+  
+  #container-id-suggestions .suggestion-item:last-child {
+    border-bottom: none;
+  }
+  
+  #container-id-suggestions .suggestion-item.selected {
+    background-color: #007bff;
+    color: white;
+  }
+  
+  #container-id-suggestions .suggestion-item {
+    padding: 10px 15px;
+    border-bottom: 1px solid #eee;
+    transition: all 0.2s ease;
+    font-size: 14px;
+  }
+  
+  #container-id-suggestions .suggestion-item:hover {
+    background-color: #f8f9fa;
+    cursor: pointer;
+  }
+  
+  #container-id-suggestions .suggestion-item.selected:hover {
+    background-color: #0056b3;
+  }
 </style>
 
 <div class="container-lg my-5">
@@ -107,7 +148,7 @@
 
         <!-- Container ID -->
         <div class="row mb-4">
-          <div class="col-md-6 mb-3 mb-md-0">
+          <div class="col-md-6 mb-3 mb-md-0" style="position: relative;">
             <label class="form-label">Container ID</label>
             <div class="input-group">
             <input type="text" class="form-control" name="container_id" id="container_id" placeholder="Enter Container ID" required style="text-transform:lowercase;">
@@ -116,7 +157,7 @@
               <span id="search_text">Search</span>
             </button>
             </div>
-            <div id="container-id-suggestions" class="list-group" style="position: absolute; z-index: 1000;"></div>
+            <div id="container-id-suggestions" class="list-group" style="position: absolute; z-index: 9999; max-height: 200px; overflow-y: auto; width: 100%; border: 1px solid #ddd; border-radius: 4px; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); top: 100%; left: 0; margin-top: 2px;"></div>
           </div>
           <div class="col-md-6">
             <label class="form-label d-md-block d-none">Total Items</label>
@@ -723,46 +764,105 @@
     }
 
     // Autocomplete for Container ID
+    let autocompleteTimeout;
+    let isSelectingSuggestion = false;
+    
     $('#container_id').on('input', function() {
       const query = $(this).val().trim();
+      
+      // Clear previous timeout
+      clearTimeout(autocompleteTimeout);
+      
       if (!query) {
         $('#container-id-suggestions').empty().hide();
         return;
       }
-      $.ajax({
-        url: "{% url 'available_container_ids' %}",
-        data: { term: query },
-        success: function(data) {
-          const suggestions = data.results || [];
-          let html = '';
-          suggestions.forEach(function(bol) {
-            html += `<a href='#' class='list-group-item list-group-item-action suggestion-item'>${bol}</a>`;
-          });
-          if (html) {
-            $('#container-id-suggestions').html(html).show();
-          } else {
+      
+      // Add delay to prevent too many requests
+      autocompleteTimeout = setTimeout(function() {
+        $.ajax({
+          url: "{% url 'available_container_ids' %}",
+          data: { term: query },
+          success: function(data) {
+            const suggestions = data.results || [];
+            let html = '';
+            
+            if (suggestions.length > 0) {
+              suggestions.forEach(function(bol) {
+                html += `<div class='suggestion-item' data-value="${bol}">${bol}</div>`;
+              });
+              $('#container-id-suggestions').html(html).show();
+            } else {
+              $('#container-id-suggestions').empty().hide();
+            }
+          },
+          error: function() {
             $('#container-id-suggestions').empty().hide();
           }
-        }
-      });
+        });
+      }, 300);
     });
+    
     // When a suggestion is clicked, fill the input
     $(document).on('click', '.suggestion-item', function(e) {
       e.preventDefault();
-      $('#container_id').val($(this).text());
+      e.stopPropagation();
+      
+      isSelectingSuggestion = true;
+      const selectedValue = $(this).data('value') || $(this).text();
+      
+      $('#container_id').val(selectedValue);
       $('#container-id-suggestions').empty().hide();
-    });
-    // Hide suggestions when clicking outside the input or suggestion box
-    $('#container_id').on('blur', function() {
+      
+      // Trigger the search button click to load container data
       setTimeout(function() {
-        $('#container-id-suggestions').empty().hide();
-      }, 150); // Delay to allow click on suggestion
+        $('#search_container').click();
+        isSelectingSuggestion = false;
+      }, 100);
     });
-    // Optional: Show suggestions only when input is focused and has value
-    $('#container_id').on('focus', function() {
-      if ($(this).val().trim()) {
-        $('#container-id-suggestions').show();
+    
+    // Hide suggestions when clicking outside
+    $(document).on('click', function(e) {
+      if (!$(e.target).closest('#container_id, #container-id-suggestions').length) {
+        $('#container-id-suggestions').empty().hide();
       }
+    });
+    
+    // Handle keyboard navigation
+    $('#container_id').on('keydown', function(e) {
+      const suggestions = $('#container-id-suggestions .suggestion-item');
+      const currentIndex = suggestions.index($('.suggestion-item.selected'));
+      
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        suggestions.removeClass('selected');
+        if (currentIndex < suggestions.length - 1) {
+          suggestions.eq(currentIndex + 1).addClass('selected');
+        } else {
+          suggestions.eq(0).addClass('selected');
+        }
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        suggestions.removeClass('selected');
+        if (currentIndex > 0) {
+          suggestions.eq(currentIndex - 1).addClass('selected');
+        } else {
+          suggestions.eq(suggestions.length - 1).addClass('selected');
+        }
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const selectedSuggestion = $('.suggestion-item.selected');
+        if (selectedSuggestion.length) {
+          selectedSuggestion.click();
+        }
+      } else if (e.key === 'Escape') {
+        $('#container-id-suggestions').empty().hide();
+      }
+    });
+    
+    // Prevent input blur when clicking suggestions
+    $('#container-id-suggestions').on('mousedown', function(e) {
+      e.preventDefault();
     });
   });
 </script>
