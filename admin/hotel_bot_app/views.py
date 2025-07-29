@@ -6321,9 +6321,9 @@ def get_availability_data(request):
         .values('client_id_lower', 'bol', 'client_id', 'ship_qty', 'expected_arrival_date')
     )
     shipping_details = {}
-    # For each client_id, track if any container is late
-    late_container_map = {}
-    # Find the latest selected install date
+    # For each client_id, track on-time and late container quantities
+    ontime_qty_map = {}  # client_id_lower -> sum of ship_qty for on-time containers
+    late_container_map = {}  # client_id_lower -> True if any late container exists
     latest_install_date = None
     if dates:
         try:
@@ -6341,18 +6341,25 @@ def get_availability_data(request):
             'ship_qty': row['ship_qty'],
             'expected_arrival_date': row.get('expected_arrival_date').strftime('%Y-%m-%d') if row.get('expected_arrival_date') else None,
         })
-        # Check if this container is late
-        if latest_install_date and row.get('expected_arrival_date'):
+        # Check if this container is late or on-time
+        arrival_date = row.get('expected_arrival_date')
+        ship_qty = row.get('ship_qty') or 0
+        is_late = False
+        if latest_install_date and arrival_date:
             try:
-                arrival_date = row['expected_arrival_date']
                 if isinstance(arrival_date, str):
-                    arrival_date = datetime.strptime(arrival_date, '%Y-%m-%d').date()
+                    arrival_date_dt = datetime.strptime(arrival_date, '%Y-%m-%d').date()
                 elif isinstance(arrival_date, datetime):
-                    arrival_date = arrival_date.date()
-                if arrival_date > latest_install_date:
+                    arrival_date_dt = arrival_date.date()
+                else:
+                    arrival_date_dt = arrival_date
+                if arrival_date_dt > latest_install_date:
                     late_container_map[cid] = True
+                    is_late = True
             except Exception:
                 pass
+        if not is_late:
+            ontime_qty_map[cid] = ontime_qty_map.get(cid, 0) + (ship_qty or 0)
 
     # Build the result
     items = []
@@ -6361,8 +6368,9 @@ def get_availability_data(request):
         expected_arrival_qty = shipping_map.get(client_id, 0)
         item_name = productdata_map.get(client_id, client_id)
         difference = expected_arrival_qty - required
-        # Mark as red if difference < 0 OR any container for this product is late
-        mark_red = difference < 0 or late_container_map.get(client_id, False)
+        # Mark as red if sum of on-time container qty < required
+        ontime_qty = ontime_qty_map.get(client_id, 0)
+        mark_red = ontime_qty < required
         items.append({
             'item': item_name,
             'product_ordered': product_ordered,
