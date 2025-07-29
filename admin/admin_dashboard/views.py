@@ -176,12 +176,17 @@ def logout_view(request):
 def admin_issue_list(request):
 	issues = Issue.objects.all().order_by('-created_at').select_related('created_by', 'assignee')
 
+
 	# Filtering
 	status = request.GET.get('status')
 	issue_type = request.GET.get('type')
 	created_by = request.GET.get('created_by')
 	assignee = request.GET.get('assignee')
 	q = request.GET.get('q')
+
+	# Default to 'OPEN' if no status is provided
+	if status is None or status == '':
+		status = 'OPEN'
 
 	if q:
 		issues = issues.filter(title__icontains=q)
