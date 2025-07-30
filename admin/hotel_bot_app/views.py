@@ -3675,8 +3675,20 @@ def floor_products_list(request):
             # Handle XLS download request
             if request.GET.get('download') == 'xls':
                 if product_list:
+                    # Create filtered data for Excel export with only the required columns
+                    excel_data = []
+                    for product in product_list:
+                        excel_data.append({
+                            'Client ID': product.get('client_id', ''),
+                            'Description': product.get('description', ''),
+                            'Total Needed for Floor': product.get('total_quantity_needed', 0),
+                            'Remaining Needed': product.get('remaining_quantity_needed', 0),
+                            'Floor Installed Qty': product.get('floor_installed_quantity', 0),
+                            'Hotel Warehouse Qty': product.get('hotel_warehouse_quantity', 0)
+                        })
+                    
                     filename = f"products_list_for_{floor_number}_floor.xls"
-                    return _generate_xls_response(product_list, filename, sheet_name=f"Floor {floor_number}")
+                    return _generate_xls_response(excel_data, filename, sheet_name=f"Floor {floor_number}")
                 else:
                      # Optionally handle download request when no data
                      messages.warning(request, f"No data to download for floor {floor_number}.")
