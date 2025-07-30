@@ -3579,10 +3579,11 @@ def _get_floor_products_data(floor_number):
             ),
             floor_installed_quantities AS (
                 SELECT pd.client_id,
-                       COUNT(*) AS floor_installed_qty
+                       SUM(prm.quantity) AS floor_installed_qty
                 FROM room_data rd
                 JOIN install_detail id ON rd.id = id.room_id
                 JOIN product_data pd ON id.product_id = pd.id
+                JOIN product_room_model prm ON pd.id = prm.product_id AND rd.room_model_id = prm.room_model_id
                 WHERE rd.floor = %s AND UPPER(id.status) = 'YES'
                 GROUP BY pd.client_id
             )
