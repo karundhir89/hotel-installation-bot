@@ -3355,11 +3355,11 @@ def delete_product_room_model(request):
 def get_floor_products(request):
     floor_number = request.GET.get("floor_number")
     user_id = request.session.get("user_id")
-    
+
     try:
         # Get the current user
         user = get_object_or_404(InvitedUser, id=user_id) if user_id else None
-        
+
         # Use raw SQL query to get products with total quantity needed
         products = ProductData.objects.raw("""
             WITH room_counts AS (
@@ -3375,7 +3375,7 @@ def get_floor_products(request):
                 GROUP BY client_id, item
             ),
             warehouse_requests AS (
-                SELECT client_item, SUM(quantity_requested) as total_requested, 
+                SELECT client_item, SUM(quantity_requested) as total_requested,
                        SUM(quantity_received) as total_received
                 FROM warehouse_request
                 WHERE floor_number = %s
@@ -3395,12 +3395,12 @@ def get_floor_products(request):
             LEFT JOIN inventory inv ON pd.client_id = inv.client_id
             LEFT JOIN pulled_quantities pq ON pd.client_id = pq.client_id AND pd.item = pq.item
             LEFT JOIN warehouse_requests wr ON pd.client_id = wr.client_item
-            GROUP BY pd.id, pd.client_id, pd.description, pd.supplier, inv.quantity_installed, 
+            GROUP BY pd.id, pd.client_id, pd.description, pd.supplier, inv.quantity_installed,
                      inv.quantity_available, inv.hotel_warehouse_quantity, pq.total_pulled,
                      wr.total_requested, wr.total_received
             ORDER BY pd.client_id
         """, [floor_number, floor_number])
-        
+
         # Also get specific warehouse request items for this floor
         # Also get specific warehouse request items for this floor - try both string and int matching
         # First try with string comparison
@@ -3408,7 +3408,7 @@ def get_floor_products(request):
             floor_number=str(floor_number),
             sent=False
         ).select_related('requested_by')
-        
+
         # Then try with integer comparison
         try:
             floor_number_int = int(floor_number)
@@ -3416,38 +3416,38 @@ def get_floor_products(request):
                 floor_number=floor_number_int,
                 sent=False
             ).select_related('requested_by')
-            
+
             # Combine both querysets
             warehouse_requests = warehouse_requests_str | warehouse_requests_int
             warehouse_requests = warehouse_requests.distinct()
         except ValueError:
             # If floor_number can't be converted to int, just use the string results
             warehouse_requests = warehouse_requests_str
-        
+
         # Debug info
         print(f"Found {warehouse_requests.count()} warehouse requests for floor {floor_number}")
-        
+
         # If no requests were found, log more information for debugging
         if warehouse_requests.count() == 0:
-                
+
             # Print all unsent warehouse requests for debugging
             all_unsent = WarehouseRequest.objects.filter(sent=False)
             print(f"Total unsent warehouse requests in system: {all_unsent.count()}")
             for req in all_unsent:
                 print(f"Unsent request: floor={req.floor_number}, client_item={req.client_item}, requested={req.quantity_requested}")
-                
+
         # Print details of each warehouse request
         for i, req in enumerate(warehouse_requests):
             print(f"  Request #{i+1}: ID={req.id}, floor={req.floor_number}, client_item={req.client_item}, quantity_requested={req.quantity_requested}, quantity_received={req.quantity_received}")
-        
-        # Create lists to store all warehouse requests and a mapping dictionary 
+
+        # Create lists to store all warehouse requests and a mapping dictionary
         all_warehouse_requests = []
         warehouse_requests_dict = {}
-        
+
         for req in warehouse_requests:
             # Try to find the matching product for this client item
             product = ProductData.objects.filter(client_id__iexact=req.client_item).first()
-            
+
             request_data = {
                 'id': req.id,
                 'client_item': req.client_item,
@@ -3458,27 +3458,27 @@ def get_floor_products(request):
                 'requested_by': req.requested_by.name if req.requested_by else 'Unknown',
                 'sent': req.sent
             }
-            
+
             # Add to the all_warehouse_requests list
             all_warehouse_requests.append(request_data)
-            
+
             # If we found a product, add to the product-specific dictionary too
             if product:
                 key = f"{product.id}_{req.client_item}"
                 if key not in warehouse_requests_dict:
                     warehouse_requests_dict[key] = []
-                
+
                 warehouse_requests_dict[key].append(request_data)
-        
+
         result_products = []
         for product in products:
             # Calculate remaining quantity needed after subtracting already pulled quantity
             remaining_quantity = max(0, product.total_quantity_needed - product.pulled_quantity)
-            
+
             # Get warehouse requests for this product using the product_id+client_id key
             key = f"{product.id}_{product.client_id}"
             product_requests = warehouse_requests_dict.get(key, [])
-            
+
             result_products.append({
                 "id": product.id,
                 "client_id": product.client_id,
@@ -3494,7 +3494,7 @@ def get_floor_products(request):
                 "received_quantity": getattr(product, 'received_quantity', 0),
                 "warehouse_requests": product_requests  # Add specific request items
             })
-            
+
         # Add standalone warehouse requests for items without matching products
         for request in all_warehouse_requests:
             if request['product_id'] is None:
@@ -3514,7 +3514,7 @@ def get_floor_products(request):
                     "received_quantity": request['quantity_received'],
                     "warehouse_requests": [request]  # Include this single request
             })
-            
+
         return JsonResponse({
             "success": True,
             "products": result_products,
@@ -3525,7 +3525,7 @@ def get_floor_products(request):
             "success": False,
             "error": str(e)
         })
-
+        
 # Helper function to generate XLS response
 def _generate_xls_response(data, filename, sheet_name="Sheet1"):
     response = HttpResponse(content_type='application/vnd.ms-excel')
@@ -3570,34 +3570,38 @@ def _get_floor_products_data(floor_number):
         with connection.cursor() as cursor:
 
             sql_query = """
-             WITH room_counts AS (
+             WITH             room_counts AS (
                 SELECT rm.id AS room_model_id, COUNT(*) AS room_count
                 FROM room_data rd
                 JOIN room_model rm ON rd.room_model_id = rm.id
                 WHERE rd.floor = %s
                 GROUP BY rm.id
             ),
-            pulled_quantities AS (
-                SELECT client_id, item, SUM(qty_pulled) as total_pulled
-                FROM pull_inventory
-                GROUP BY client_id, item
+            floor_installed_quantities AS (
+                SELECT pd.client_id,
+                       COUNT(*) AS floor_installed_qty
+                FROM room_data rd
+                JOIN install_detail id ON rd.id = id.room_id
+                JOIN product_data pd ON id.product_id = pd.id
+                WHERE rd.floor = %s AND UPPER(id.status) = 'YES'
+                GROUP BY pd.client_id
             )
             SELECT pd.id, pd.item, pd.client_id, pd.description, pd.supplier,
                    SUM(prm.quantity * rc.room_count) AS total_quantity_needed,
                    COALESCE(inv.quantity_installed, 0) AS quantity_installed,
                    COALESCE(inv.quantity_available, 0) AS available_qty,
                    COALESCE(inv.hotel_warehouse_quantity, 0) AS hotel_warehouse_quantity,
-                   COALESCE(pq.total_pulled, 0) AS pulled_quantity
+                   COALESCE(fiq.floor_installed_qty, 0) AS floor_installed_quantity
             FROM product_room_model prm
             JOIN product_data pd ON prm.product_id = pd.id
             JOIN room_counts rc ON prm.room_model_id = rc.room_model_id
             LEFT JOIN inventory inv ON pd.client_id = inv.client_id
-            LEFT JOIN pulled_quantities pq ON pd.client_id = pq.client_id AND pd.item = pq.item
-            GROUP BY pd.id, pd.client_id, pd.description, pd.supplier, inv.quantity_installed, inv.quantity_available, inv.hotel_warehouse_quantity, pq.total_pulled
+            LEFT JOIN floor_installed_quantities fiq ON pd.client_id = fiq.client_id
+            GROUP BY pd.id, pd.client_id, pd.description, pd.supplier, inv.quantity_installed, inv.quantity_available, inv.hotel_warehouse_quantity, fiq.floor_installed_qty
             ORDER BY pd.client_id"""
             
             print("sql_query",sql_query)
-            cursor.execute(sql_query, [floor_number])
+            cursor.execute(sql_query, [floor_number, floor_number])
 
             columns = [col[0] for col in cursor.description]
             products = [dict(zip(columns, row)) for row in cursor.fetchall()]
@@ -3605,8 +3609,8 @@ def _get_floor_products_data(floor_number):
         result_products = []
         for product in products:
             total_needed = product.get('total_quantity_needed', 0) or 0
-            pulled = product.get('pulled_quantity', 0) or 0
-            remaining_quantity = max(0, total_needed - pulled)
+            floor_installed = product.get('floor_installed_quantity', 0) or 0
+            remaining_quantity = max(0, total_needed - floor_installed)
 
             result_products.append({
                 "id": product.get('id'),
@@ -3615,11 +3619,11 @@ def _get_floor_products_data(floor_number):
                 "description": product.get('description'),
                 "supplier": product.get('supplier'),
                 "total_quantity_needed": total_needed,
-                "pulled_quantity": pulled,
-                "remaining_quantity_needed": remaining_quantity, # Renamed from 'quantity' for clarity
+                "remaining_quantity_needed": remaining_quantity, # Total needed - Floor installed
                 "available_qty": product.get('available_qty', 0) or 0,
                 "hotel_warehouse_quantity": product.get('hotel_warehouse_quantity', 0) or 0,
                 "quantity_installed": product.get('quantity_installed', 0) or 0,
+                "floor_installed_quantity": product.get('floor_installed_quantity', 0) or 0,
             })
         return result_products
     except Exception as e:
