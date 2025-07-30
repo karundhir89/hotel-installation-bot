@@ -78,8 +78,8 @@
                                             <p><strong>Client ID:</strong> {{ product.client_id|default:"N/A" }}</p>
                                             <p><strong>Description:</strong> {{ product.description|default:"N/A" }}</p>
                                             <p><strong>Total Needed for Floor:</strong> {{ product.total_quantity_needed|default:"0" }}</p>
-                                            <p><strong>Qty Pulled Already:</strong> {{ product.pulled_quantity|default:"0" }}</p>
-                                            <p><strong>Remaining Needed:</strong> {{ product.remaining_quantity_needed|default:"0" }}</p>
+                                            <p><strong>Remaining Needed</strong> {{ product.remaining_quantity_needed|default:"0" }}</p>
+                                            <p><strong>Floor Installed Qty:</strong> {{ product.floor_installed_quantity|default:"0" }}</p>
                                             <p><strong>Hotel Warehouse Qty:</strong> {{ product.hotel_warehouse_quantity|default:"0" }}</p>
                                         </div>
                                     </div>
@@ -94,8 +94,8 @@
                                             <th>Client ID</th>
                                             <th>Description</th>
                                             <th>Total Needed for Floor</th>
-                                            <th>Qty Pulled Already</th>
                                             <th>Remaining Needed</th>
+                                            <th>Floor Installed Qty</th>
                                             <th>Hotel Warehouse Qty</th>
                                         </tr>
                                     </thead>
@@ -105,8 +105,8 @@
                                             <td>{{ product.client_id|default:"N/A" }}</td>
                                             <td title="{{ product.description|default:"N/A" }}">{{ product.description|default:"N/A"|truncatechars:20 }}</td>
                                             <td>{{ product.total_quantity_needed|default:"0" }}</td>
-                                            <td>{{ product.pulled_quantity|default:"0" }}</td>
                                             <td>{{ product.remaining_quantity_needed|default:"0" }}</td>
+                                            <td>{{ product.floor_installed_quantity|default:"0" }}</td>
                                             <td>{{ product.hotel_warehouse_quantity|default:"0" }}</td>
                                         </tr>
                                         {% endfor %}
