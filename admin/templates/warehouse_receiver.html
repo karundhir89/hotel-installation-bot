@@ -463,7 +463,13 @@ $(document).ready(function() {
           $('#load-items-btn').prop('disabled', false);
           
           // Show error
-          toastr.error('Error checking warehouse receipts: ' + error);
+          var resp = {};
+              try { resp = JSON.parse(xhr.responseText); } catch (e) {}
+              if (resp && resp.message) {
+                toastr.error(resp.message);
+              } else {
+                toastr.error('Error checking warehouse receipts: ' + error);
+              }
           
           // Try warehouse shipment as fallback
           checkWarehouseShipment(reference_id, originalBtn);
@@ -592,7 +598,13 @@ $(document).ready(function() {
           }
         },
         error: function(xhr, status, error) {
-          toastr.error('Error checking reference ID: ' + error);
+          var resp = {};
+          try { resp = JSON.parse(xhr.responseText); } catch (e) {}
+          if (resp && resp.message) {
+            toastr.error(resp.message);
+          } else {
+            toastr.error('Error checking reference ID: ' + error);
+          }
         },
         complete: function() {
           // Restore button text
