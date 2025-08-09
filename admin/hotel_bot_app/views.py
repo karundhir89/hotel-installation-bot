@@ -1,4 +1,6 @@
 import ast
+from django.utils import timezone
+from datetime import timedelta
 import json
 import random
 import string
@@ -3227,7 +3229,7 @@ def home(request):
         request.session['user_roles'] = user_roles 
 
         return render(
-            request, "home.html", {"name": user.name, "roles": user_roles}
+            request, "home.html", {"user": user, "roles": user_roles}
         )
     except InvitedUser.DoesNotExist:
         # Clear potentially invalid session data if user doesn't exist
@@ -4522,6 +4524,26 @@ def hotel_inventory(request):
     return render(request, "hotel_inventory.html", context)
 
 
+def is_warehouse_receipt_locked(reference_id):
+    """
+    Check if a warehouse receipt is locked (older than 48 hours).
+    Returns True if locked, False if can be edited/deleted.
+    """
+    try:
+        # Get the earliest created_at time for this reference_id
+        earliest_created = HotelWarehouse.objects.filter(
+            reference_id__iexact=reference_id
+        ).order_by('created_at').values_list('created_at', flat=True).first()
+        
+        if earliest_created:
+            # Check if 48 hours have passed since the first receipt was created
+            time_diff = timezone.now() - earliest_created
+            return time_diff >= timedelta(hours=48)
+        
+        return False  # No receipts found, so not locked
+    except Exception:
+        return True  # If there's an error, assume it's locked for safety
+        
 @session_login_required
 def warehouse_receiver(request):
     """
@@ -4571,14 +4593,10 @@ def warehouse_receiver(request):
                 return redirect("warehouse_receiver")
 
             # Enforce 48-hour lock: if any receipt exists for this reference_id and its earliest
-            # creation time is within the last 48 hours, block edits or deletes.
-            existing_items_qs = HotelWarehouse.objects.filter(reference_id__iexact=(original_reference_id or reference_id))
-            if existing_items_qs.exists():
-                earliest_created = existing_items_qs.order_by('created_at').values_list('created_at', flat=True).first()
-                if earliest_created:
-                    if now() - earliest_created >= timedelta(hours=48):
-                        messages.error(request, "Edits are locked for 48 hours after the first receipt is created for this reference ID.")
-                        return redirect("warehouse_receiver")
+            # creation time is older than 48 hours, block edits or deletes.
+            if is_warehouse_receipt_locked(original_reference_id or reference_id):
+                messages.error(request, "Edits are locked for 48 hours after the first receipt is created for this reference ID.")
+                return redirect("warehouse_receiver")
             
             # Check if we're in edit mode
             if is_editing and original_reference_id:
@@ -4658,14 +4676,11 @@ def delete_warehouse_receiver_container(request):
         return JsonResponse({"success": False, "message": "No reference ID provided."})
     try:
         # Enforce 48-hour lock from first receipt creation
-        lock_items = HotelWarehouse.objects.filter(reference_id__iexact=reference_id)
-        if lock_items.exists():
-            earliest_created = lock_items.order_by('created_at').values_list('created_at', flat=True).first()
-            if earliest_created and (now() - earliest_created) >= timedelta(hours=48):
-                return JsonResponse({
-                    "success": False,
-                    "message": "Deletion is locked for 48 hours after initial receipt creation for this reference ID."
-                })
+        if is_warehouse_receipt_locked(reference_id):
+            return JsonResponse({
+                "success": False,
+                "message": "Deletion is locked for 48 hours after initial receipt creation for this reference ID."
+            })
 
         # Get all HotelWarehouse records for this reference_id (case-insensitive)
         warehouse_items = HotelWarehouse.objects.filter(reference_id__iexact=reference_id)
@@ -4712,12 +4727,16 @@ def get_warehouse_receipt_details(request):
         if not items.exists():
             return JsonResponse({'success': False, 'message': 'Receipt not found'})
         
+        # Check if the receipt is locked (older than 48 hours)
+        is_locked = is_warehouse_receipt_locked(reference_id)
+        
         # Format receipt data
         receipt_data = {
             'id': reference_id,
             'reference_id': reference_id,
             'received_date': now().strftime('%Y-%m-%d'),  # Default to current date
-            'received_by': "System"  # Default value
+            'received_by': "System",  # Default value
+            'is_locked': is_locked
         }
         
         # Get the first item to get more details
@@ -5021,13 +5040,17 @@ def get_warehouse_receipts(request):
                 if first_item.checked_by:
                     received_by = first_item.checked_by.name
 
+                # Check if the receipt is locked (older than 48 hours)
+                is_locked = is_warehouse_receipt_locked(ref_id)
+
                 receipts_list.append({
                     'id': ref_id,  # Use reference_id as the ID for the receipt
                     'reference_id': ref_id,
                     'received_date': received_date,
                     'items_count': receipt['items_count'],
                     'total_quantity': receipt['total_quantity'] or 0,
-                    'received_by': received_by
+                    'received_by': received_by,
+                    'is_locked': is_locked
                 })
 
         # Create paginator
@@ -5654,7 +5677,7 @@ def update_inventory_damaged_quantities():
     2. Calculates the total damaged_qty for each client_id
     3. Updates the damaged_quantity in the inventory table for matching client_id
     """
-    from django.db.models import Sum, F
+    from django.db.models import Sum
     from django.db.models.functions import Lower
     from hotel_bot_app.models import Inventory, InventoryReceived
     
