@@ -4576,7 +4576,7 @@ def warehouse_receiver(request):
             if existing_items_qs.exists():
                 earliest_created = existing_items_qs.order_by('created_at').values_list('created_at', flat=True).first()
                 if earliest_created:
-                    if now() - earliest_created < timedelta(hours=48):
+                    if now() - earliest_created >= timedelta(hours=48):
                         messages.error(request, "Edits are locked for 48 hours after the first receipt is created for this reference ID.")
                         return redirect("warehouse_receiver")
             
@@ -4661,7 +4661,7 @@ def delete_warehouse_receiver_container(request):
         lock_items = HotelWarehouse.objects.filter(reference_id__iexact=reference_id)
         if lock_items.exists():
             earliest_created = lock_items.order_by('created_at').values_list('created_at', flat=True).first()
-            if earliest_created and (now() - earliest_created) < timedelta(hours=48):
+            if earliest_created and (now() - earliest_created) >= timedelta(hours=48):
                 return JsonResponse({
                     "success": False,
                     "message": "Deletion is locked for 48 hours after initial receipt creation for this reference ID."
