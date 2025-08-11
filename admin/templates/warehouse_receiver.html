@@ -150,6 +150,51 @@
   .btn:disabled {
     cursor: not-allowed;
   }
+  
+  /* Admin button styles - make them more prominent */
+  .btn.btn-primary {
+    background-color: #007bff !important;
+    border-color: #007bff !important;
+    color: white !important;
+    font-weight: 600;
+    box-shadow: 0 2px 4px rgba(0, 123, 255, 0.3);
+  }
+  
+  .btn.btn-primary:hover {
+    background-color: #0056b3 !important;
+    border-color: #0056b3 !important;
+    box-shadow: 0 4px 8px rgba(0, 123, 255, 0.4);
+  }
+  
+  /* Export button - always bright and prominent */
+  .btn.btn-success.export-receipt {
+    background-color: #28a745 !important;
+    border-color: #28a745 !important;
+    color: white !important;
+    font-weight: 600;
+    box-shadow: 0 2px 4px rgba(40, 167, 69, 0.3);
+  }
+  
+  .btn.btn-success.export-receipt:hover {
+    background-color: #1e7e34 !important;
+    border-color: #1e7e34 !important;
+    box-shadow: 0 4px 8px rgba(40, 167, 69, 0.4);
+  }
+  
+  /* Delete button for admin users */
+  .btn.btn-danger.delete-receipt-btn {
+    background-color: #dc3545 !important;
+    border-color: #dc3545 !important;
+    color: white !important;
+    font-weight: 600;
+    box-shadow: 0 2px 4px rgba(220, 53, 69, 0.3);
+  }
+  
+  .btn.btn-danger.delete-receipt-btn:hover {
+    background-color: #c82333 !important;
+    border-color: #c82333 !important;
+    box-shadow: 0 4px 8px rgba(220, 53, 69, 0.4);
+  }
 </style>
 
 <!-- Ensure Bootstrap JS is loaded -->
@@ -170,11 +215,6 @@
       <h3 class="mb-2 text-center text-secondary py-4">Receiver at Hotel</h3>
       <h4 class="mb-4 text-secondary">Received Shipment</h4>
       
-      <!-- Admin bypass notice -->
-      <div id="admin-bypass-notice" class="alert alert-warning" role="alert" style="display: none;">
-        <i class="material-icons me-2">admin_panel_settings</i>
-        <strong>Administrator Access:</strong> You have administrative privileges and can edit/delete warehouse receipts even after the 48-hour lock period.
-      </div>
       
       <form method="post" action="{% url 'warehouse_receiver' %}" id="warehouse-receiver-form">
         {% csrf_token %}
@@ -877,14 +917,23 @@ $(document).ready(function() {
                   '<td>';
                 
                 if (isLocked && !isCurrentUserAdmin) {
+                  // Regular users see disabled buttons for locked receipts
                   row += '<div class="d-flex flex-row gap-2">' +
                     '<button type="button" class="btn btn-secondary btn-sm w-100" disabled title="Editing is locked after 48 hours">Edit (Locked)</button>' +
                     '<button type="button" class="btn btn-success btn-sm w-100 export-receipt mr-2" data-reference="' + receipt.reference_id + '">Export</button>' +
                     '<button type="button" class="btn btn-secondary btn-sm w-100" disabled title="Deletion is locked after 48 hours">Delete (Locked)</button>' +
                     '</div>';
-                } else {
+                } else if (isLocked && isCurrentUserAdmin) {
+                  // Admin users see bright buttons even for locked receipts
                   row += '<div class="d-flex flex-row gap-2">' +
-                    '<button type="button" class="btn btn-secondary btn-sm w-100 edit-receipt mr-2" data-id="' + receipt.id + '" data-reference="' + receipt.reference_id + '">Edit</button>' +
+                    '<button type="button" class="btn btn-primary btn-sm w-100 edit-receipt mr-2" data-id="' + receipt.id + '" data-reference="' + receipt.reference_id + '" title="Admin: Can edit locked receipt">Edit (Admin)</button>' +
+                    '<button type="button" class="btn btn-success btn-sm w-100 export-receipt mr-2" data-reference="' + receipt.reference_id + '">Export</button>' +
+                    '<button type="button" class="btn btn-danger btn-sm w-100 delete-receipt-btn" data-reference="' + receipt.reference_id + '" title="Admin: Can delete locked receipt">Delete (Admin)</button>' +
+                    '</div>';
+                } else {
+                  // Unlocked receipts - bright buttons for all users
+                  row += '<div class="d-flex flex-row gap-2">' +
+                    '<button type="button" class="btn btn-primary btn-sm w-100 edit-receipt mr-2" data-id="' + receipt.id + '" data-reference="' + receipt.reference_id + '">Edit</button>' +
                     '<button type="button" class="btn btn-success btn-sm w-100 export-receipt mr-2" data-reference="' + receipt.reference_id + '">Export</button>' +
                     '<button type="button" class="btn btn-danger btn-sm w-100 delete-receipt-btn" data-reference="' + receipt.reference_id + '">Delete</button>' +
                     '</div>';
