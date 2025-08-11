@@ -479,8 +479,8 @@ $(document).ready(function() {
           $('#load-items-btn').prop('disabled', false);
           
           if (data.success && data.items && data.items.length > 0) {
-            // Check if the receipt is locked before allowing edit
-            if (data.receipt && data.receipt.is_locked) {
+            // Check if the receipt is locked before allowing edit (admin users can bypass)
+            if (data.receipt && data.receipt.is_locked && !isCurrentUserAdmin) {
               toastr.error('This receipt is locked and cannot be edited. Receipts are locked after 48 hours.');
               
               // Remove any border styling and reset form
@@ -710,10 +710,14 @@ $(document).ready(function() {
         data: { reference_id: reference_id },
         success: function(data) {
           if (data.success && data.items && data.items.length > 0) {
-            // Check if the receipt is locked
-            if (data.receipt && data.receipt.is_locked) {
+            // Check if the receipt is locked (admin users can bypass)
+            if (data.receipt && data.receipt.is_locked && !isCurrentUserAdmin) {
               toastr.warning('This reference ID exists but is locked for editing (older than 48 hours).');
               $('#reference_id').addClass('border-warning');
+            } else if (data.receipt && data.receipt.is_locked && isCurrentUserAdmin) {
+              // Admin users see a different message for locked receipts
+              toastr.info('This reference ID exists and is locked, but you have admin privileges to edit it. Click "Load Items" to proceed.');
+              $('#reference_id').addClass('border-info');
             } else {
               // Show notification that this is an existing reference ID
               toastr.info('This reference ID exists. Click "Load Items" to edit it.');
@@ -1090,8 +1094,8 @@ $(document).ready(function() {
         success: function(data) {
           // Check if we have valid data
           if (data.success) {
-            // Check if the receipt is locked on the server side
-            if (data.receipt && data.receipt.is_locked) {
+            // Check if the receipt is locked on the server side (admin users can bypass)
+            if (data.receipt && data.receipt.is_locked && !isCurrentUserAdmin) {
               toastr.error('This receipt is locked and cannot be edited. Receipts are locked after 48 hours.');
               $('#load-items-btn').html('Load Items');
               $('#load-items-btn').prop('disabled', false);
