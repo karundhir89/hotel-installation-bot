@@ -51,6 +51,7 @@ from .forms import IssueForm, CommentForm, IssueUpdateForm # Import the forms
 import logging
 from django.contrib.contenttypes.models import ContentType # Added for GFK
 from django.utils.timezone import make_aware
+from datetime import timedelta
 from django.http import HttpResponseForbidden
 
 logger = logging.getLogger(__name__)
@@ -4570,6 +4571,16 @@ def warehouse_receiver(request):
                 messages.error(request, "No items added to receipt")
                 return redirect("warehouse_receiver")
             
+            # Enforce 48-hour lock: if any receipt exists for this reference_id and its earliest
+            # creation time is within the last 48 hours, block edits or deletes.
+            existing_items_qs = HotelWarehouse.objects.filter(reference_id__iexact=(original_reference_id or reference_id))
+            if existing_items_qs.exists():
+                earliest_created = existing_items_qs.order_by('created_at').values_list('created_at', flat=True).first()
+                if earliest_created:
+                    if now() - earliest_created < timedelta(hours=48):
+                        messages.error(request, "Edits are locked for 48 hours after the first receipt is created for this reference ID.")
+                        return redirect("warehouse_receiver")
+
             # Check if we're in edit mode
             if is_editing and original_reference_id:
                 # If editing and the reference ID has changed, make sure the new one doesn't exist
@@ -4647,6 +4658,16 @@ def delete_warehouse_receiver_container(request):
     if not reference_id:
         return JsonResponse({"success": False, "message": "No reference ID provided."})
     try:
+        # Enforce 48-hour lock from first receipt creation
+        lock_items = HotelWarehouse.objects.filter(reference_id__iexact=reference_id)
+        if lock_items.exists():
+            earliest_created = lock_items.order_by('created_at').values_list('created_at', flat=True).first()
+            if earliest_created and (now() - earliest_created) < timedelta(hours=48):
+                return JsonResponse({
+                    "success": False,
+                    "message": "Deletion is locked for 48 hours after initial receipt creation for this reference ID."
+                })
+
         # Get all HotelWarehouse records for this reference_id (case-insensitive)
         warehouse_items = HotelWarehouse.objects.filter(reference_id__iexact=reference_id)
         if not warehouse_items.exists():
