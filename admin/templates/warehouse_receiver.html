@@ -170,11 +170,7 @@
       <h3 class="mb-2 text-center text-secondary py-4">Receiver at Hotel</h3>
       <h4 class="mb-4 text-secondary">Received Shipment</h4>
       
-      <!-- Admin bypass notice -->
-      <div id="admin-bypass-notice" class="alert alert-warning" role="alert" style="display: none;">
-        <i class="material-icons me-2">admin_panel_settings</i>
-        <strong>Administrator Access:</strong> You have administrative privileges and can edit/delete warehouse receipts even after the 48-hour lock period.
-      </div>
+
       
       <form method="post" action="{% url 'warehouse_receiver' %}" id="warehouse-receiver-form">
         {% csrf_token %}
@@ -363,14 +359,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.3/jszip.min.js"></script>
 <script>
 $(document).ready(function() {
-    // Check if current user is admin (bypass 48-hour lock)
-    var isCurrentUserAdmin = {% if is_admin %}true{% else %}false{% endif %};
-    
-    // Show admin bypass notice if user is admin
-    if (isCurrentUserAdmin) {
-        $('#admin-bypass-notice').show();
-    }
-    
     // DataTables for Hotel Warehouse table
     $('#hotel-warehouse-table').DataTable({
         paging: true,
@@ -474,8 +462,8 @@ $(document).ready(function() {
           $('#load-items-btn').prop('disabled', false);
           
           if (data.success && data.items && data.items.length > 0) {
-            // Check if the receipt is locked before allowing edit (admin users can bypass)
-            if (data.receipt && data.receipt.is_locked && !isCurrentUserAdmin) {
+            // Check if the receipt is locked before allowing edit
+            if (data.receipt && data.receipt.is_locked) {
               toastr.error('This receipt is locked and cannot be edited. Receipts are locked after 48 hours.');
               
               // Remove any border styling and reset form
@@ -705,14 +693,10 @@ $(document).ready(function() {
         data: { reference_id: reference_id },
         success: function(data) {
           if (data.success && data.items && data.items.length > 0) {
-            // Check if the receipt is locked (admin users can bypass)
-            if (data.receipt && data.receipt.is_locked && !isCurrentUserAdmin) {
+            // Check if the receipt is locked
+            if (data.receipt && data.receipt.is_locked) {
               toastr.warning('This reference ID exists but is locked for editing (older than 48 hours).');
               $('#reference_id').addClass('border-warning');
-            } else if (data.receipt && data.receipt.is_locked && isCurrentUserAdmin) {
-              // Admin users see a different message for locked receipts
-              toastr.info('This reference ID exists and is locked, but you have admin privileges to edit it. Click "Load Items" to proceed.');
-              $('#reference_id').addClass('border-info');
             } else {
               // Show notification that this is an existing reference ID
               toastr.info('This reference ID exists. Click "Load Items" to edit it.');
@@ -871,11 +855,11 @@ $(document).ready(function() {
                   '<td>' + receipt.received_by + '</td>' +
                   '<td>';
                 
-                if (isLocked && !isCurrentUserAdmin) {
+                if (isLocked) {
                   row += '<div class="d-flex flex-row gap-2">' +
-                    '<button type="button" class="btn btn-secondary btn-sm w-100" disabled title="Editing is locked after 48 hours">Edit (Locked)</button>' +
+                    '<button type="button" class="btn btn-secondary btn-sm w-100" disabled title="Editing is locked after 48 hours">Edit</button>' +
                     '<button type="button" class="btn btn-success btn-sm w-100 export-receipt mr-2" data-reference="' + receipt.reference_id + '">Export</button>' +
-                    '<button type="button" class="btn btn-secondary btn-sm w-100" disabled title="Deletion is locked after 48 hours">Delete (Locked)</button>' +
+                    '<button type="button" class="btn btn-danger btn-sm w-100" disabled title="Deletion is locked after 48 hours">Delete</button>' +
                     '</div>';
                 } else {
                   row += '<div class="d-flex flex-row gap-2">' +
@@ -1045,11 +1029,6 @@ $(document).ready(function() {
     
     // Function to check if a receipt is locked (older than 48 hours)
     function isReceiptLocked(receipt_id, reference_id) {
-      // Admin users can always edit/delete (bypass 48-hour lock)
-      if (typeof isCurrentUserAdmin !== 'undefined' && isCurrentUserAdmin) {
-        return false;
-      }
-      
       // Check if the receipt exists in the current table and get its lock status
       var row = $('tr').filter(function() {
         return $(this).find('td:first').text() === reference_id;
@@ -1089,8 +1068,8 @@ $(document).ready(function() {
         success: function(data) {
           // Check if we have valid data
           if (data.success) {
-            // Check if the receipt is locked on the server side (admin users can bypass)
-            if (data.receipt && data.receipt.is_locked && !isCurrentUserAdmin) {
+            // Check if the receipt is locked on the server side
+            if (data.receipt && data.receipt.is_locked) {
               toastr.error('This receipt is locked and cannot be edited. Receipts are locked after 48 hours.');
               $('#load-items-btn').html('Load Items');
               $('#load-items-btn').prop('disabled', false);
