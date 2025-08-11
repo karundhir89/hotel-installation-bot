@@ -4540,6 +4540,7 @@ def is_warehouse_receipt_locked(reference_id, user=None):
             if hasattr(user, 'is_superuser') and user.is_superuser:
                 return False
             
+            
             # Check if user has administrator profile
             if hasattr(user, 'profile') and hasattr(user.profile, 'is_administrator') and user.profile.is_administrator:
                 return False
