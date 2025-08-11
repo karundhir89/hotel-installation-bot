@@ -170,6 +170,12 @@
       <h3 class="mb-2 text-center text-secondary py-4">Receiver at Hotel</h3>
       <h4 class="mb-4 text-secondary">Received Shipment</h4>
       
+      <!-- Admin bypass notice -->
+      <div id="admin-bypass-notice" class="alert alert-warning" role="alert" style="display: none;">
+        <i class="material-icons me-2">admin_panel_settings</i>
+        <strong>Administrator Access:</strong> You have administrative privileges and can edit/delete warehouse receipts even after the 48-hour lock period.
+      </div>
+      
       <form method="post" action="{% url 'warehouse_receiver' %}" id="warehouse-receiver-form">
         {% csrf_token %}
         
