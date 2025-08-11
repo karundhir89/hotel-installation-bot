@@ -4524,30 +4524,12 @@ def hotel_inventory(request):
     return render(request, "hotel_inventory.html", context)
 
 
-def is_warehouse_receipt_locked(reference_id, user=None):
+def is_warehouse_receipt_locked(reference_id):
     """
     Check if a warehouse receipt is locked (older than 48 hours).
     Returns True if locked, False if can be edited/deleted.
-    
-    Args:
-        reference_id: The reference ID to check
-        user: The user object to check permissions (optional)
     """
     try:
-        # Admin users can always edit/delete (bypass 48-hour lock)
-        if user:
-            # Check if user is superuser
-            if hasattr(user, 'is_superuser') and user.is_superuser:
-                return False
-            
-            # Check if user has administrator role in InvitedUser
-            if hasattr(user, 'is_administrator') and user.is_administrator:
-                return False
-            
-            # Check if user has administrator role in UserProfile
-            if hasattr(user, 'profile') and hasattr(user.profile, 'is_administrator') and user.profile.is_administrator:
-                return False
-        
         # Get the earliest created_at time for this reference_id
         earliest_created = HotelWarehouse.objects.filter(
             reference_id__iexact=reference_id
@@ -4612,7 +4594,7 @@ def warehouse_receiver(request):
 
             # Enforce 48-hour lock: if any receipt exists for this reference_id and its earliest
             # creation time is older than 48 hours, block edits or deletes.
-            if is_warehouse_receipt_locked(original_reference_id or reference_id, user):
+            if is_warehouse_receipt_locked(original_reference_id or reference_id):
                 messages.error(request, "Edits are locked for 48 hours after the first receipt is created for this reference ID.")
                 return redirect("warehouse_receiver")
             
@@ -4694,7 +4676,7 @@ def delete_warehouse_receiver_container(request):
         return JsonResponse({"success": False, "message": "No reference ID provided."})
     try:
         # Enforce 48-hour lock from first receipt creation
-        if is_warehouse_receipt_locked(reference_id, request.user):
+        if is_warehouse_receipt_locked(reference_id):
             return JsonResponse({
                 "success": False,
                 "message": "Deletion is locked for 48 hours after initial receipt creation for this reference ID."
@@ -4746,7 +4728,7 @@ def get_warehouse_receipt_details(request):
             return JsonResponse({'success': False, 'message': 'Receipt not found'})
         
         # Check if the receipt is locked (older than 48 hours)
-        is_locked = is_warehouse_receipt_locked(reference_id, request.user)
+        is_locked = is_warehouse_receipt_locked(reference_id)
         
         # Format receipt data
         receipt_data = {
@@ -5059,7 +5041,7 @@ def get_warehouse_receipts(request):
                     received_by = first_item.checked_by.name
 
                 # Check if the receipt is locked (older than 48 hours)
-                is_locked = is_warehouse_receipt_locked(ref_id, request.user)
+                is_locked = is_warehouse_receipt_locked(ref_id)
 
                 receipts_list.append({
                     'id': ref_id,  # Use reference_id as the ID for the receipt
@@ -5897,12 +5879,12 @@ def update_inventory_when_receiving(client_id, received_qty, damaged_qty, is_new
             return True
         else:
             print(f"Warning: No inventory record found for client ID {client_id}")
-                return False
-            
+            return False
+    
     except Exception as e:
         print(f"Error updating inventory quantity_available for {client_id}: {str(e)}")
-                return False
-            
+        return False
+
 @session_login_required
 def restore_warehouse_inventory(request):
     """
