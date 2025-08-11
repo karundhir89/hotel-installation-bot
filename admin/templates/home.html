@@ -2,9 +2,27 @@
 
 {% block title %}Home{% endblock %}
 
+
 {% block content %}
+
+    <script src="https://cdn.lgrckt-in.com/LogRocket.min.js" crossorigin="anonymous"></script>
+    <script>
+        console.log(
+        "LogRocket is enabled for this environment.",
+        {{ user.id|default:'null' }},
+        "{{ user.get_full_name|escapejs }}",
+        "{{ user.email|escapejs }}"
+    );
+      window.LogRocket && window.LogRocket.init('k5xvmo/hotel-installation-bot');
+      LogRocket.identify('{{ user.id }}', {
+        name: '{{ user.name }}',
+        email: '{{ user.email }}',
+    });
+
+    </script>
+    
 <!-- Welcome -->
-<h2 class="text-center text-secondary mb-4 mt-4">Welcome, {{ name }}</h2>
+<h2 class="text-center text-secondary mb-4 mt-4">Welcome, {{ user.email }}</h2>
 
 <div class="row justify-content-center">
 
@@ -130,3 +148,7 @@
 
 </div>
 {% endblock %}
+
+
+
+

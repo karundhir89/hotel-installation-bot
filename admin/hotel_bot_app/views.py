@@ -3228,7 +3228,7 @@ def home(request):
         request.session['user_roles'] = user_roles 
 
         return render(
-            request, "home.html", {"name": user.name, "roles": user_roles}
+            request, "home.html", {"user": user, "roles": user_roles}
         )
     except InvitedUser.DoesNotExist:
         # Clear potentially invalid session data if user doesn't exist
