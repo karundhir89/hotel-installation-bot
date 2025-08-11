@@ -4568,10 +4568,13 @@ def warehouse_receiver(request):
     
     user_id = request.session.get("user_id")
     user = None
+    is_admin = False
     
     if user_id:
         try:
             user = InvitedUser.objects.get(id=user_id)
+            # Check if this user is an admin
+            is_admin = user.is_superuser if hasattr(user, 'is_superuser') else False
         except InvitedUser.DoesNotExist:
             pass
     
@@ -4678,6 +4681,7 @@ def warehouse_receiver(request):
         "user_name": user.name if user else "",
         "hotel_warehouse_inventory": hotel_warehouse_inventory,
         "request": request,  # For other template needs
+        "is_admin": is_admin,  # Pass admin status to template
     }
     return render(request, "warehouse_receiver.html", context)
 
@@ -4689,6 +4693,16 @@ def delete_warehouse_receiver_container(request):
     reference_id = request.POST.get("reference_id")
     if not reference_id:
         return JsonResponse({"success": False, "message": "No reference ID provided."})
+    
+    # Get user from session for permission check
+    user = None
+    user_id = request.session.get("user_id")
+    if user_id:
+        try:
+            user = InvitedUser.objects.get(id=user_id)
+        except InvitedUser.DoesNotExist:
+            pass
+    
     try:
         # Enforce 48-hour lock from first receipt creation
         if is_warehouse_receipt_locked(reference_id, user):

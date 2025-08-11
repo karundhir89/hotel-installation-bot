@@ -364,12 +364,7 @@
 <script>
 $(document).ready(function() {
     // Check if current user is admin (bypass 48-hour lock)
-    var isCurrentUserAdmin = false;
-    {% if user.is_superuser %}
-        isCurrentUserAdmin = true;
-    {% elif user.profile.is_administrator %}
-        isCurrentUserAdmin = true;
-    {% endif %}
+    var isCurrentUserAdmin = {% if is_admin %}true{% else %}false{% endif %};
     
     // Show admin bypass notice if user is admin
     if (isCurrentUserAdmin) {
