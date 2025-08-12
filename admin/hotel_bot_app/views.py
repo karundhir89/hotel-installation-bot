@@ -785,8 +785,6 @@ def delete_room(request):
 def room_model_list(request):
     room_models = RoomModel.objects.all()
     return render(request, "room_model_list.html", {"room_models": room_models})
-
-
 @login_required
 def install_list(request):
     # Get all installation records, including related user data
@@ -1370,8 +1368,6 @@ def get_room_type(request):
     # the helper will do get_or_create for the Installation object.
     data = _get_installation_checklist_data(room_number=room_number)
     return JsonResponse(data)
-
-
 def _save_installation_data(request_post_data, user_instance, room_number_str, installation_id_str=None):
     """
     Helper function to save installation data.
@@ -2141,8 +2137,6 @@ def available_container_ids(request):
         qs = qs.filter(bol__icontains=term)
     suggestions = list(qs.values_list('bol', flat=True).distinct()[:10])
     return JsonResponse({'results': suggestions})
-    
-
 @session_login_required
 def get_product_item_num(request):
     clientId = request.GET.get("room_number")
@@ -2775,7 +2769,6 @@ def inventory_pull(request):
         "user_name": user_name,
         "previous_submissions": previous_submissions,
     })
-
 @session_login_required
 def hotel_warehouse(request):
     # Get all previous warehouse submissions
@@ -3572,7 +3565,6 @@ def _generate_xls_response(data, filename, sheet_name="Sheet1"):
 
     wb.save(response)
     return response
-
 # Helper function to get floor products data (extracted SQL)
 def _get_floor_products_data(floor_number):
     try:
@@ -4371,7 +4363,6 @@ def check_container_exists(request):
         'exists': count > 0,
         'count': count
     })
-
 @session_login_required
 def get_container_data(request):
     """
@@ -4631,6 +4622,16 @@ def warehouse_receiver(request):
                 return redirect("warehouse_receiver")
             
             # Check if we're in edit mode
+            # Preserve the earliest created_at so that the 48-hour lock window cannot be reset by edits
+            earliest_created_to_preserve = None
+            if is_editing and original_reference_id:
+                earliest_created_to_preserve = (
+                    HotelWarehouse.objects
+                    .filter(reference_id__iexact=original_reference_id)
+                    .order_by('created_at')
+                    .values_list('created_at', flat=True)
+                    .first()
+                )
             if is_editing and original_reference_id:
                 # If editing and the reference ID has changed, make sure the new one doesn't exist
                 if reference_id != original_reference_id and HotelWarehouse.objects.filter(reference_id__iexact=reference_id).exists():
@@ -4643,6 +4644,7 @@ def warehouse_receiver(request):
                     print(f"Deleted {deleted_count} previous items for reference ID '{original_reference_id}'")
             
             # Create new warehouse receipt entries
+
             for i, client_item in enumerate(client_items):
                 received_qty = int(quantities[i]) if i < len(quantities) and quantities[i] else 0
                 damaged_qty = int(damaged_quantities[i]) if i < len(damaged_quantities) and damaged_quantities[i] else 0
@@ -4667,6 +4669,14 @@ def warehouse_receiver(request):
                 except Exception as item_error:
                     print(f"Error creating warehouse receipt for {client_item}: {str(item_error)}")
                     # Don't raise the exception as we want to continue with other items
+
+            # After recreating items, re-apply the original earliest created_at (if any) to prevent lock reset
+            try:
+                if earliest_created_to_preserve:
+                    HotelWarehouse.objects.filter(reference_id__iexact=reference_id).update(created_at=earliest_created_to_preserve)
+            except Exception as _e:
+                # Non-fatal: if updating timestamps fails, continue without blocking the flow
+                pass
             
             try:
                 # Call functions to update inventory quantities
@@ -5160,7 +5170,6 @@ def get_warehouse_receipts(request):
             'success': False,
             'message': str(e)
         })
-
 @session_login_required
 def warehouse_shipment(request):
     user_id = request.session.get("user_id")
@@ -5917,9 +5926,6 @@ def update_inventory_when_shipping(client_id, ship_qty, is_new=True, old_qty=0):
             inventory_item.quantity_available = max(0, (inventory_item.quantity_available or 0) + old_qty - ship_qty)
             inventory_item.shipped_to_hotel_quantity = max(0, (inventory_item.shipped_to_hotel_quantity or 0) - old_qty + ship_qty)
         inventory_item.save()
-
-
-
 def update_inventory_when_receiving(client_id, received_qty, damaged_qty, is_new=True, old_received=0, old_damaged=0):
     """
     Update the quantity_available in the inventory table when items are received.

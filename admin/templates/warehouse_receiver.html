@@ -139,7 +139,6 @@
   
   /* Locked receipt styles */
   .receipt-locked {
-    opacity: 0.6;
     background-color: #f8f9fa;
   }
   
@@ -861,7 +860,7 @@ $(document).ready(function() {
                 if (isLocked && !isUserAdmin()) {
                   // Regular users see locked buttons for old receipts
                   row += '<div class="d-flex flex-row gap-2">' +
-                    '<button type="button" class="btn btn-secondary btn-sm w-100" disabled title="Editing is locked after 48 hours">Edit</button>' +
+                    '<button type="button" class="btn btn-secondary btn-sm w-100 mr-2" disabled title="Editing is locked after 48 hours">Edit</button>' +
                     '<button type="button" class="btn btn-success btn-sm w-100 export-receipt mr-2" data-reference="' + receipt.reference_id + '">Export</button>' +
                     '<button type="button" class="btn btn-danger btn-sm w-100" disabled title="Deletion is locked after 48 hours">Delete</button>' +
                     '</div>';
