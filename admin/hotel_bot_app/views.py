@@ -4751,10 +4751,11 @@ def delete_warehouse_receiver_container(request):
                 "success": False,
                 "message": "Deletion is locked for 48 hours after initial receipt creation for this reference ID."
             })
+        # Secondary safety check aligned with the same policy: lock after 48 hours, not before
         lock_items = HotelWarehouse.objects.filter(reference_id__iexact=reference_id)
         if lock_items.exists():
             earliest_created = lock_items.order_by('created_at').values_list('created_at', flat=True).first()
-            if earliest_created and (now() - earliest_created) < timedelta(hours=48):
+            if earliest_created and (now() - earliest_created) >= timedelta(hours=48):
                 return JsonResponse({
                     "success": False,
                     "message": "Deletion is locked for 48 hours after initial receipt creation for this reference ID."
