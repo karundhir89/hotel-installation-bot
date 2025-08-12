@@ -664,7 +664,7 @@ $(document).ready(function() {
     $('#warehouse-receiver-form').on('submit', function(e) {
       var receiptId = $('#receipt_id').val();
       var originalReferenceId = $('#original_reference_id').val();
-      var isEditMode = $('#is_edit_mode').val();
+      var isEditMode = ($('#is_edit_mode').val() === '1');
       
       if (isEditMode && !receiptId) {
         e.preventDefault();
@@ -1111,7 +1111,8 @@ $(document).ready(function() {
             if (data.receipt) {
               $('#reference_id').val(data.receipt.reference_id || reference_id);
               $('#original_reference_id').val(data.receipt.reference_id || reference_id);
-              $('#receipt_id').val(data.receipt.id || receipt_id);
+              // Use a stable identifier for edit mode; use reference_id as the receipt identifier
+              $('#receipt_id').val(data.receipt.reference_id || receipt_id || reference_id);
               
               // Set received date if available
               if (data.receipt.received_date) {
