@@ -1,7 +1,7 @@
 {% extends "frontend_base.html" %}
 {% load static %}
 
-{% block title %}Shipment Form{% endblock %}
+{% block title %}Warehouse Shipment Form{% endblock %}
 
 {% block content %}
 
@@ -92,17 +92,17 @@
 <div class="container-lg my-5">
   <div class="card shadow-sm rounded-4">
     <div class="card-body p-4">
-      <h3 class="mb-4 text-center text-secondary py-4">Shipment Form</h3>
+      <h3 class="mb-4 text-center text-secondary py-4">Warehouse Shipment Form</h3>
       
       <h4 class="form-title mb-4">Create New Container</h4>
 
-      <form method="post" action="{% url 'inventory_shipment' %}" id="shipment-form">
+      <form method="post" action="{% url 'warehouse_shipment' %}" id="shipment-form">
         {% csrf_token %}
 
         <!-- Client & Product Info -->
          <div class="row mb-4">
           <div class="col-md-6">
-            <label class="form-label">Container ID </label>
+            <label class="form-label">Reference ID </label>
             <input type="text" class="form-control" name="tracking_info" placeholder="Tracking number or BOL" required>
           </div>
           <div class="col-md-6">
@@ -158,7 +158,6 @@
                 <tr>
                   <th>Client Item #</th>
                   <th>Product Name</th>
-                  <th>Supplier</th>
                   <th>QTY Shipped</th>
                   <th>Actions</th>
                 </tr>
@@ -170,11 +169,9 @@
           </div>
         </div>
 
-
-
         <!-- Hidden field to track edit mode -->
         <input type="hidden" name="is_editing" id="is_editing" value="0">
-        <input type="hidden" name="editing_container_id" id="editing_container_id" value="">
+        <input type="hidden" name="editing_reference_id" id="editing_reference_id" value="">
         
         <!-- Hidden container for form data -->
         <div id="form-data-container">
@@ -194,66 +191,54 @@
   <!-- Second Card: Previous Shipments -->
   <div class="card shadow-sm rounded-4 mt-4">
     <div class="card-body p-4">
-      <h4 class="mb-3">Previous Shipments</h4>
+      <h4 class="mb-3">Previous Warehouse Shipments</h4>
       <div class="row">
         <div class="col-12">
           <div class="table-responsive">
             <table class="table table-bordered table-striped">
               <thead>
                 <tr>
-                  <th>Container ID</th>
+                  <th>Reference ID</th>
                   <th>Ship Date</th>
                   <th>Expected Arrival</th>
                   <th>Product Count</th>
                   <th>Total Quantity</th>
                   <th>Checked By</th>
-                  <th>Status</th>
                   <th>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {% for submission in previous_submissions %}
                 <tr>
-                  <td>{{ submission.container_id }}</td>
+                  <td>{{ submission.reference_id }}</td>
                   <td>{{ submission.ship_date }}</td>
                   <td>{{ submission.expected_arrival }}</td>
                   <td>{{ submission.product_count }}</td>
                   <td>{{ submission.total_quantity }}</td>
                   <td>{{ submission.checked_by }}</td>
                   <td>
-                    {% with cid=submission.container_id|lower %}
-                      {% if cid in received_container_ids %}
-                        <span class="badge bg-success">Received</span>
-                      {% else %}
-                        <span class="badge bg-warning">Shipped</span>
-                      {% endif %}
-                    {% endwith %}
-                  </td>
-                  <td>
-                    <div class="d-flex flex-row gap-2">
-                      {% with cid=submission.container_id|lower %}
-                        <button type="button" class="btn btn-secondary btn-sm edit-submission mr-2"
+                     <div class="d-flex flex-row gap-2">
+                      {% with ref_id=submission.reference_id|lower %}
+                        <button type="button" class="btn btn-secondary btn-sm w-100 edit-submission mr-2"
                                 data-id="{{ submission.id }}"
-                                {% if cid in received_container_ids %}title="Edit received container (quantity increases only)"{% else %}title="Edit container"{% endif %}>
+                                {% if ref_id in received_reference_ids %}disabled title="Cannot edit: already received"{% endif %}>
                             Edit
                         </button>
-                        <button type="button" class="btn btn-danger btn-sm delete-submission mr-2"
+                        <button type="button" class="btn btn-danger btn-sm w-100 delete-submission mr-2"
                                 data-id="{{ submission.id }}"
-                                data-container="{{ submission.container_id }}"
-                                {% if cid in received_container_ids %}disabled title="Cannot delete: already received"{% endif %}>
+                                data-reference="{{ submission.reference_id }}"
+                                {% if ref_id in received_reference_ids %}disabled title="Cannot delete: already received"{% endif %}>
                             Delete
                         </button>
-                        <button type="button" class="btn btn-info btn-sm view-submission"
-                                data-container="{{ submission.container_id }}">
-                            View
-                        </button>
                       {% endwith %}
-                    </div>
+                      <button type="button" class="btn btn-info btn-sm w-100 view-warehouse-submission mr-2" data-reference="{{ submission.reference_id }}">View</button>
+                      <button type="button" class="btn btn-success btn-sm w-100 export-submission" data-reference="{{ submission.reference_id }}">Export</button>
+                     </div>
                   </td>
                 </tr>
                 {% empty %}
                 <tr>
-                  <td colspan="8" class="text-center">No previous submissions found.</td>
+                  <td colspan="6" class="text-center">No previous submissions found.</td>
                 </tr>
                 {% endfor %}
               </tbody>
@@ -319,26 +304,27 @@
     </div>
   </div>
 </div>
-<!-- View Container Modal -->
-<div class="modal fade" id="viewContainerModal" tabindex="-1" aria-labelledby="viewContainerModalLabel" aria-hidden="true">
+
+<!-- View Warehouse Container Modal -->
+<div class="modal fade" id="viewWarehouseContainerModal" tabindex="-1" aria-labelledby="viewWarehouseContainerModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="viewContainerModalLabel">Container Details</h5>
+        <h5 class="modal-title" id="viewWarehouseContainerModalLabel">Warehouse Container Details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
-        <h6>Container ID: <span id="view-container-id"></span></h6>
+        <h6>Reference ID: <span id="view-warehouse-reference-id"></span></h6>
         <div class="table-responsive">
           <table class="table table-bordered">
             <thead>
               <tr>
                 <th>Client Item #</th>
                 <th>Product Name</th>
-                <th>Supplier</th>
                 <th>Quantity Shipped</th>
               </tr>
             </thead>
-            <tbody id="view-container-items">
+            <tbody id="view-warehouse-container-items">
               <!-- Populated by JS -->
             </tbody>
           </table>
@@ -350,6 +336,38 @@
     </div>
   </div>
 </div>
+
+<!-- View Warehouse Container Modal -->
+<div class="modal fade" id="viewWarehouseContainerModal" tabindex="-1" aria-labelledby="viewWarehouseContainerModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="viewWarehouseContainerModalLabel">Warehouse Container Details</h5>
+      </div>
+      <div class="modal-body">
+        <h6>Reference ID: <span id="view-warehouse-reference-id"></span></h6>
+        <div class="table-responsive">
+          <table class="table table-bordered">
+            <thead>
+              <tr>
+                <th>Client Item #</th>
+                <th>Product Name</th>
+                <th>Quantity Shipped</th>
+              </tr>
+            </thead>
+            <tbody id="view-warehouse-container-items">
+              <!-- Populated by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
@@ -358,12 +376,30 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" />
 
-
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
   $(document).ready(function () {
     const userName = "{{ user_name }}";
+    
+    // Track if we're in edit mode for page unload handling
+    let currentlyEditing = false;
+    let currentEditingRefId = '';
+    
+    // Handle page unload/reload when in edit mode
+    $(window).on('beforeunload', function() {
+      // If in edit mode, revert inventory
+      if (currentlyEditing && currentEditingRefId) {
+        // We need to use synchronous AJAX to ensure this happens before page unload
+        $.ajax({
+          url: "{% url 'revert_warehouse_inventory' %}",
+          type: "GET",
+          data: { reference_id: currentEditingRefId },
+          async: false  // This is important to ensure it completes before unload
+        });
+        console.log("Page unloaded while editing. Inventory reverted for " + currentEditingRefId);
+      }
+    });
 
     // Prevent form submission on Enter key
     $(document).on('keypress', 'form input', function(e) {
@@ -429,12 +465,31 @@
         success: function(data) {
           if (data.success) {
             $('#product_name_preview').val(data.product_name);
+            
+            // Store the correct case client_id if it's returned
+            const actualClientId = data.client_id || clientItem;
+            
+            // Get available quantity for this client item, using the actual client_id with correct case
+            $.ajax({
+              url: "{% url 'get_available_quantity' %}",
+              type: "GET",
+              data: { client_item: actualClientId },
+              success: function(quantityData) {
+                if (quantityData.success) {
+                  // Store the available quantity as a data attribute on the input field
+                  $('#room_number').attr('data-available-quantity', quantityData.quantity_available);
+                  // Store the correct case client_id
+                  $('#room_number').attr('data-client-id', quantityData.client_id || actualClientId);
+                  console.log(`Available quantity for ${actualClientId}: ${quantityData.quantity_available}`);
+                }
+              }
+            });
           } else {
             $('#product_name_preview').val('Not found');
           }
         },
         error: function() {
-          $('#product_name_preview').val('Not Product found');
+          $('#product_name_preview').val('No Product found');
         }
       });
     }, 500)); 
@@ -447,112 +502,91 @@
 
     // Auto-fill product item number
     $('#add_item_btn').on('click', function () {
-      const clientItem = $('#room_number').val();
+      const clientItem = $('#room_number').val().trim();
       if (!clientItem) {
         toastr.error("Please enter a Valid Client Item");
         return;
       }
 
       $('#add_item_btn').prop('disabled', true);
-
       setLoading('search_client', true);
 
+      // Fetch product info and available quantity in sequence
       $.ajax({
         url: "{% url 'get_product_item_num' %}",
         type: "GET",
         data: { room_number: clientItem },
         success: function (data) {
           if (data.success) {
-            let exists = false;
-            $('#item_list tr').each(function () {
-              if ($(this).find('td').eq(0).text().trim() === clientItem) {
-                exists = true;
+            const productName = data.product_name || "Unknown Product";
+            const actualClientId = data.client_id || clientItem;
+
+            // Now fetch available quantity for this client item
+            $.ajax({
+              url: "{% url 'get_available_quantity' %}",
+              type: "GET",
+              data: { client_item: actualClientId },
+              success: function(quantityData) {
+                if (quantityData.success) {
+                  let exists = false;
+                  $('#item_list tr').each(function () {
+                    if ($(this).find('td').eq(0).text().trim() === actualClientId) {
+                      exists = true;
+                    }
+                  });
+                  if (exists) {
+                    toastr.error("Client Item already exists in the list");
+                    $('#add_item_btn').prop('disabled', false);
+                    setLoading('search_client', false);
+                    return;
+                  }
+
+                  const availableQty = parseInt(quantityData.quantity_available) || 0;
+
+                  $('#item_list').append(`
+                    <tr data-item-id="">
+                      <td class="client-item">${actualClientId}</td>
+                      <td class="product-name">${productName}</td>
+                      <td>
+                        <input type="number" class="form-control qty-input" min="1" max="${availableQty}" value="1" required/>
+                        <input type="hidden" class="available-qty" value="${availableQty}">
+                        <small class="text-muted">Available: ${availableQty}</small>
+                      </td>
+                      <td>
+                        <button type="button" class="btn btn-danger btn-sm delete-row">Delete</button>
+                      </td>
+                    </tr>
+                  `);
+
+                  $('#item_table_section').show();
+                  updateTotalQuantity();
+                  $('#room_number').val('');
+                  $('#product_name_preview').val('');
+                } else {
+                  toastr.error("Could not fetch available quantity.");
+                }
+                $('#add_item_btn').prop('disabled', false);
+                setLoading('search_client', false);
+              },
+              error: function() {
+                toastr.error("Error fetching available quantity.");
+                $('#add_item_btn').prop('disabled', false);
+                setLoading('search_client', false);
               }
             });
-            if (exists) {
-              toastr.error("Client Item already exists in the list");
-              return;
-            }
-            
-            console.log("Product data from API:", data);
-            const productName = data.product_name || "Unknown Product";
-            
-            //add row to the table
-            $('#item_list').append(`
-              <tr>
-                <td class="client-item">${clientItem}</td>
-                <td class="product-name">${productName}</td>
-                <td class="supplier">${data.supplier}</td>
-                <td>
-                  <input type="number" class="form-control qty-input" min="1" value="1" required/>
-                </td>
-                <td>
-                  <button type="button" class="btn btn-danger btn-sm delete-row">Delete</button>
-                </td>
-              </tr>
-            `);
-            
-            // Show the table since we now have items
-            $('#item_table_section').show();
-            
-            // Update total quantity
-            updateTotalQuantity();
-            
-            $('#room_number').val('');
-            $('#product_name_preview').val('');
           } else {
             toastr.error("Client item does not exist");
+            $('#add_item_btn').prop('disabled', false);
+            setLoading('search_client', false);
           }
         },
         error: function () {
           toastr.error("Error fetching product info");
-        },
-        complete: function() {
-          setTimeout(function() {
-            $('#add_item_btn').prop('disabled', false);
-            setLoading('search_client', false);
-          }, 100);
+          $('#add_item_btn').prop('disabled', false);
+          setLoading('search_client', false);
         }
       });
     });
-
-    $(document).on('click', '.view-submission', function() {
-      const containerId = $(this).data('container');
-      if (!containerId) {
-        toastr.error("Could not determine container ID.");
-        return;
-      }
-      // Fetch container data from backend
-      $.ajax({
-        url: "{% url 'get_container_data' %}",
-        type: "GET",
-        data: { container_id: containerId, mode: 'view' },
-        success: function(data) {
-          if (data.success && data.items && data.items.length > 0) {
-            $('#view-container-id').text(data.container_id);
-            let html = '';
-            data.items.forEach(function(item) {
-              html += `<tr>
-                <td>${item.client_id}</td>
-                <td>${item.product_name || ''}</td>
-                <td>${item.supplier || ''}</td>
-                <td>${item.quantity}</td>
-              </tr>`;
-            });
-            $('#view-container-items').html(html);
-            var modal = new bootstrap.Modal(document.getElementById('viewContainerModal'));
-            modal.show();
-          } else {
-            toastr.error(data.message || "No items found for this container.");
-          }
-        },
-        error: function() {
-          toastr.error("Error loading container data.");
-        }
-      });
-    });
-
-    
 
     // Set up the form submission
     $('#shipment-form').on('submit', function(e) {
@@ -566,18 +600,50 @@
       $('#form-data-container').empty();
       
       // Read the edit mode flags (now separate from the container)
-      const isEditing = $('#is_editing').val() === '1';
-      const editingContainerId = $('#editing_container_id').val();
+      const isEditing = $('#is_editing').val();
+      const editingContainerId = $('#editing_reference_id').val();
+      
       // Debug logging
-      console.log(`Form submission - is_editing: ${isEditing}, editing_container_id: ${editingContainerId}`);
+      console.log(`Form submission - is_editing: ${isEditing}, editing_reference_id: ${editingContainerId}`);
+      
+      // Check if there are items in the table
       if ($('#item_list tr').length === 0) {
-        if (isEditing && editingContainerId) {
-          // Allow submission, backend will handle container deletion
+        // Allow form submission with zero items ONLY in edit mode (so backend can delete container)
+        if (isEditing === '1' && editingContainerId) {
+          // Allow submission, backend will handle deletion
         } else {
           e.preventDefault();
           toastr.error("Please add at least one item to the shipment");
           return false;
         }
+      }
+      
+      // Validate all quantities against available quantities
+      let quantityError = false;
+      $('#item_list tr').each(function() {
+        const row = $(this);
+        const clientItem = row.find('.client-item').text().trim();
+        const availableQty = parseInt(row.find('.available-qty').val()) || 0;
+        const shipQty = parseInt(row.find('.qty-input').val()) || 0;
+        
+        console.log('Validating ' + clientItem + ': shipQty=' + shipQty + 
+                   ', availableQty=' + availableQty);
+        
+        // For editing, the inventory has already been adjusted on the server
+        // so we can just compare against the available quantity directly
+        if (shipQty > availableQty) {
+          quantityError = true;
+          toastr.error('Cannot ship ' + shipQty + ' of item ' + clientItem + 
+                       '. Maximum available: ' + availableQty);
+          row.addClass('table-danger');
+        } else {
+          row.removeClass('table-danger');
+        }
+      });
+      
+      if (quantityError) {
+        e.preventDefault();
+        return false;
       }
       
       // No need to re-add the edit mode fields since they're now outside the cleared container
@@ -586,21 +652,25 @@
       $('#item_list tr').each(function(index) {
         const clientItem = $(this).find('.client-item').text().trim();
         const productName = $(this).find('.product-name').text().trim();
-        const supplier = $(this).find('.supplier').text().trim();
         const quantity = $(this).find('.qty-input').val();
+        const itemId = $(this).data('item-id') || '';
         
-        console.log(`Adding item ${index+1}: ${clientItem}, supplier: ${supplier}, qty: ${quantity}`);
+        console.log(`Adding item ${index+1}: ${clientItem}, qty: ${quantity}, id: ${itemId}`);
         
         // Add hidden fields to the form
         $('#form-data-container').append(`
           <input type="hidden" name="client_items" value="${clientItem}">
           <input type="hidden" name="product_names" value="${productName}">
-          <input type="hidden" name="suppliers" value="${supplier}">
           <input type="hidden" name="quantities" value="${quantity}">
+          <input type="hidden" name="item_ids" value="${itemId}">
         `);
       });
       
       console.log(`Form submission complete with ${$('#item_list tr').length} items`);
+      
+      // Clear editing state since we're submitting
+      currentlyEditing = false;
+      currentEditingRefId = '';
       
       // Let the form submit normally
       return true;
@@ -615,30 +685,46 @@
       console.log("Edit button clicked. Submission ID:", submissionId, "Container ID:", containerId);
       
       if (containerId) {
-        // Use the common function to load container data
-        loadContainerData(containerId);
-        
-        // Scroll to the form
-        $('html, body').animate({
-          scrollTop: $("#shipment-form").offset().top - 100
-        }, 500);
+        // First restore the inventory quantities for this container
+        $.ajax({
+          url: "{% url 'restore_warehouse_inventory' %}",
+          type: "GET",
+          data: { reference_id: containerId },
+          success: function(response) {
+            if (response.success) {
+              console.log("Inventory quantities restored:", response.updated);
+              toastr.success("Inventory updated for editing");
+              
+              // Now load the container data
+              loadContainerData(containerId);
+              
+              // Scroll to the form
+              $('html, body').animate({
+                scrollTop: $("#shipment-form").offset().top - 100
+              }, 500);
+            } else {
+              toastr.error("Error restoring inventory: " + response.message);
+            }
+          },
+          error: function() {
+            toastr.error("Failed to restore inventory quantities");
+          }
+        });
       } else {
         toastr.error("Could not determine container ID from the table row.");
       }
     });
 
-    // Update total quantity when quantity changes
+    // Update total quantity when quantity changes and validate quantity
     $(document).on('input', '.qty-input', function() {
-      const $row = $(this).closest('tr');
-      const isReceived = $row.data('is-received');
-      const originalQty = parseInt($row.data('original-qty')) || 0;
-      const currentQty = parseInt($(this).val()) || 0;
+      const input = $(this);
+      const value = parseInt(input.val()) || 0;
+      const availableQty = parseInt(input.closest('tr').find('.available-qty').val()) || 0;
       
-      // For received containers, prevent quantity reduction
-      if (isReceived && currentQty < originalQty) {
-        toastr.error(`Cannot reduce quantity below ${originalQty} for received containers.`);
-        $(this).val(originalQty);
-        return;
+      // Validate quantity against available quantity
+      if (value > availableQty) {
+        toastr.error('You cannot ship more than the available quantity (' + availableQty + ')');
+        input.val(availableQty); // Reset to maximum available
       }
       
       updateTotalQuantity();
@@ -646,15 +732,6 @@
 
     // Update total quantity when row is deleted
     $('#item_list').on('click', '.delete-row', function () {
-      const $row = $(this).closest('tr');
-      const isReceived = $row.data('is-received');
-      
-      // Prevent deletion for received containers
-      if (isReceived) {
-        toastr.error("Cannot delete items from received containers.");
-        return;
-      }
-      
       $(this).closest('tr').remove();
       updateTotalQuantity();
       
@@ -682,6 +759,10 @@
 
     // Reset form function update
     function resetForm() {
+      // Get the current editing reference ID before clearing
+      const wasEditing = $('#is_editing').val() === '1';
+      const editingRefId = $('#editing_reference_id').val();
+      
       // Clear the item table
       $('#item_list').empty();
       
@@ -699,11 +780,35 @@
       
       // Reset edit mode
       $('#is_editing').val('0');
-      $('#editing_container_id').val('');
+      $('#editing_reference_id').val('');
+      
+      // Reset global tracking variables
+      currentlyEditing = false;
+      currentEditingRefId = '';
       
       // Reset any UI changes that might indicate edit mode
       $('.form-title').text('Create New Shipment');
       $('input[name="tracking_info"]').removeClass('border-warning');
+      
+      // If we were in edit mode, restore the original shipment quantities by reverting inventory
+      if (wasEditing && editingRefId) {
+        $.ajax({
+          url: "{% url 'revert_warehouse_inventory' %}",
+          type: "GET",
+          data: { reference_id: editingRefId },
+          success: function(response) {
+            if (response.success) {
+              console.log("Inventory quantities reverted:", response.updated);
+              toastr.success("Inventory restored to original state");
+            } else {
+              toastr.error("Error reverting inventory: " + response.message);
+            }
+          },
+          error: function() {
+            toastr.error("Failed to revert inventory quantities");
+          }
+        });
+      }
       
       toastr.info('Form has been cleared. You can start a new shipment.');
     }
@@ -723,9 +828,9 @@
       
       // Check if this container ID exists
       $.ajax({
-        url: "{% url 'check_container_exists' %}",
+        url: "{% url 'check_warehouse_container_exists' %}",
         type: "GET",
-        data: { container_id: containerId },
+        data: { reference_id: containerId },
         success: function(data) {
           if (data.exists && data.count > 0) {
             toastr.info(`Container ID "${containerId}" exists. Loading existing data...`);
@@ -751,9 +856,9 @@
       
       // Fetch container details via AJAX
       $.ajax({
-        url: "{% url 'get_container_data' %}",
+        url: "{% url 'get_warehouse_container_data' %}",
         type: "GET",
-        data: { container_id: containerId },
+        data: { reference_id: containerId },
         success: function(data) {
           if (data.success) {
             console.log("Container data received:", data);
@@ -762,62 +867,36 @@
             $('#item_list').empty();
             
             // Fill in the form fields
-            $('input[name="tracking_info"]').val(data.container_id);
+            $('input[name="tracking_info"]').val(data.reference_id);
             $('input[name="ship_date"]').val(data.ship_date);
             $('input[name="expected_arrival_date"]').val(data.expected_arrival);
-
+            
             // Make sure reference ID is editable
             $('input[name="tracking_info"]').prop('readonly', false);
             
             // Mark this as an edit operation
             $('#is_editing').val('1');
-            $('#editing_container_id').val(data.container_id);
+            $('#editing_reference_id').val(data.reference_id);
+            
+            // Update global tracking variables for page unload
+            currentlyEditing = true;
+            currentEditingRefId = data.reference_id;
             
             // Update form title to show we're editing
-            let titleText = `Editing Container: ${data.container_id}`;
-            if (data.is_received) {
-              titleText += ' (Received - Quantity increases only)';
-              toastr.warning("This container has been received. You can only increase quantities and add new items. Existing items cannot be deleted.");
-            }
-            $('.form-title').text(titleText);
+            $('.form-title').text('Editing Container: ' + data.reference_id);
             
-            // Add items to the table
-            data.items.forEach(function(item, index) {
-              console.log(`Item ${index+1}:`, item);
-              console.log(`  - client_id: ${item.client_id}`);
-              console.log(`  - product_name: ${item.product_name}`);
-              
-              let deleteButton = `<button type="button" class="btn btn-danger btn-sm delete-row">Delete</button>`;
-              let quantityInput = `<input type="number" class="form-control qty-input" min="1" value="${item.quantity}" required/>`;
-              
-              // If container is received, disable delete button and set min quantity
-              if (data.is_received) {
-                deleteButton = `<button type="button" class="btn btn-danger btn-sm delete-row" disabled title="Cannot delete items from received container">Delete</button>`;
-                quantityInput = `<input type="number" class="form-control qty-input" min="${item.quantity}" value="${item.quantity}" required title="Cannot reduce quantity for received container"/>`;
-              }
-              
-              $('#item_list').append(`
-                <tr data-original-qty="${item.quantity}" data-is-received="${data.is_received}">
-                  <td class="client-item">${item.client_id}</td>
-                  <td class="product-name">${item.product_name || "Unknown Product"}</td>
-                  <td class="supplier">${item.supplier}</td>
-                  <td>
-                    ${quantityInput}
-                  </td>
-                  <td>
-                    ${deleteButton}
-                  </td>
-                </tr>
-              `);
-            });
+            // Process each item
+            if (data.items && data.items.length > 0) {
+              // Process items one by one to avoid synchronous AJAX
+              processItemsSequentially(data.items, 0);
+            } else {
+              toastr.warning("No items found in this container");
+            }
             
             // Show table if there are items
             if (data.items.length > 0) {
               $('#item_table_section').show();
             }
-            
-            // Update total quantity
-            updateTotalQuantity();
             
             toastr.success("Container data loaded successfully!");
           } else {
@@ -830,13 +909,72 @@
         }
       });
     }
+    
+    // Process items one by one to avoid synchronous AJAX issues
+    function processItemsSequentially(items, index) {
+      if (index >= items.length) {
+        // All items processed, update total
+        updateTotalQuantity();
+        return;
+      }
+      
+      const item = items[index];
+      console.log(`Processing item ${index+1}/${items.length}:`, item);
+      
+      // Get available quantity for this client item
+      $.ajax({
+        url: "{% url 'get_available_quantity' %}",
+        type: "GET",
+        data: {
+          client_item: item.client_id,
+          for_edit: "false", // No need to add back quantities since we restored them server-side
+          edit_quantity: 0
+        },
+        success: function(quantityData) {
+          // Get the latest quantity info from the server (already updated on backend)
+          const availableQty = quantityData.success ? quantityData.quantity_available : 0;
+          const originalQty = parseInt(item.ship_qty) || 0;
+          
+          console.log(`Item ${item.client_id}: Current Available=${availableQty} (includes restored quantity), Original Shipped=${originalQty}`);
+          
+          // Create row with hidden fields for original qty
+          const newRow = $(`
+            <tr data-item-id="${item.id}">
+              <td class="client-item">${item.client_id}</td>
+              <td class="product-name">${item.product_name || "Unknown Product"}</td>
+              <td>
+                <input type="number" class="form-control qty-input" min="1" 
+                       max="${availableQty}" value="${originalQty}" required/>
+                <input type="hidden" class="available-qty" value="${availableQty}">
+                <small class="text-muted">Available: ${availableQty}</small>
+              </td>
+              <td>
+                <button type="button" class="btn btn-danger btn-sm delete-row">Delete</button>
+              </td>
+            </tr>
+          `);
+          
+          // Add row to table
+          $('#item_list').append(newRow);
+          
+          // Process next item
+          processItemsSequentially(items, index + 1);
+        },
+        error: function() {
+          console.error(`Failed to get available quantity for item ${item.client_id}`);
+          // Still process next item
+          processItemsSequentially(items, index + 1);
+        }
+      });
+    }
 
     let containerToDelete = null;
     let rowToDelete = null;
 
     $(document).on('click', '.delete-submission', function() {
-      containerToDelete = $(this).data('container');
+      containerToDelete = $(this).data('reference');
       rowToDelete = $(this).closest('tr');
+      // Use Bootstrap 5 modal API
       var modal = document.getElementById('deleteContainerModal');
       if (modal) {
         var bsModal = bootstrap.Modal.getInstance(modal) || new bootstrap.Modal(modal);
@@ -846,11 +984,12 @@
 
     $('#confirmDeleteContainerBtn').on('click', function() {
       if (!containerToDelete) return;
+      // AJAX call to delete the container and its items
       $.ajax({
-        url: '{% url "delete_inventory_container" %}',
+        url: '{% url "delete_warehouse_container" %}',
         type: 'POST',
         data: {
-          container_id: containerToDelete,
+          reference_id: containerToDelete,
           csrfmiddlewaretoken: $('input[name="csrfmiddlewaretoken"]').val()
         },
         success: function(data) {
@@ -868,7 +1007,7 @@
 
           var modal = document.getElementById('deleteContainerModal');
           if (modal) {
-            var bsModal = bootstrap.Modal.getInstance(modal) || new bootstrap.Modal(modal);
+            var bsModal = bootstrap.Modal.getOrCreateInstance(modal);
             bsModal.hide();
           }
           containerToDelete = null;
@@ -884,11 +1023,90 @@
 
           var modal = document.getElementById('deleteContainerModal');
           if (modal) {
-            var bsModal = bootstrap.Modal.getInstance(modal) || new bootstrap.Modal(modal);
+            var bsModal = bootstrap.Modal.getOrCreateInstance(modal);
             bsModal.hide();
           }
           containerToDelete = null;
           rowToDelete = null;
+        }
+      });
+    });
+
+    // Export button click handler
+    $(document).on('click', '.export-submission', function() {
+      var referenceId = $(this).data('reference');
+      if (!referenceId) {
+        toastr.error('Reference ID not found for export.');
+        return;
+      }
+      var btn = $(this);
+      var originalHtml = btn.html();
+      btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>');
+      $.ajax({
+        url: '{% url "export_warehouse_shipment_excel" %}',
+        type: 'GET',
+        data: { reference_id: referenceId },
+        xhrFields: {
+          responseType: 'blob'
+        },
+        success: function(data, status, xhr) {
+          var disposition = xhr.getResponseHeader('Content-Disposition');
+          var filename = 'shipment_' + referenceId + '.xlsx';
+          if (disposition && disposition.indexOf('filename=') !== -1) {
+            filename = disposition.split('filename=')[1].replace(/['\"]/g, '');
+          }
+          var url = window.URL.createObjectURL(data);
+          var a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(function() {
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+          }, 100);
+          toastr.success('Exported to Excel!');
+        },
+        error: function() {
+          toastr.error('Failed to export shipment.');
+        },
+        complete: function() {
+          btn.prop('disabled', false).html(originalHtml);
+        }
+      });
+    });
+
+    $(document).on('click', '.view-warehouse-submission', function() {
+      const referenceId = $(this).data('reference');
+      if (!referenceId) {
+        toastr.error("Could not determine reference ID.");
+        return;
+      }
+      // Fetch warehouse container data from backend
+      $.ajax({
+        url: "{% url 'get_warehouse_container_data' %}",
+        type: "GET",
+        data: { reference_id: referenceId, mode: 'view' },
+        success: function(data) {
+          if (data.success && data.items && data.items.length > 0) {
+            $('#view-warehouse-reference-id').text(data.reference_id);
+            let html = '';
+            data.items.forEach(function(item) {
+              html += `<tr>
+                <td>${item.client_id}</td>
+                <td>${item.product_name || ''}</td>
+                <td>${item.ship_qty}</td>
+              </tr>`;
+            });
+            $('#view-warehouse-container-items').html(html);
+            var modal = new bootstrap.Modal(document.getElementById('viewWarehouseContainerModal'));
+            modal.show();
+          } else {
+            toastr.error(data.message || "No items found for this warehouse container.");
+          }
+        },
+        error: function() {
+          toastr.error("Error loading warehouse container data.");
         }
       });
     });

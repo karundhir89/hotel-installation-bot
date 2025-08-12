@@ -35,11 +35,13 @@ from openai import OpenAI
 from html import escape
 import xlwt
 import pytz
-
+from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_POST
 from django.db.models import Q
 from django.contrib.auth import get_user_model # Use this if settings.AUTH_USER_MODEL is Django's default
 from django.contrib.auth.decorators import login_required, user_passes_test # For permission checking
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger # Import Paginator
+from django.db.models import Count, Q, F, ExpressionWrapper, DecimalField, Sum, Max, Min
 
 from .models import *
 from .models import ChatSession
@@ -49,6 +51,8 @@ from .forms import IssueForm, CommentForm, IssueUpdateForm # Import the forms
 import logging
 from django.contrib.contenttypes.models import ContentType # Added for GFK
 from django.utils.timezone import make_aware
+from datetime import timedelta
+from django.http import HttpResponseForbidden
 
 logger = logging.getLogger(__name__)
 
@@ -68,9 +72,25 @@ def session_login_required(view_func):
         if not request.session.get("user_id"):
             return redirect("user_login")
         return view_func(request, *args, **kwargs)
-
     return wrapper
 
+def admin_required(view_func):
+    """
+    Decorator to check if the user is a superuser or has is_administrator=True
+    """
+    @wraps(view_func)
+    def wrapper(request, *args, **kwargs):
+        # Check if user is authenticated
+        if not request.user.is_authenticated:
+            return redirect('login')
+            
+        # Check if user is superuser or administrator
+        if request.user.is_superuser or hasattr(request.user, 'profile') and request.user.profile.is_administrator:
+            return view_func(request, *args, **kwargs)
+            
+        # If not, return forbidden
+        return HttpResponseForbidden("You don't have permission to access this page")
+    return wrapper
 
 def extract_values(json_obj, keys):
     """
@@ -359,6 +379,7 @@ def chatbot(request):
     return render(request, "chatbot.html")
 
 @login_required
+@admin_required
 def display_prompts(request):
     print(request)
     prompts = Prompt.objects.all()  # Fetch all records
@@ -386,6 +407,11 @@ def update_prompt(request):
 
 @login_required
 def user_management(request):
+    # Additional check to ensure only superusers can access this view
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Only superusers can access this page. Administrator users cannot access user management.")
+    
+    # Removed the info message about the Administrator role
     prompts = InvitedUser.objects.all()
     print("users", prompts)
 
@@ -394,40 +420,93 @@ def user_management(request):
 @login_required
 def add_users_roles(request):
     print(request.POST)
-    if request.method == "POST":
-        name = request.POST.get("name")  # Get the ID
-        email = request.POST.get("email")  # Get the new description
-        roles = request.POST.get("role")  # Get the new description
-        status = request.POST.get("status")  # Get the new description
-        password = request.POST.get("password")  # Get the password
-        roles_list = roles.split(", ") if roles else []
-        print(name, email, type(roles_list), roles_list, status, password)
+    # Check if this is an AJAX request
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+    try:
+        if request.method == "POST":
+            name = request.POST.get("name")  # Get the ID
+            email = request.POST.get("email")  # Get the new description
+            roles = request.POST.get("role")  # Get the new description
+            status = request.POST.get("status")  # Get the new description
+            password = request.POST.get("password")  # Get the password
+            roles_list = roles.split(", ") if roles else []
+            print(name, email, type(roles_list), roles_list, status, password)
 
-        # Check if email already exists
-        if InvitedUser.objects.filter(email=email).exists():
-            return JsonResponse({"error": "User with this email already exists."}, status=400)
+            # Check if email already exists
+            if InvitedUser.objects.filter(email=email).exists():
+                return JsonResponse({"error": "User with this email already exists."}, status=400)
 
 
-        user = InvitedUser.objects.create(
-            name=name,
-            role=roles_list,
-            last_login=now(),
-            email=email,
-            status=status if status else 'activated', # Default to activated if not provided
-            password=bcrypt.hashpw(password.encode(), bcrypt.gensalt()),
-        )
-
-        if 'admin' in roles_list:
-            auth_user = User.objects.create_user(
-                username=email,
-                password=password,
+            user = InvitedUser.objects.create(
+                name=name,
+                role=roles_list,
+                last_login=now(),
                 email=email,
+                status=status if status else 'activated', # Default to activated if not provided
+                password=bcrypt.hashpw(password.encode(), bcrypt.gensalt()),
             )
-            auth_user.is_superuser = False
-            auth_user.save()
-        
 
-    return render(request, "add_users_roles.html") # Should not be reached if AJAX
+            # Set is_administrator flag in InvitedUser for anyone with administrator role
+            if 'administrator' in roles_list:
+                user.is_administrator = True
+                user.save()
+
+                # Create Django User with administrator privileges (but not superuser)
+                auth_user = User.objects.create_user(
+                    username=email,
+                    password=password,
+                    email=email,
+                )
+                auth_user.is_staff = True  # Set is_staff to True for admin dashboard access
+                auth_user.is_superuser = False
+                auth_user.save()
+
+                # Set is_administrator in UserProfile
+                auth_user.profile.is_administrator = True
+                auth_user.profile.save()
+
+                # For AJAX requests, don't use messages framework
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return JsonResponse({
+                        "success": True,
+                        "message": f"Administrator user '{name}' created successfully."
+                    })
+
+                messages.success(request, f"Administrator user '{name}' created successfully. They can access the Django admin interface.")
+            elif 'admin' in roles_list:
+                # Regular admin/hotel owner role
+                auth_user = User.objects.create_user(
+                    username=email,
+                    password=password,
+                    email=email,
+                )
+                auth_user.is_staff = True  # Still give admin dashboard access
+                auth_user.is_superuser = False
+                auth_user.save()
+
+            if User.role == 'administrator':
+                request.session['is_soft_admin'] = True
+            else:
+                request.session['is_soft_admin'] = False
+
+            # Return JSON response for AJAX requests
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return JsonResponse({
+                        "success": True,
+                        "message": f" User '{name}' created successfully."
+                    })
+
+        # For non-AJAX requests
+        return render(request, "add_users_roles.html")
+    except Exception as e:
+        import traceback
+        if is_ajax:
+            # For AJAX requests, return JSON error response
+            return JsonResponse({
+                        "success": True,
+                        "message": f" User '{name}' created successfully."
+                    })  
+
 
 @login_required
 def edit_users_roles(request, user_id):
@@ -458,14 +537,44 @@ def edit_users_roles(request, user_id):
             
             user.save()
 
-            if 'admin' in roles_list:
-                auth_user = User.objects.create_user(
-                    username=email,
-                    password=password,
-                    email=email,
-                )
-                auth_user.is_superuser = False
-                auth_user.save()
+            # Check if user has administrator role
+            is_administrator_role = 'administrator' in roles_list
+            
+            # Update is_administrator flag on InvitedUser
+            user.is_administrator = is_administrator_role
+            
+            # Handle Django User creation/update
+            if 'administrator' in roles_list or 'admin' in roles_list:
+                # Check if Django auth user already exists
+                try:
+                    auth_user = User.objects.get(username=email)
+                    auth_user.is_staff = True  # Ensure is_staff is set
+                    
+                    # If password was provided, update it
+                    if password:
+                        auth_user.set_password(password)
+                    
+                    # Update the is_administrator flag in the profile
+                    if hasattr(auth_user, 'profile'):
+                        auth_user.profile.is_administrator = is_administrator_role
+                        auth_user.profile.save()
+                    
+                    auth_user.save()
+                except User.DoesNotExist:
+                    # Only create if it doesn't exist
+                    if password:  # Only create if we have a password
+                        auth_user = User.objects.create_user(
+                            username=email,
+                            password=password,
+                            email=email,
+                        )
+                        auth_user.is_staff = True  # Set is_staff to True
+                        auth_user.is_superuser = False
+                        auth_user.save()
+                        
+                        # Set is_administrator in profile
+                        auth_user.profile.is_administrator = is_administrator_role
+                        auth_user.profile.save()
             else:
                 try:
                     auth_user = User.objects.get(username=email)
@@ -505,6 +614,15 @@ def user_login(request):
 
             if user is None:
                 return JsonResponse({"error": "Email does not exist."}, status=404)
+            
+            user_roles = [role.strip().lower() for role in user.role] if user.role else []
+            request.session['user_roles'] = user_roles
+            request.session['is_soft_admin'] = 'administrator' in user_roles or 'admin' in user_roles
+
+            # ADD THIS CHECK
+            if hasattr(user, "status") and user.status.lower() == "deactivated":
+                return JsonResponse({"error": "Your account is deactivated. Please contact admin."}, status=403)
+
 
             stored_hashed_password = bytes(user.password)  # convert memoryview to bytes
             if bcrypt.checkpw(entry_password.encode(), stored_hashed_password):
@@ -533,6 +651,24 @@ def room_data_list(request):
 
 @login_required
 def inventory_list(request):
+    # Check if we're coming from an edit (skip auto-updates)
+    skip_updates = request.GET.get('skip_updates', 'false').lower() == 'true'
+    
+    if not skip_updates:
+        # Update the shipped_to_hotel_quantity from warehouse_shipment data
+        update_inventory_shipped_quantities()
+        
+        # Update the received_at_hotel_quantity and damaged_quantity_at_hotel from hotel_warehouse data
+        update_inventory_hotel_warehouse_quantities()
+        
+        # Update the damaged_quantity from inventory_received data
+        update_inventory_damaged_quantities()
+        
+        # Update the qty_received from inventory_received data
+        update_inventory_received_quantities()
+
+        recalculate_quantity_available_all()
+
     # Fetch room data from the database
     inventory = Inventory.objects.all()
     # Pass the room data to the template
@@ -553,9 +689,7 @@ def add_room(request):
     if request.method == "POST":
         room_number = request.POST.get("room")
         floor = request.POST.get("floor")
-        king = request.POST.get("king")
-        double = request.POST.get("double")
-        exec_king = request.POST.get("exec_king")
+        bed = request.POST.get("bed")
         bath_screen = request.POST.get("bath_screen")
         left_desk = request.POST.get("left_desk")
         right_desk = request.POST.get("right_desk")
@@ -573,9 +707,7 @@ def add_room(request):
             RoomData.objects.create(
                 room=room_number,
                 floor=floor,
-                king=king,
-                double=double,
-                exec_king=exec_king,
+                bed=bed,
                 bath_screen=bath_screen,
                 left_desk=left_desk,
                 right_desk=right_desk,
@@ -597,16 +729,15 @@ def edit_room(request):
             room_id = request.POST.get("room_id")
             room = get_object_or_404(RoomData, id=room_id)
 
-            # Don't update room number
+            # Update room data
+            room.room = request.POST.get("room")
             room.floor = request.POST.get("floor")
-            room.king = request.POST.get("king")
-            room.double = request.POST.get("double")
-            room.exec_king = request.POST.get("exec_king")
+            room.bed = request.POST.get("bed")
             room.bath_screen = request.POST.get("bath_screen")
-            room.description = request.POST.get("description")
             room.left_desk = request.POST.get("left_desk")
             room.right_desk = request.POST.get("right_desk")
             room.to_be_renovated = request.POST.get("to_be_renovated")
+            room.description = request.POST.get("description")
 
             # Update Room Model if given
             room_model_id = request.POST.get("room_model")
@@ -825,25 +956,50 @@ def save_room_model(request):
 
 @login_required
 def save_inventory(request):
-    if request.method == "POST":
-        inventory_id = request.POST.get("inventory_id")
-        print(inventory_id, "ssssss  ")
-        item = request.POST.get("item", "").strip()
-        client_id = request.POST.get("client_id", "").strip()
-        qty_ordered = request.POST.get("qty_ordered") or 0
-        qty_received = request.POST.get("qty_received") or 0
-        quantity_installed = request.POST.get("quantity_installed") or 0
-        quantity_available = request.POST.get("quantity_available") or 0
+    from django.db import connection
+    
+    if request.method == 'POST':
+        inventory_id = request.POST.get('inventory_id')
+        item = request.POST.get('item', '').strip()
+        client_id = request.POST.get('client_id', '').strip()
 
         if not item:
             return JsonResponse({"error": "Item name is required"}, status=400)
 
-        # Convert to appropriate data types
+        # Convert empty strings to 0 for numeric fields
         try:
-            qty_ordered = int(qty_ordered)
-            qty_received = int(qty_received)
-            quantity_installed = int(quantity_installed)
-            quantity_available = int(quantity_available)
+            qty_ordered = request.POST.get('qty_ordered')
+            qty_ordered = int(qty_ordered) if qty_ordered and qty_ordered.strip() else 0
+            
+            quantity_shipped = request.POST.get('quantity_shipped')
+            quantity_shipped = int(quantity_shipped) if quantity_shipped and quantity_shipped.strip() else 0
+            
+            qty_received = request.POST.get('qty_received')
+            qty_received = int(qty_received) if qty_received and qty_received.strip() else 0
+            
+            damaged_quantity = request.POST.get('damaged_quantity')
+            damaged_quantity = int(damaged_quantity) if damaged_quantity and damaged_quantity.strip() else 0
+            
+            quantity_available = request.POST.get('quantity_available')
+            quantity_available = int(quantity_available) if quantity_available and quantity_available.strip() else 0
+            
+            shipped_to_hotel_quantity = request.POST.get('shipped_to_hotel_quantity')
+            shipped_to_hotel_quantity = int(shipped_to_hotel_quantity) if shipped_to_hotel_quantity and shipped_to_hotel_quantity.strip() else 0
+            
+            received_at_hotel_quantity = request.POST.get('received_at_hotel_quantity')
+            received_at_hotel_quantity = int(received_at_hotel_quantity) if received_at_hotel_quantity and received_at_hotel_quantity.strip() else 0
+            
+            damaged_quantity_at_hotel = request.POST.get('damaged_quantity_at_hotel')
+            damaged_quantity_at_hotel = int(damaged_quantity_at_hotel) if damaged_quantity_at_hotel and damaged_quantity_at_hotel.strip() else 0
+            
+            hotel_warehouse_quantity = request.POST.get('hotel_warehouse_quantity')
+            hotel_warehouse_quantity = int(hotel_warehouse_quantity) if hotel_warehouse_quantity and hotel_warehouse_quantity.strip() else 0
+            
+            floor_quantity = request.POST.get('floor_quantity')
+            floor_quantity = int(floor_quantity) if floor_quantity and floor_quantity.strip() else 0
+            
+            quantity_installed = request.POST.get('quantity_installed')
+            quantity_installed = int(quantity_installed) if quantity_installed and quantity_installed.strip() else 0
         except ValueError:
             return JsonResponse({"error": "Quantities must be integers"}, status=400)
 
@@ -857,29 +1013,62 @@ def save_inventory(request):
                 {"error": "This item already exists for the given client."}, status=400
             )
 
-        if inventory_id:
-            try:
-                inventory = Inventory.objects.get(id=inventory_id)
-                inventory.item = item
-                inventory.client_id = client_id
-                inventory.qty_ordered = qty_ordered
-                inventory.qty_received = qty_received
-                inventory.quantity_installed = quantity_installed
-                inventory.quantity_available = quantity_available
-                inventory.save()
-                return JsonResponse({"success": True})
-            except Inventory.DoesNotExist:
-                return JsonResponse({"error": "Inventory item not found"}, status=404)
-        else:
-            Inventory.objects.create(
-                item=item,
-                client_id=client_id,
-                qty_ordered=qty_ordered,
-                qty_received=qty_received,
-                quantity_installed=quantity_installed,
-                quantity_available=quantity_available,
-            )
-            return JsonResponse({"success": True})
+        try:
+            # If inventory_id is provided, update the existing record
+            if inventory_id:
+                # Use direct SQL update to bypass signal handlers that might override our changes
+                with connection.cursor() as cursor:
+                    cursor.execute("""
+                        UPDATE inventory 
+                        SET qty_ordered = %s,
+                            quantity_shipped = %s,
+                            qty_received = %s,
+                            damaged_quantity = %s,
+                            quantity_available = %s,
+                            shipped_to_hotel_quantity = %s,
+                            received_at_hotel_quantity = %s,
+                            damaged_quantity_at_hotel = %s,
+                            hotel_warehouse_quantity = %s,
+                            floor_quantity = %s,
+                            quantity_installed = %s
+                        WHERE id = %s
+                    """, [
+                        qty_ordered,
+                        quantity_shipped,
+                        qty_received,
+                        damaged_quantity,
+                        quantity_available,
+                        shipped_to_hotel_quantity,
+                        received_at_hotel_quantity,
+                        damaged_quantity_at_hotel,
+                        hotel_warehouse_quantity,
+                        floor_quantity,
+                        quantity_installed,
+                        inventory_id
+                                        ])
+                return JsonResponse({'success': True, 'skip_updates': True})
+            else:
+                # Create a new record
+                Inventory.objects.create(
+                    item=item,
+                    client_id=client_id,
+                    qty_ordered=qty_ordered,
+                    quantity_shipped=quantity_shipped,
+                    qty_received=qty_received,
+                    damaged_quantity=damaged_quantity,
+                    quantity_available=quantity_available,
+                    shipped_to_hotel_quantity=shipped_to_hotel_quantity,
+                    received_at_hotel_quantity=received_at_hotel_quantity,
+                    damaged_quantity_at_hotel=damaged_quantity_at_hotel,
+                    hotel_warehouse_quantity=hotel_warehouse_quantity,
+                    floor_quantity=floor_quantity,
+                    quantity_installed=quantity_installed,
+                )
+                return JsonResponse({'success': True, 'skip_updates': True})
+        except Inventory.DoesNotExist:
+            return JsonResponse({"error": "Inventory item not found"}, status=404)
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
 
     return JsonResponse({"error": "Invalid request"}, status=400)
 
@@ -923,16 +1112,36 @@ def delete_schedule(request):
     return JsonResponse({"error": "Invalid request."})
 
 
+
+@login_required
 @login_required
 def delete_products_data(request):
     if request.method == "POST":
         model_id = request.POST.get("model_id")
         try:
-            room_model = ProductData.objects.get(id=model_id)
-            room_model.delete()
-            return JsonResponse({"success": "Room Model deleted."})
+            # 1. Get the product instance
+            product = ProductData.objects.get(id=model_id)
+            client_id = product.client_id
+
+            # 2. Delete related InstallDetail entries
+            from .models import InstallDetail, ProductRoomModel, Inventory
+            InstallDetail.objects.filter(product_id=product).delete()
+
+            # 3. Delete related ProductRoomModel entries
+            ProductRoomModel.objects.filter(product_id=product).delete()
+
+            # 4. Delete related Inventory entry (case-insensitive client_id match)
+            if client_id:
+                Inventory.objects.filter(client_id__iexact=client_id).delete()
+
+            # 5. Delete the product itself
+            product.delete()
+
+            return JsonResponse({"success": "Product and all related data deleted."})
         except ProductData.DoesNotExist:
-            return JsonResponse({"error": "Room Model not found."})
+            return JsonResponse({"error": "Product not found."})
+        except Exception as e:
+            return JsonResponse({"error": str(e)})
     return JsonResponse({"error": "Invalid request."})
 
 def _get_installation_checklist_data(room_number, installation_id=None, user_for_prefill=None):
@@ -994,66 +1203,63 @@ def _get_installation_checklist_data(room_number, installation_id=None, user_for
 
         for prm in product_room_models:
             product = prm.product_id
+            # Get floor_quantity and hotel_warehouse_quantity from Inventory
+            inventory = Inventory.objects.filter(client_id__iexact=product.client_id).first()
+            floor_quantity = inventory.floor_quantity if inventory else 0
+            hotel_warehouse_quantity = inventory.hotel_warehouse_quantity if inventory else 0
+
             install_detail_item = existing_details_map.get(product.id)
 
-            if not install_detail_item and installation_data and installation_data.id : # Only create if an installation record exists
-                # This product is in the room model but not yet in InstallDetail for this installation
+            if not install_detail_item and installation_data and installation_data.id:
                 install_detail_item = InstallDetail(
-                    installation_id=installation_data.id, # Link to existing/created Installation
+                    installation_id=installation_data.id,
                     product_id=product,
                     room_id=room_data,
                     room_model_id=room_model_instance,
-                    product_name=product.description or product.item, # Ensure product_name is set
-                    status="NO" # Default status
+                    product_name=product.description or product.item,
+                    status="NO"
                 )
-                # We can't bulk_create and then get IDs immediately if some items are new and installation_data was just created (no ID yet)
-                # Instead, we'll prepare them. If installation_data has an ID, we save.
-                # This part is tricky if installation_data was just created and doesn't have an ID.
-                # For admin edit, installation_data.id will always exist.
-                # For frontend, if InstallDetail items are crucial *before* first save, this needs care.
-                # Assuming for now that if InstallDetail are created, installation_data.id is valid.
-                if installation_data.id: # Ensure main installation record has an ID
-                    install_detail_item.save() # Save to get an install_id (PK)
-                    existing_details_map[product.id] = install_detail_item # Add to map
-                else:
-                    # If installation record is new (no ID), these won't be saved yet.
-                    # This scenario is more for the initial GET in the frontend form.
-                    # They will be properly created during the POST save.
-                    pass # Defer creation to the POST if main installation is new.
+                if installation_data.id:
+                    install_detail_item.save()
+                    existing_details_map[product.id] = install_detail_item
 
-            # print(f"install_detail_item: {install_detail_item}")
-            # Prepare data for saved_items and check_items
-            if install_detail_item: # If it exists or was just saved
+            if install_detail_item:
                 saved_items.append({
                     "install_id": install_detail_item.install_id,
                     "product_id": product.id,
                     "product_name": install_detail_item.product_id.description,
                     "room_id": room_data.id,
                     "room_model_id": room_model_instance.id,
-                    "product_room_model_id": prm.id, # ID of the ProductRoomModel mapping
+                    "product_room_model_id": prm.id,
                     "installed_by": install_detail_item.installed_by.name if install_detail_item.installed_by else None,
                     "installed_on": install_detail_item.installed_on.isoformat() if install_detail_item.installed_on else None,
                     "status": install_detail_item.status,
                     "product_client_id": product.client_id,
+                    "product_image": product.image.url if product.image else None,
                 })
                 check_items.append({
-                    "id": install_detail_item.install_id, # This is InstallDetail PK
+                    "id": install_detail_item.install_id,
                     "label": f"({product.client_id or 'N/A'}) - {install_detail_item.product_id.description}",
                     "type": "detail",
                     "status": install_detail_item.status,
                     "checked_by": install_detail_item.installed_by.name if install_detail_item.installed_by else None,
                     "check_on": localtime(install_detail_item.installed_on).isoformat() if install_detail_item.installed_on else None,
+                    "quantity_needed_per_room": prm.quantity,
+                    "floor_quantity": floor_quantity,
+                    "hotel_warehouse_quantity": hotel_warehouse_quantity,
+                    "image_url": product.image.url if product.image else None,
                 })
-            elif not installation_data.id : # Product from room model, but main installation record is new (no ID yet)
-                 # This is for the initial rendering of the frontend form for a NEW installation
-                 # Create temporary placeholder items
+            elif not installation_data.id:
                 check_items.append({
-                    "id": f"newproduct_{product.id}", # Temporary ID for unsaved items
-                    "label": f"({product.client_id or 'N/A'}) - {install_detail_item.product_id.description}",
+                    "id": f"newproduct_{product.id}",
+                    "label": f"({product.client_id or 'N/A'}) - {product.description}",
                     "type": "detail",
-                    "status": "NO", # Default
+                    "status": "NO",
                     "checked_by": None,
                     "check_on": None,
+                    "quantity_needed_per_room": prm.quantity,
+                    "floor_quantity": floor_quantity,
+                    "hotel_warehouse_quantity": hotel_warehouse_quantity,
                 })
 
 
@@ -1249,6 +1455,21 @@ def _save_installation_data(request_post_data, user_instance, room_number_str, i
         installation_instance.save() # Save main installation steps
 
         # Process InstallDetail items
+        # First, get all existing InstallDetail items for this installation
+        existing_details = InstallDetail.objects.filter(installation=installation_instance)
+        existing_detail_ids = {str(detail.pk) for detail in existing_details}
+        
+        # Get the list of all detail IDs that were rendered in the form
+        # This is needed because the form includes hidden fields for all checkboxes
+        rendered_detail_ids = set()
+        for key in request_post_data:
+            if key.startswith("step_detail_") and not key.startswith("step_detail_newproduct_"):
+                detail_id = key.split("step_detail_")[1]
+                rendered_detail_ids.add(detail_id)
+        
+        # Track which details were processed in this submission
+        processed_detail_ids = set()
+        
         for key in request_post_data:
             if key.startswith("step_detail_"):
                 try:
@@ -1259,6 +1480,10 @@ def _save_installation_data(request_post_data, user_instance, room_number_str, i
                     is_checked_in_form = request_post_data.get(key) == "on"
                     form_date_str = request_post_data.get(form_date_key)
                     form_user_name = request_post_data.get(form_user_key, "").strip()
+                    
+                    # Add to processed IDs if it's an existing detail
+                    if not step_id_str.startswith("newproduct_"):
+                        processed_detail_ids.add(step_id_str)
                     
                     install_detail_item = None
                     created_new_detail = False
@@ -1397,6 +1622,14 @@ def _save_installation_data(request_post_data, user_instance, room_number_str, i
         if installation_data_changed_by_automation:
             installation_instance.save()
             logger.info(f"Installation {installation_instance.id} updated by automation: day_install_began, install, day_install_complete.")
+        
+        # Handle details that were rendered in the form but weren't processed
+        # These are the checkboxes that were rendered but weren't touched in this submission
+        unprocessed_detail_ids = rendered_detail_ids - processed_detail_ids
+        if unprocessed_detail_ids:
+            logger.info(f"Found {len(unprocessed_detail_ids)} rendered but unprocessed details for installation {installation_instance.id}")
+            # These details were rendered in the form but weren't processed, so we should leave them as they are
+            # No need to update them as they weren't touched
 
         return {"success": True, "message": "Installation data saved successfully!"}
 
@@ -1415,27 +1648,95 @@ def installation_form(request):
         messages.warning(request, "You must be logged in to access the form.")
         return redirect("user_login")
     
-
     invited_user_id = request.session.get("user_id")
     invited_user_instance = get_object_or_404(InvitedUser, id=invited_user_id)
     checked_product_ids = []
 
+    # Track modified items (unchecked or newly checked)
+    modified_details = {}
+    for key, value in request.POST.items():
+        if key.startswith("modified_detail_"):
+            detail_id = key.split("modified_detail_")[1]
+            modified_details[detail_id] = True
+    
+    # Process checked items
     for key, value in request.POST.items():
         if key.startswith("step_detail_") and value == "on":
             detail_id = key.split("step_detail_")[1]
             product_id = request.POST.get(f"product_id_detail_{detail_id}")
+            
+            # Check if this is a previous installation - don't update inventory again
+            previous_install = request.POST.get(f"previous_install_detail_{detail_id}") == "true"
+            if previous_install:
+                # Skip previously installed items - they were already counted in inventory
+                continue
+                
+            # Get required quantity for this product (from ProductRoomModel)
+            install_detail = InstallDetail.objects.filter(install_id=detail_id).first()
+            if install_detail:
+                room_model_id = install_detail.room_model_id_id
+                product_data_id = install_detail.product_id_id
+                prm = ProductRoomModel.objects.filter(room_model_id=room_model_id, product_id=product_data_id).first()
+                required_qty = prm.quantity if prm else 1
+            else:
+                required_qty = 1
+                
             if product_id:
-                checked_product_ids.append(product_id)
+                try:
+                    inventory_item = Inventory.objects.get(client_id__iexact=product_id)
+                    
+                    # Only increment install qty if not previously installed or not modified
+                    # (a modification from unchecked to checked will add)
+                    if not install_detail or install_detail.status != "YES" or modified_details.get(detail_id):
+                        if inventory_item.hotel_warehouse_quantity is not None:
+                            inventory_item.hotel_warehouse_quantity = max(0, inventory_item.hotel_warehouse_quantity - required_qty)
+                        if inventory_item.quantity_installed is not None:
+                            inventory_item.quantity_installed += required_qty
+                        else:
+                            inventory_item.quantity_installed = required_qty
+                        inventory_item.save()
+                        
+                except Inventory.DoesNotExist:
+                    print(f"Inventory item with product_id {product_id} does not exist.")
+    
+    # Handle items that were unchecked (previously YES but now unchecked)
+    for key, value in request.POST.items():
+        if key.startswith("step_detail_") and value == "off" and modified_details.get(key.split("step_detail_")[1]):
+            detail_id = key.split("step_detail_")[1]
+            
+            # Only process if this was modified from checked to unchecked
+            if not request.POST.get(f"current_session_{key.split('step_')[1]}") and modified_details.get(detail_id):
+                install_detail = InstallDetail.objects.filter(install_id=detail_id).first()
+                if install_detail and install_detail.status == "YES" and install_detail.product_id:
+                    product_id = install_detail.product_id.client_id
+                    
+                    # Get required quantity to revert
+                    room_model_id = install_detail.room_model_id_id
+                    product_data_id = install_detail.product_id_id
+                    prm = ProductRoomModel.objects.filter(room_model_id=room_model_id, product_id=product_data_id).first()
+                    required_qty = prm.quantity if prm else 1
+                    
+                    try:
+                        # Revert the inventory - add back to floor, remove from installed
+                        inventory_item = Inventory.objects.get(client_id__iexact = product_id)
+                        if inventory_item.hotel_warehouse_quantity is not None:
+                            inventory_item.hotel_warehouse_quantity += required_qty
+                        if inventory_item.quantity_installed is not None:
+                            inventory_item.quantity_installed = max(0, inventory_item.quantity_installed - required_qty)
+                        inventory_item.save()
+                    except Inventory.DoesNotExist:
+                        print(f"Inventory item with product_id {product_id} does not exist.")
+    #             checked_product_ids.append(product_id)
 
-    # Now checked_product_ids contains ONLY product IDs that were ticked
-    print("Checked Product IDs:", checked_product_ids)
-    for product_id in checked_product_ids:
-        try:
-            inventory_item = Inventory.objects.get(item=product_id)
-            inventory_item.quantity_installed += 1
-            inventory_item.save()
-        except Inventory.DoesNotExist:
-            print(f"Inventory item with product_id {product_id} does not exist.")
+    # # Now checked_product_ids contains ONLY product IDs that were ticked
+    # print("Checked Product IDs:", checked_product_ids)
+    # for product_id in checked_product_ids:
+    #     try:
+    #         inventory_item = Inventory.objects.get(item=product_id)
+    #         inventory_item.quantity_installed += 1
+    #         inventory_item.save()
+    #     except Inventory.DoesNotExist:
+    #         print(f"Inventory item with product_id {product_id} does not exist.")
 
     # Now use product_id, step_checked, etc.
 
@@ -1445,7 +1746,57 @@ def installation_form(request):
         # The _save_installation_data helper will handle get_or_create for Installation.
         # If the form *does* pass an installation_id (e.g., from a hidden field after initial GET), it could be used.
         # For now, relying on room_number for get_or_create logic in the helper for frontend.
-        
+
+        # --- Begin: Inventory adjustment for unchecked products ---
+        try:
+            # Get the installation instance for this room
+            room_instance = RoomData.objects.filter(room=room_number_str).first()
+            if room_instance:
+                installation_instance = Installation.objects.filter(room=room_instance.room).first()
+                if installation_instance:
+                    # Get all InstallDetail for this installation
+                    all_details = InstallDetail.objects.filter(installation=installation_instance)
+                    
+                    # Get the list of all detail IDs that were rendered in the form
+                    # This is needed because the form includes hidden fields for all checkboxes
+                    rendered_detail_ids = set()
+                    for key in request.POST:
+                        if key.startswith("step_detail_") and not key.startswith("step_detail_newproduct_"):
+                            detail_id = key.split("step_detail_")[1]
+                            rendered_detail_ids.add(detail_id)
+                    
+                    for detail in all_details:
+                        detail_id_str = str(detail.install_id)
+                        key = f"step_detail_{detail_id_str}"
+                        was_checked = detail.status == "YES"
+                        
+                        # Only process details that were rendered in the form
+                        if detail_id_str not in rendered_detail_ids:
+                            # This detail wasn't rendered in the form, so skip it
+                            continue
+                            
+                        is_now_checked = request.POST.get(key) == "on"
+                        # If it was checked before but now is unchecked
+                        if was_checked and not is_now_checked:
+                            # Get required quantity for this product (from ProductRoomModel)
+                            prm = ProductRoomModel.objects.filter(room_model_id=detail.room_model_id_id, product_id=detail.product_id_id).first()
+                            required_qty = prm.quantity if prm else 1
+                            try:
+                                inventory_item = Inventory.objects.get(client_id=detail.product_id.client_id)
+                                # Only decrement if possible (avoid negative values)
+                                if inventory_item.quantity_installed is not None and inventory_item.quantity_installed >= required_qty:
+                                    inventory_item.quantity_installed -= required_qty
+                                else:
+                                    inventory_item.quantity_installed = max((inventory_item.quantity_installed or 0) - required_qty, 0)
+                                # Increment floor_quantity back
+                                inventory_item.hotel_warehouse_quantity = (inventory_item.hotel_warehouse_quantity or 0) + required_qty
+                                inventory_item.save()
+                            except Inventory.DoesNotExist:
+                                pass
+        except Exception as e:
+            print(f"Error adjusting inventory for unchecked products: {e}")
+        # --- End: Inventory adjustment for unchecked products ---
+
         result = _save_installation_data(request.POST, invited_user_instance, room_number_str)
 
         if result["success"]:
@@ -1454,90 +1805,377 @@ def installation_form(request):
             messages.error(request, result["message"])
         return redirect("installation_form") # Redirect back to the form page
 
+    # Fetch data for the "Previous Summary" table - SIMPLIFIED APPROACH
+    previous_summaries = []
+    
+    try:
+        # Print for debugging
+        print("Fetching installation data for summary table...")
+        
+        # Get the installations with a simpler approach - limit to 50 for performance
+        installations = Installation.objects.all().order_by('room')
+        
+        room_numbers = [inst.room for inst in installations]
+        room_data_map = {
+            rd.room: rd for rd in RoomData.objects.filter(room__in=room_numbers).select_related('room_model_id')
+        }
+        
+        install_ids = [inst.id for inst in installations]
+        details = InstallDetail.objects.filter(installation_id__in=install_ids)
+        details_map = {}
+        for detail in details:
+            details_map.setdefault(detail.installation_id, []).append(detail)
+        
+        previous_summaries = []
+        for installation in installations:
+            room_data = room_data_map.get(installation.room)
+            room_type = room_data.room_model_id.room_model if room_data and room_data.room_model_id else "Unknown"
+            install_details = details_map.get(installation.id, [])
+            installed_count = sum(1 for d in install_details if d.status == "YES")
+            pending_count = sum(1 for d in install_details if d.status == "NO")
+            summary_entry = {
+                'room_number': installation.room,
+                'room_type': room_type,
+                'prework': "YES" if installation.prework == "YES" else "NO",
+                'product_arrival': "YES" if installation.product_arrived_at_floor == "YES" else "NO",
+                'retouching': "YES" if installation.retouching == "YES" else "NO",
+                'product_installed': f"{installed_count} item(s)",
+                'pending_products': f"{pending_count} item(s)",
+            }
+            previous_summaries.append(summary_entry)
+
+        page = request.GET.get('page', 1)
+        paginator = Paginator(previous_summaries, 50) # 50 summaries per page
+        try:
+            summaries_page = paginator.page(page)
+        except PageNotAnInteger:
+            summaries_page = paginator.page(1)
+        except EmptyPage:
+            summaries_page = paginator.page(paginator.num_pages)
+        return render(request, "installation_form.html", {
+            "invited_user": invited_user_instance, # Used by JS to prefill user name
+            "previous_summaries": summaries_page,
+             "is_paginated":summaries_page.has_other_pages(),
+            "page_obj": summaries_page, # For pagination in the template
+        })
+              
+              
+            #    Data for the previous summaries table      
+            # except Exception as inst_err:
+            #     print(f"Error processing installation {getattr(installation, 'id', 'unknown')}: {inst_err}")
+            #     # Skip this installation but continue processing others
+        
+        print(f"Successfully loaded {len(previous_summaries)} installation summaries")
+        
+    except Exception as e:
+        print(f"Critical error fetching installation summaries: {e}")
+        logger.error(f"Error fetching installation summaries: {e}", exc_info=True)
+        # Add a basic summary entry to ensure the page renders
+        previous_summaries = [
+            {
+                'room_number': 'Error',
+                'room_type': 'Error loading data',
+                'prework': 'N/A',
+                'product_arrival': 'N/A',
+                'retouching': 'N/A',
+                'product_installed': 'Error',
+                'pending_products': 'Error',
+            }
+        ]
+    
+    # Print summary for debugging
+    print(f"Final previous_summaries count: {len(previous_summaries)}")
+    
     # For GET request, the existing JS will call get_room_type to populate the form.
     return render(request, "installation_form.html", {
         "invited_user": invited_user_instance, # Used by JS to prefill user name
+        "previous_summaries": previous_summaries # Data for the previous summaries table
     })
 
 @session_login_required
 def inventory_shipment(request):
     user_id = request.session.get("user_id")
     user_name = ""
+    received_container_ids = set(
+        InventoryReceived.objects.values_list('container_id', flat=True)
+    )
+    received_container_ids = set(cid.lower() for cid in received_container_ids if cid)
 
     if user_id:
         try:
             user = InvitedUser.objects.get(id=user_id)
-            user_name = user.name  # Adjust field name if different
+            user_name = user.name
         except InvitedUser.DoesNotExist:
             pass
 
     if request.method == "POST":
         try:
-            client_item = request.POST.get("client_item")
+            # Get common form fields
             ship_date_str = request.POST.get("ship_date")
             expected_arrival_date_str = request.POST.get("expected_arrival_date")
+            tracking_info = request.POST.get("tracking_info")
+
+            
+            # Check if this is an edit operation
+            is_editing = request.POST.get("is_editing") == "1"
+            editing_container_id = request.POST.get("editing_container_id", "").strip()
+            
+            # Check if container is received (for validation purposes)
+            container_id_to_check = (editing_container_id if is_editing and editing_container_id else tracking_info)
+            is_received_container = False
+            if container_id_to_check and container_id_to_check.strip().lower() in received_container_ids:
+                is_received_container = True
+
+
+            
+            # Debug logging
+            print(f"Form submission - is_editing value: '{request.POST.get('is_editing')}'")
+            print(f"Form submission - is_editing: {is_editing}, editing_container_id: '{editing_container_id}'")
+            print(f"Current tracking_info (Container ID): '{tracking_info}'")
+            
+            # Parse dates
             if ship_date_str:
                 ship_date = make_aware(datetime.strptime(ship_date_str, "%Y-%m-%d"))
-
+            else:
+                ship_date = None
+            
             if expected_arrival_date_str:
                 expected_arrival_date = make_aware(datetime.strptime(expected_arrival_date_str, "%Y-%m-%d"))
-
-            qty_shipped = int(request.POST.get("qty_shipped") or 0)
-            supplier = request.POST.get("supplier")
-            tracking_info = request.POST.get("tracking_info")
+            else:
+                expected_arrival_date = None
+                
+            # Get multiple items data
+            client_items = request.POST.getlist("client_items")
+            product_names = request.POST.getlist("product_names")
+            suppliers = request.POST.getlist("suppliers")
+            quantities = request.POST.getlist("quantities")
             
-            print("expected_arrival_date ::", expected_arrival_date )
-            print("ship_date ::", ship_date)
-            print("qty_shipped ::", qty_shipped)
-            print("supplier ::", supplier)
-            print("tracking_info ::", tracking_info)
-            print("user ::", user)
-            print("client_item ::", client_item)
-            # Save the shipping entry
-            Shipping.objects.create(
-                client_id=client_item,
-                item=client_item,
-                ship_date=ship_date,
-                ship_qty=qty_shipped,
-                supplier=supplier,
-                bol=tracking_info,
-                checked_by=user,
-                expected_arrival_date = expected_arrival_date
-            )
-            print("Shipping ::", Shipping.objects.all())
+            # Debug logging
+            print(f"Items to process: {len(client_items)}")
+            print(f"Client items: {client_items}")
+            print(f"Suppliers: {suppliers}")
+            
+            # If editing and all items are deleted, delete the container completely
+            if is_editing and editing_container_id and not client_items:
+                deleted_count = Shipping.objects.filter(bol=editing_container_id).count()
+                Shipping.objects.filter(bol=editing_container_id).delete()
+                messages.success(request, f"Container '{editing_container_id}' deleted as all items were removed.")
+                return redirect("inventory_shipment")
 
-            # Update Inventory
-            inventory = Inventory.objects.filter(
-                client_id__iexact=client_item,
-                item__iexact=client_item
-            ).first()            
-            print("inventory ::", inventory)
-            if inventory:
-                print(f"Before update: qty_ordered = {inventory.qty_ordered}")
-                inventory.qty_ordered = (inventory.qty_ordered or 0) + qty_shipped
-                inventory.save()
-                print(f"After update: qty_ordered = {inventory.qty_ordered}")
-
-                messages.success(request, "Shipment submitted and inventory updated!")
-            return redirect("inventory_shipment")
+            # If not editing, or not all items deleted, require at least one item
+            if not client_items:
+                messages.error(request, "No items added to shipment.")
+                return redirect("inventory_shipment")
+            
+            # Check if this container ID already exists (regardless of edit flag)
+            container_exists = False
+            if tracking_info:
+                existing_count = Shipping.objects.filter(bol=tracking_info).count()
+                if existing_count > 0:
+                    container_exists = True
+                    print(f"Container ID '{tracking_info}' already exists with {existing_count} items")
+                    
+                    # If not explicitly in edit mode, set it to edit mode
+                    if not is_editing:
+                        is_editing = True
+                        editing_container_id = tracking_info
+                        print(f"Setting to EDIT MODE because container ID '{tracking_info}' already exists")
+            
+            # If editing, delete all previous items with the same container_id
+            if is_editing and editing_container_id:
+                print(f"EDIT MODE DETECTED - Will replace items in container: {editing_container_id}")
+                
+                # Get count of deleted items for message
+                deleted_count = Shipping.objects.filter(bol=editing_container_id).count()
+                
+                # Debug logging
+                print(f"Deleting {deleted_count} items with container ID: {editing_container_id}")
+                
+                # Delete previous entries
+                Shipping.objects.filter(bol=editing_container_id).delete()
+                
+                # Use the original container ID when editing
+                # tracking_info = editing_container_id
+                
+                print(f"After delete - using container ID: {tracking_info}")
+                
+                if container_exists:
+                    messages.info(request, f"Found existing container ID '{tracking_info}'. Updated with new items.")
+                else:
+                    messages.info(request, f"Deleted {deleted_count} previous items from this container.")
+            elif container_exists:
+                # This should not happen with our new logic, but just in case:
+                messages.warning(request, f"Container ID '{tracking_info}' already exists. Creating duplicate container.")
+            else:
+                print(f"NEW SUBMISSION MODE - Creating new container with ID: {tracking_info}")
+            
+            # Process each item
+            for i in range(len(client_items)):
+                client_item = client_items[i]
+                supplier = suppliers[i] if i < len(suppliers) else ""
+                qty_shipped = int(quantities[i]) if i < len(quantities) and quantities[i] else 0
+                
+                # For received containers, validate that quantities are not reduced
+                if is_received_container and is_editing:
+                    # Get the original quantity for this item
+                    original_item = Shipping.objects.filter(
+                        bol=tracking_info,
+                        client_id=client_item
+                    ).first()
+                    
+                    if original_item and qty_shipped < original_item.ship_qty:
+                        messages.error(request, f"Cannot reduce quantity for item '{client_item}' from {original_item.ship_qty} to {qty_shipped}. Only increases are allowed for received containers.")
+                        return redirect("inventory_shipment")
+                
+                # Save the shipping entry
+                Shipping.objects.create(
+                    client_id=client_item,
+                    item=client_item,
+                    ship_date=ship_date,
+                    ship_qty=qty_shipped,
+                    supplier=supplier,
+                    bol=tracking_info,
+                    checked_by=user,
+                    expected_arrival_date=expected_arrival_date
+                )
+                
+                # Update Inventory
+                inventory = Inventory.objects.filter(
+                    client_id__iexact=client_item,
+                    item__iexact=client_item
+                ).first()
+                
+                if inventory:
+                    # inventory.qty_ordered = (inventory.qty_ordered or 0) + qty_shipped
+                    inventory.save()
+            
+            if is_editing:
+                messages.success(request, f"Updated shipment with {len(client_items)} items successfully!")
+            else:
+                messages.success(request, f"New shipment with {len(client_items)} items submitted and inventory updated!")
+            
+            # After successful shipment creation/update, update inventory quantities
+            update_inventory_shipped_quantities()
+            recalculate_quantity_available_all()
+            
+            # Return redirect instead of JSON response to avoid displaying JSON to user
+            return redirect('inventory_shipment')
 
         except Exception as e:
             print("error ::", e)
             messages.error(request, f"Error submitting shipment: {str(e)}")
 
-    return render(request, "inventory_shipment.html", {"user_name": user_name})
+    # Get previous submissions (grouped by container ID/BOL)
+    previous_submissions = []
+    try:
+        # Get unique container IDs and annotate with total quantity
+        containers = Shipping.objects.values('bol').annotate(
+            product_count=Count('id'),
+            total_quantity=Sum('ship_qty'),
+            first_id=Min('id')
+        ).order_by('-first_id')
+
+        for container in containers:
+            if not container['bol']:  # Skip empty BOLs
+                continue
+
+            # Get all items for this container
+            items = Shipping.objects.filter(bol=container['bol']).order_by('-ship_date')
+            if not items:
+                continue
+
+            first_item = items.first()  # Get the first item to extract common data
+
+            # Format the dates for display
+            ship_date_display = first_item.ship_date.strftime('%Y-%m-%d') if first_item.ship_date else 'N/A'
+            expected_arrival_display = first_item.expected_arrival_date.strftime('%Y-%m-%d') if first_item.expected_arrival_date else 'N/A'
+
+            # Get the checker name
+            checker = first_item.checked_by.name if first_item.checked_by else 'Unknown'
+
+            # Create submission summary
+            submission = {
+                'id': first_item.id,  # Use the first item's ID as reference
+                'container_id': first_item.bol,
+                'ship_date': ship_date_display,
+                'expected_arrival': expected_arrival_display,
+                'product_count': container['product_count'],
+                'total_quantity': container['total_quantity'] or 0,
+                'checked_by': checker,
+                # Add other fields as needed
+            }
+
+            previous_submissions.append(submission)
+    except Exception as e:
+        print(f"Error fetching previous submissions: {e}")
+        # Don't halt the page if there's an error with previous submissions
+    page = request.GET.get('page', 1)
+    paginator = Paginator(previous_submissions, 10)  # 10 submissions per page
+    try:
+        previous_submissions_page = paginator.page(page)
+    except PageNotAnInteger:
+        previous_submissions_page = paginator.page(1)
+    except EmptyPage:
+        previous_submissions_page = paginator.page(paginator.num_pages)
+    # Render the page with user name and previous submissions
+    return render(request, "inventory_shipment.html", {
+        "user_name": user_name,
+        "previous_submissions": previous_submissions_page,
+        "is_paginated": previous_submissions_page.has_other_pages(),
+        "page_obj": previous_submissions_page,  # For pagination in the template
+        "received_container_ids": received_container_ids,
+    })
+
+def available_container_ids(request):
+    term = request.GET.get('term', '').strip().lower()
+    qs = Shipping.objects.all()
+    if term:
+        qs = qs.filter(bol__icontains=term)
+    suggestions = list(qs.values_list('bol', flat=True).distinct()[:10])
+    return JsonResponse({'results': suggestions})
+    
 
 @session_login_required
 def get_product_item_num(request):
     clientId = request.GET.get("room_number")
+    if not clientId:
+        return JsonResponse({"success": False, "message": "Client ID is required"})
+        
     try:
-        client_data_fetched = ProductData.objects.get(client_id__iexact=clientId)
-        get_item = client_data_fetched.item if client_data_fetched.item else ""
-        supplier = client_data_fetched.supplier if client_data_fetched.supplier else "N.A."
-        product_name = ProductData.objects.filter(item=client_data_fetched.item).values_list('description', flat=True).first() or ""
-        return JsonResponse({"success": True, "room_type": get_item, "supplier": supplier, "product_name": product_name})
-    except RoomData.DoesNotExist:
-        return JsonResponse({"success": False})
+        # Use Lower database function to ensure case-insensitive matching
+        from django.db.models.functions import Lower
+        
+        # Try first with Lower function for exact lowercase matching
+        client_data = ProductData.objects.annotate(
+            client_id_lower=Lower('client_id')
+        ).filter(
+            client_id_lower=clientId.lower()
+        ).first()
+        
+        # If not found, fall back to iexact
+        if not client_data:
+            client_data = ProductData.objects.filter(client_id__iexact=clientId).first()
+            
+        if not client_data:
+            return JsonResponse({"success": False, "message": "Product not found"})
+            
+        # Extract data from the found product
+        get_item = client_data.item if client_data.item else ""
+        supplier = client_data.supplier if client_data.supplier else "N.A."
+        # Use description consistently (or fall back to item)
+        product_name = client_data.description or client_data.item or ""
+        
+        print(f"get_product_item_num - client_id: {clientId}, product_name: {product_name}")
+        return JsonResponse({
+            "success": True, 
+            "room_type": get_item, 
+            "supplier": supplier, 
+            "product_name": product_name,
+            "client_id": client_data.client_id  # Return the actual client_id with correct case
+        })
+    except Exception as e:
+        print(f"Error in get_product_item_num: {str(e)}")
+        return JsonResponse({"success": False, "message": str(e)})
 
 
 @session_login_required
@@ -1555,38 +2193,363 @@ def inventory_received(request):
 
     if request.method == "POST":
         try:
-            client_item = request.POST.get("client_item")
-            received_date = request.POST.get("received_date")
-            received_qty = int(request.POST.get("received_qty") or 0)
-            damaged_qty = int(request.POST.get("damaged_qty") or 0)
+            # Get form data
+            container_id = request.POST.get("container_id")
+            container_id_field = request.POST.get("container_id_field")  # Get the hidden field value
             
-            InventoryReceived.objects.create(
-                client_id=client_item,
-                item=client_item,
-                received_date=received_date,
-                received_qty=received_qty,
-                damaged_qty=damaged_qty,
-                checked_by=user
-            )
+            # Use the hidden field value if it exists (from search), otherwise fallback to container_id
+            final_container_id = container_id_field if container_id_field else container_id
 
-            # Update Inventory
-            inventory = Inventory.objects.filter(
-                client_id__iexact=client_item,
-                item__iexact=client_item
-            ).first()
-            if inventory:
-                inventory.qty_received = (inventory.qty_received or 0) + (received_qty - damaged_qty)
-                inventory.quantity_available = (inventory.quantity_available or 0) + (received_qty - damaged_qty)
-                inventory.save()
+            if container_id:
+                container_id = container_id.strip().lower()
+            if container_id_field:
+                container_id_field = container_id_field.strip().lower()
+            
+            received_date = request.POST.get("received_date")
+            is_editing = request.POST.get("is_editing") == "1"
+            editing_record_id = request.POST.get("editing_record_id")
+            product_count = int(request.POST.get("product_count", "0"))
+            
+            # Check if this container ID already exists in InventoryReceived for this user
+            if not is_editing and final_container_id:
+                existing_records = InventoryReceived.objects.filter(
+                    container_id__iexact=final_container_id
+                )
+                if existing_records.exists():
+                    is_editing = True
+                    existing_records.delete()
+            
+            if is_editing and editing_record_id:
+                try:
+                    print(f"Editing record ID: {editing_record_id}")
+                    # Get the original record to get the container ID
+                    original_record = InventoryReceived.objects.get(id=editing_record_id)
+                    container_id = original_record.container_id
+                    print(f"Container ID: {container_id}")
+                    
+                    # Get all records for this container with their IDs
+                    container_records = InventoryReceived.objects.filter(
+                        container_id=container_id
+                    )
+                    print(f"Found {container_records.count()} records for container {container_id}")
+                    
+                    # Process each item in the form
+                    success_count = 0
+                    for i in range(product_count):
+                        client_item = request.POST.get(f"client_item_{i}")
+                        received_qty = int(request.POST.get(f"received_qty_{i}") or "0")
+                        damaged_qty = int(request.POST.get(f"damaged_qty_{i}") or "0")
+                        record_id = request.POST.get(f"record_id_{i}")  # Get the unique record ID
+                        
+                        print(f"Processing item {i}: client_item={client_item}, received_qty={received_qty}, damaged_qty={damaged_qty}, record_id={record_id}")
 
-            messages.success(request, "Inventory received successfully!")
-            return redirect("inventory_received")
+                        
+                        # Find the specific record using its unique ID
+                        record_qs = InventoryReceived.objects.filter(
+                            container_id=container_id,
+                            client_id=client_item
+                        )
+                        if record_id and record_id not in [None, '', 'null']:
+                            try:
+                                record_id_int = int(record_id)
+                                record_qs = record_qs.filter(id=record_id_int)
+                            except ValueError:
+                                pass  # ignore if record_id is not a valid int
+                        record = record_qs.first()
+                        
+                        if record:
+                            print(f"Found record to update: ID={record.id}, client_id={record.client_id}")
+                            # Store old values for inventory adjustment
+                            old_received = record.received_qty
+                            old_damaged = record.damaged_qty
+                            
+                            # Update the record
+                            record.received_date = received_date
+                            record.received_qty = received_qty
+                            record.damaged_qty = damaged_qty
+                            record.save()
+                            print(f"Updated record: received_qty={received_qty}, damaged_qty={damaged_qty}")
+                
+                            # Update inventory available quantity using our helper function
+                            update_inventory_when_receiving(
+                                client_id=client_item, 
+                                received_qty=received_qty, 
+                                damaged_qty=damaged_qty,
+                                is_new=False,
+                                old_received=old_received,   # <-- use the old value
+                                old_damaged=old_damaged      # <-- use the old value
+                            )
+                            
+                            # Add this line:
+                            recalculate_quantity_available(client_item)
+                            success_count += 1
+                        else:
+                            InventoryReceived.objects.create(
+                                client_id=client_item,
+                                item=client_item,
+                                received_date=received_date,
+                                received_qty=received_qty,
+                                damaged_qty=damaged_qty,
+                                checked_by=user,
+                                container_id=container_id
+                            )
+                            update_inventory_when_receiving(
+                                client_id=client_item, 
+                                received_qty=received_qty, 
+                                damaged_qty=damaged_qty,
+                                is_new=True
+                            )
+                            recalculate_quantity_available(client_item)
+                            success_count += 1
+                            # print(f"No record found for ID={record_id}, client_item={client_item} in container {container_id}")
+                    
+                    print(f"Successfully updated {success_count} items")
+                    
+                    # Update inventory calculated quantities
+                    update_inventory_damaged_quantities()
+                    update_inventory_received_quantities()
+                    recalculate_quantity_available_all()
+                    
+                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                        return JsonResponse({
+                            'success': True,
+                            'message': f'Successfully updated {success_count} inventory items!'
+                        })
+                    messages.success(request, f"Successfully updated {success_count} inventory items!")
+                    
+                except InventoryReceived.DoesNotExist:
+                    print(f"Record not found with ID {editing_record_id}")
+                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                        return JsonResponse({
+                            'success': False,
+                            'message': 'Record not found'
+                        })
+                    messages.error(request, "Record not found")
+                except Exception as e:
+                    print(f"Error updating record: {str(e)}")
+                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                        return JsonResponse({
+                            'success': False,
+                            'message': f'Error updating record: {str(e)}'
+                        })
+                    messages.error(request, f"Error updating record: {str(e)}")
+            else:
+                # Create new records for each product in the container
+                success_count = 0
+                for i in range(product_count):
+                    client_item = request.POST.get(f"client_item_{i}")
+                    received_qty = int(request.POST.get(f"received_qty_{i}") or "0")
+                    damaged_qty = int(request.POST.get(f"damaged_qty_{i}") or "0")
+                    
+                    if received_qty == 0:
+                        continue
+                        
+                    InventoryReceived.objects.create(
+                        client_id=client_item,
+                        item=client_item,
+                        received_date=received_date,
+                        received_qty=received_qty,
+                        damaged_qty=damaged_qty,
+                        checked_by=user,
+                        container_id=final_container_id
+                    )
+
+                    # Update inventory available quantity using our helper function
+                    update_inventory_when_receiving(
+                        client_id=client_item, 
+                        received_qty=received_qty, 
+                        damaged_qty=damaged_qty,
+                        is_new=True
+                    )
+                    # Add this line:
+                    recalculate_quantity_available(client_item)
+                        
+                    success_count += 1
+
+                # Update inventory calculated quantities
+                update_inventory_damaged_quantities()
+                update_inventory_received_quantities()
+                recalculate_quantity_available_all()
+                
+                if success_count > 0:
+                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                        return JsonResponse({
+                            'success': True,
+                            'message': f'Successfully received {success_count} inventory items!'
+                        })
+                    messages.success(request, f"Successfully received {success_count} inventory items!")
+                else:
+                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                        return JsonResponse({
+                            'success': False,
+                            'message': 'No inventory items were received. Please enter quantities.'
+                        })
+                    messages.warning(request, "No inventory items were received. Please enter quantities.")
+            
+            if not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return redirect("inventory_received")
 
         except Exception as e:
             print("error ::", e)
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({
+                    'success': False,
+                    'message': f'Error saving received inventory: {str(e)}'
+                })
             messages.error(request, f"Error saving received inventory: {str(e)}")
+            return redirect("inventory_received")
 
-    return render(request, "inventory_received.html", {"user_name": user_name})
+    # Get previous submissions
+    previous_submissions = []
+    already_processed_ids = set()
+    
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT 
+                    ir.container_id as display_container_id,
+                    MAX(ir.received_date) as newest_date
+                FROM inventory_received ir
+                WHERE ir.container_id IS NOT NULL AND ir.container_id != ''
+                GROUP BY ir.container_id
+                ORDER BY MAX(ir.received_date) DESC
+            """)
+            
+            containers = cursor.fetchall()
+            
+        for container_row in containers:
+            container_id = container_row[0]
+            latest_date = container_row[1]
+            
+            if not container_id:
+                continue
+                
+            items = InventoryReceived.objects.filter(
+                Q(container_id=container_id) | 
+                (Q(client_id=container_id) & (Q(container_id__isnull=True) | Q(container_id='')))
+            ).order_by('-received_date')
+            
+            if not items.exists():
+                continue
+                
+            first_item = items[0]
+            # Calculate total quantities
+            total_quantity_received = sum(item.received_qty for item in items)
+            total_damaged_quantity = sum(item.damaged_qty for item in items)
+            received_date = first_item.received_date.strftime('%Y-%m-%d') if first_item.received_date else 'N/A'
+
+            previous_submissions.append({
+                'id': first_item.id,
+                'container_id': container_id,
+                'client_id': first_item.client_id,
+                'received_date': received_date,
+                'total_quantity_received': total_quantity_received,
+                'total_damaged_quantity': total_damaged_quantity,
+                'checked_by': first_item.checked_by.name if first_item.checked_by else 'Unknown'
+            })
+    except Exception as e:
+        print(f"Error fetching previous submissions: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    # Pagination for previous submissions
+    page = request.GET.get('page', 1)
+    paginator = Paginator(previous_submissions, 10)
+    try:
+        previous_submissions_page = paginator.page(page)
+    except PageNotAnInteger:
+        previous_submissions_page = paginator.page(1)
+    except EmptyPage:
+        previous_submissions_page = paginator.page(paginator.num_pages)
+
+    return render(request, "inventory_received.html", {
+        "user_name": user_name,
+        "previous_submissions": previous_submissions_page,
+        "is_paginated": previous_submissions_page.has_other_pages(),
+        "page_obj": previous_submissions_page,
+    })
+
+
+@require_POST
+@session_login_required
+def delete_inventory_received_container(request):
+    container_id = request.POST.get("container_id")
+    if not container_id:
+        return JsonResponse({"success": False, "message": "No container ID provided."})
+    try:
+        # Get all InventoryReceived records for this container
+        received_items = InventoryReceived.objects.filter(container_id__iexact=container_id)
+        if not received_items.exists():
+            return JsonResponse({"success": False, "message": "Container not found."})
+
+        # For each item, subtract received_qty from Inventory.quantity_available
+        for item in received_items:
+            try:
+                inventory = Inventory.objects.get(client_id__iexact=item.client_id)
+                # Subtract, but don't go below zero
+                inventory.quantity_available = max(0, (inventory.quantity_available or 0) - (item.received_qty or 0))
+                inventory.qty_received = max(0, (inventory.qty_received or 0) - (item.received_qty or 0))
+                inventory.damaged_quantity = max(0, (inventory.damaged_quantity or 0) - (item.damaged_qty or 0))
+                inventory.save()
+            except Inventory.DoesNotExist:
+                pass  # If inventory record doesn't exist, skip
+
+        # Now delete the InventoryReceived records
+        deleted_count, _ = received_items.delete()
+        return JsonResponse({"success": True, "message": f"Deleted {deleted_count} items and updated inventory."})
+    except Exception as e:
+        return JsonResponse({"success": False, "message": str(e)})
+
+        
+@session_login_required
+def get_received_item_details(request):
+    """API endpoint to get details of a specific received item"""
+    record_id = request.GET.get('record_id')
+    
+    if not record_id:
+        return JsonResponse({'success': False, 'message': 'Record ID is required'})
+    
+    try:
+        # Debug info
+        print(f"Getting details for received item record_id: {record_id}")
+        
+        record = InventoryReceived.objects.get(id=record_id)
+        
+        # Format dates for form fields
+        received_date = record.received_date.strftime('%Y-%m-%d') if record.received_date else ''
+        
+        # Determine container ID - use stored container_id if available, otherwise client_id
+        container_id = getattr(record, 'container_id', None) or record.client_id
+        
+        # Get product name from ProductData if available
+        try:
+            product = ProductData.objects.get(client_id__iexact=record.client_id)
+            product_name = product.description or product.item
+        except ProductData.DoesNotExist:
+            product_name = record.item or "Unknown Product"
+        
+        # Debug info
+        print(f"Record found: client_id={record.client_id}, received_qty={record.received_qty}, damaged_qty={record.damaged_qty}")
+        print(f"Using container_id: {container_id}, received_date: {received_date}")
+        
+        return JsonResponse({
+            'success': True,
+            'record': {
+                'id': record.id,
+                'client_id': record.client_id,
+                'container_id': container_id,
+                'product_name': product_name,
+                'received_date': received_date,
+                'received_qty': record.received_qty,
+                'damaged_qty': record.damaged_qty,
+                'checked_by': record.checked_by.name if record.checked_by else 'Unknown'
+            }
+        })
+        
+    except InventoryReceived.DoesNotExist:
+        return JsonResponse({'success': False, 'message': 'Record not found'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': str(e)})
 
 @session_login_required
 def inventory_pull(request):
@@ -1594,46 +2557,206 @@ def inventory_pull(request):
     user_id = request.session.get("user_id")
     user_name = ""
 
+
+
     if user_id:
         try:
             user = InvitedUser.objects.get(id=user_id)
             user_name = user.name
         except InvitedUser.DoesNotExist:
             pass
+    
+    previous_submissions = []
+    
+    try:
+        previous_submissions = (
+            WarehouseRequest.objects
+            .select_related('requested_by', 'received_by')
+            .order_by('-id')[:20]  # Show last 20 submissions, adjust as needed
+        )
+    except Exception as e:
+        previous_submissions = []
+
+
     if request.method == "POST":
         try:
-            # Get all product IDs from the form
-            product_ids = [key.split('_')[1] for key in request.POST.keys() if key.startswith('product_') and request.POST[key] == 'on']
-            print("product_ids ::", product_ids)
-
-            for product_id in product_ids:
-                # Get the product room model
-                prm = ProductData.objects.get(id=product_id)
-                print("prm ::", prm)
-                qty_pulled_value = int(request.POST.get(f'qty_pulled_{product_id}'))
-                print("qty_pulled_value ::", qty_pulled_value)
-                # Get the inventory item
-                inventory = Inventory.objects.get(client_id=prm.client_id)
-                print("inventory ::", inventory)
-                print("inventory.quantity_available ::", inventory.quantity_available, type(inventory.quantity_available))
-                print("qty_pulled_value ::", qty_pulled_value, type(qty_pulled_value))
-                # Update inventory quantity
-                inventory.quantity_available -= qty_pulled_value
-                inventory.save()
-                print("Before save ::",prm.client_id,prm.item,prm.id,qty_pulled_value,request.session.get('user_id'),request.POST.get(f'date_{product_id}'),request.POST.get('floor_number'),inventory.quantity_available,inventory.quantity_available - qty_pulled_value)
-                # Create inventory pull record
-                PullInventory.objects.create(
-                    client_id=prm.client_id,
-                    item = prm.item,
-                    qty_pulled=qty_pulled_value,
-                    pulled_by=user,
-                    pulled_date=request.POST.get(f'date_{product_id}'),
-                    floor=request.POST.get('floor_number'),
-                    available_qty=inventory.quantity_available,
-                    qty_available_after_pull=inventory.quantity_available - qty_pulled_value
-                )
+            # Get common data
+            floor_number = request.POST.get('floor_number')
+            active_tab = request.POST.get('active_tab', 'requested')
+            common_date = request.POST.get('common_date')
             
-            messages.success(request, "Inventory pull completed successfully!")
+            # Get all product IDs from the form
+            product_ids = request.POST.getlist('selected_product_ids')
+            client_item_ids = request.POST.getlist('client_item_ids')
+            requested_quantities = request.POST.getlist('requested_quantities')
+            received_quantities = request.POST.getlist('received_quantities')
+            
+            # Validate we have all necessary data
+            if not product_ids or not floor_number:
+                messages.error(request, "Missing required data")
+                return redirect('inventory_pull')
+            
+            # Process based on active tab
+            if active_tab == 'requested':
+                # Create new warehouse requests
+                for i, product_id in enumerate(product_ids):
+                    client_item = client_item_ids[i]
+                    requested_qty = int(requested_quantities[i])
+                    
+                    # Create warehouse request record
+                    WarehouseRequest.objects.create(
+                        floor_number=floor_number,
+                        client_item=client_item,
+                        requested_by=user,
+                        quantity_requested=requested_qty,
+                        quantity_received=0,  # Default 0 until received
+                        quantity_sent=0,      # Default 0 for sent quantity
+                        sent=False  # Default to No
+                    )
+                    
+                    # Get the product data for logging
+                prm = ProductData.objects.get(id=product_id)
+                    
+                messages.success(request, f"Warehouse request for {len(product_ids)} items submitted successfully!")
+                
+            elif active_tab == 'received':
+                # Check if we have specific request IDs
+                request_ids = request.POST.getlist('selected_request_ids')
+                
+                # Debug logs
+                print(f"Processing received tab with {len(request_ids)} request IDs")
+                print(f"Request IDs: {request_ids}")
+                print(f"Client items: {client_item_ids}")
+                print(f"Requested quantities: {requested_quantities}")
+                print(f"Received quantities: {received_quantities}")
+                
+                if request_ids:
+                    # Update specific warehouse requests by ID
+                    success_count = 0
+                    for i, request_id in enumerate(request_ids):
+                        client_item = client_item_ids[i]
+                        requested_qty = int(requested_quantities[i])
+                        received_qty = int(received_quantities[i])
+                        
+                        print(f"Processing request ID {request_id}: client_item={client_item}, requested={requested_qty}, received={received_qty}")
+                        
+                        try:
+                            # Get the specific warehouse request by ID
+                            warehouse_request = WarehouseRequest.objects.get(id=request_id)
+                            print(f"Found warehouse request: {warehouse_request}")
+                            
+                            # Calculate how much additional quantity is being received now
+                            previous_received = warehouse_request.quantity_received
+                            additional_received = received_qty - previous_received
+                            
+                            print(f"Previous received: {previous_received}, New received: {received_qty}, Additional: {additional_received}")
+                            
+                            # Update the received quantity
+                            warehouse_request.quantity_received = received_qty
+                            warehouse_request.received_by = user
+                            
+                            # Update sent status based on whether requested equals received
+                            warehouse_request.sent = (warehouse_request.quantity_received == warehouse_request.quantity_requested)
+                            warehouse_request.save()
+                            success_count += 1
+                            print(f"Updated warehouse request {request_id}: quantity_received={received_qty}, sent={warehouse_request.sent}")
+                            
+                            # Only update inventory if additional quantity is being received
+                            if additional_received > 0:
+                                print(f"Deducting {additional_received} from warehouse inventory")
+                                # Update inventory for received items
+                                try:
+                                    # Use case-insensitive lookup for client_id
+                                    inventory = Inventory.objects.filter(client_id__iexact=client_item).first()
+                                    if inventory:
+                                        # We don't need to deduct from hotel_warehouse_quantity again
+                                        # as it was already deducted when the item was sent
+                                        print(f"Recording reception for {client_item} - not deducting from warehouse again")
+                                    
+                                        # Calculate available quantity (ensure it's not negative)
+                                        available_qty = max(0, inventory.quantity_available - received_qty)
+                                        
+                                        # Create pull inventory record for tracking
+                                        PullInventory.objects.create(
+                                            client_id=client_item,
+                                            item=inventory.item,
+                                            qty_pulled=received_qty,
+                                            pulled_by=user,
+                                            pulled_date=common_date,
+                                            floor=floor_number,
+                                            available_qty=available_qty,
+                                            qty_available_after_pull=inventory.quantity_available
+                                        )
+                                except Exception as inv_error:
+                                    messages.warning(request, f"Error updating inventory for {client_item}: {str(inv_error)}")
+                        except WarehouseRequest.DoesNotExist:
+                            messages.warning(request, f"Warehouse request with ID {request_id} not found")
+                    
+                    if success_count > 0:
+                        messages.success(request, f"Updated {success_count} warehouse requests successfully!")
+                    else:
+                        messages.warning(request, "No warehouse requests were updated")
+                else:
+                    # Legacy fallback - update based on client_item and floor
+                    for i, product_id in enumerate(product_ids):
+                        client_item = client_item_ids[i]
+                        requested_qty = int(requested_quantities[i])
+                        received_qty = int(received_quantities[i])
+                        
+                        # Find existing warehouse request
+                        warehouse_request = WarehouseRequest.objects.filter(
+                            floor_number=floor_number,
+                            client_item=client_item,
+                            sent=False
+                        ).first()
+                        
+                        if warehouse_request:
+                            # Calculate how much additional quantity is being received now
+                            previous_received = warehouse_request.quantity_received
+                            additional_received = received_qty - previous_received
+                            
+                            print(f"Legacy handler - Previous received: {previous_received}, New received: {received_qty}, Additional: {additional_received}")
+                            
+                            # Update the received quantity
+                            warehouse_request.quantity_received = received_qty
+                            
+                            # Update sent status based on whether requested equals received
+                            warehouse_request.sent = (warehouse_request.quantity_received == warehouse_request.quantity_requested)
+                            warehouse_request.save()
+                            
+                            # Only update inventory if additional quantity is being received
+                            if additional_received > 0:
+                                print(f"Legacy handler - Deducting {additional_received} from warehouse inventory")
+                                # Update inventory for received items
+                                try:
+                                    # Use case-insensitive lookup for client_id
+                                    inventory = Inventory.objects.filter(client_id__iexact=client_item).first()
+                                    if inventory:
+                                        # We don't need to deduct from hotel_warehouse_quantity again
+                                        # as it was already deducted when the item was sent
+                                        print(f"Recording reception for {client_item} - not deducting from warehouse again")
+                                    
+                                        # Calculate available quantity (ensure it's not negative)
+                                        available_qty = max(0, inventory.quantity_available - received_qty)
+                                        
+                                        # Create pull inventory record for tracking
+                                        PullInventory.objects.create(
+                                            client_id=client_item,
+                                            item=inventory.item,
+                                            qty_pulled=received_qty,
+                                            pulled_by=user,
+                                            pulled_date=common_date,
+                                            floor=floor_number,
+                                            available_qty=available_qty,
+                                            qty_available_after_pull=inventory.quantity_available
+                                        )
+                                except Exception as inv_error:
+                                    messages.warning(request, f"Error updating inventory for {client_item}: {str(inv_error)}")
+                        else:
+                            messages.warning(request, f"No warehouse request found for item {client_item} on floor {floor_number}")
+                    
+                    messages.success(request, f"Received {len(product_ids)} items successfully!")
+            
             return redirect('inventory_pull')
             
         except Exception as e:
@@ -1641,7 +2764,253 @@ def inventory_pull(request):
             return redirect('inventory_pull')
             
     return render(request, "inventory_pull.html", {
-        "user_name": user_name
+        "user_name": user_name,
+        "previous_submissions": previous_submissions,
+    })
+
+@session_login_required
+def hotel_warehouse(request):
+    # Get all previous warehouse submissions
+    previous_submissions = (
+        WarehouseRequest.objects
+        .select_related('requested_by', 'received_by')
+        .order_by('-id')[:30]  # Show last 30, adjust as needed
+    )
+    
+    # Process previous submissions to determine if all items for each floor are sent
+    from itertools import groupby
+    from django.db.models import Count, Sum
+    
+    # Group submissions by floor number and check if all items are sent
+    floor_data = []
+    floor_groups = {}
+    
+    # First group by floor number
+    for submission in previous_submissions:
+        floor_num = submission.floor_number
+        if floor_num not in floor_groups:
+            floor_groups[floor_num] = {
+                'floor_number': floor_num,
+                'items': [],
+                'all_sent': True,  # Start with True and set to False if any item is not sent
+                'total_items': 0,
+                'total_requested': 0,
+                'total_sent': 0,
+                'total_received': 0,
+                'requested_by': None,
+                'sent_by': None,
+                'sent_date': None
+            }
+        
+        # Add item to the floor group
+        floor_groups[floor_num]['items'].append(submission)
+        
+        # Update totals
+        floor_groups[floor_num]['total_items'] += 1
+        floor_groups[floor_num]['total_requested'] += submission.quantity_requested
+        floor_groups[floor_num]['total_sent'] += submission.quantity_sent
+        floor_groups[floor_num]['total_received'] += submission.quantity_received
+        
+        # Set requested_by if not set yet
+        if floor_groups[floor_num]['requested_by'] is None and submission.requested_by:
+            floor_groups[floor_num]['requested_by'] = submission.requested_by.name
+            
+        # Debug sent_by_id and sent_date values
+        print(f"Floor {floor_num}, Item {submission.id}: sent_by_id={submission.sent_by_id}, sent_date={submission.sent_date}, sent={submission.sent}")
+        
+        # Set sent_by if not set yet and this item was sent
+        if floor_groups[floor_num]['sent_by'] is None and submission.sent_by_id and submission.sent:
+            try:
+                sent_by_user = InvitedUser.objects.get(id=submission.sent_by_id)
+                floor_groups[floor_num]['sent_by'] = sent_by_user.name
+                print(f"Setting floor {floor_num} sent_by to {sent_by_user.name}")
+            except:
+                floor_groups[floor_num]['sent_by'] = f"User ID {submission.sent_by_id}"
+                print(f"Could not find user with ID {submission.sent_by_id}")
+            
+        # Set sent_date if not set yet and this item was sent
+        if floor_groups[floor_num]['sent_date'] is None and submission.sent_date and submission.sent:
+            floor_groups[floor_num]['sent_date'] = submission.sent_date
+            print(f"Setting floor {floor_num} sent_date to {submission.sent_date}")
+        
+        # Update all_sent status
+        if not submission.sent:
+            floor_groups[floor_num]['all_sent'] = False
+    
+    # Convert dictionary to list for template
+    floor_data = list(floor_groups.values())
+    
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        floor_number = request.POST.get('floor_number')
+        
+        # Get the current user
+        user_id = request.session.get('user_id')
+        user = None
+        if user_id:
+            try:
+                user = InvitedUser.objects.get(id=user_id)
+                print(f"Current user: {user.name} (ID: {user.id})")
+            except InvitedUser.DoesNotExist:
+                print(f"User with ID {user_id} not found")
+                messages.error(request, "User session not found. Please log in again.")
+                return redirect('user_login')
+        else:
+            print("No user_id in session")
+            messages.error(request, "User session not found. Please log in again.")
+            return redirect('user_login')
+        
+        if action == 'update_sent_qty':
+            try:
+                # Check if we need to process multiple items
+                if 'items' in request.POST:
+                    # Handle modal submission with individual item quantities
+                    items_data = json.loads(request.POST.get('items'))
+                    
+                    for item_data in items_data:
+                        client_item = item_data['client_item']
+                        item_id = item_data.get('id')  # Get the specific item ID
+                        quantity_sent = int(item_data['quantity_sent'])
+                        
+                        # Update the warehouse request by ID if provided
+                        if item_id:
+                            request_item = WarehouseRequest.objects.filter(id=item_id).first()
+                        else:
+                            # Fallback to the old method if ID is not provided
+                            request_item = WarehouseRequest.objects.filter(
+                                floor_number=floor_number,
+                                client_item=client_item
+                            ).first()
+                        
+                        if request_item:
+                            # Calculate how much additional quantity is being sent now
+                            previous_sent = request_item.quantity_sent
+                            additional_sent = quantity_sent - previous_sent
+                            
+                            print(f"Previous sent: {previous_sent}, New sent: {quantity_sent}, Additional: {additional_sent}")
+                            
+                            # Update the sent quantity
+                            request_item.quantity_sent = quantity_sent
+                            # Update sent status based on quantity_received
+                            request_item.sent = (request_item.quantity_received == request_item.quantity_requested)
+                            
+                            # Always set sent_by and sent_date if quantity is sent
+                            if quantity_sent > 0:
+                                from datetime import datetime
+                                request_item.sent_by = user
+                                request_item.sent_date = datetime.now()
+                                print(f"Setting sent_by={user.name} and sent_date={datetime.now()} for item {request_item.id}")
+                                
+                            request_item.save()
+                            
+                            # Only update inventory if additional quantity is being sent
+                            if additional_sent > 0:
+                                print(f"Deducting {additional_sent} from warehouse inventory")
+                                # Update inventory for sent items
+                                try:
+                                    # Use case-insensitive lookup for client_id
+                                    inventory = Inventory.objects.filter(client_id__iexact=client_item).first()
+                                    if inventory:
+                                        # Update inventory with additional sent quantity - use hotel_warehouse_quantity
+                                        current_warehouse_qty = inventory.hotel_warehouse_quantity or 0
+                                        inventory.hotel_warehouse_quantity = max(0, current_warehouse_qty - additional_sent)
+                                        inventory.save()
+                                        print(f"Updated inventory for {client_item}: warehouse quantity from {current_warehouse_qty} to {inventory.hotel_warehouse_quantity}")
+                                except Exception as inv_error:
+                                    messages.warning(request, f"Error updating inventory for {client_item}: {str(inv_error)}")
+                    
+                    messages.success(request, f"Updated quantities for floor {floor_number} successfully!")
+                else:
+                    # Handle table row update - single floor total
+                    sent_qty = int(request.POST.get('sent_qty', 0))
+                    sent_status = request.POST.get('sent_status', '') == 'Yes'
+                    
+                    # Update all requests for this floor with quantity_sent,
+                    # but determine sent status based on quantity_received in the database
+                    requests = WarehouseRequest.objects.filter(floor_number=floor_number)
+                    for req in requests:
+                        # Calculate how much additional quantity is being sent now
+                        previous_sent = req.quantity_sent
+                        additional_sent = sent_qty - previous_sent
+                        
+                        req.quantity_sent = sent_qty
+                        # Use quantity_received for status determination
+                        req.sent = (req.quantity_received == req.quantity_requested)
+                        
+                        # Always set sent_by and sent_date if quantity is sent
+                        if sent_qty > 0:
+                            from datetime import datetime
+                            req.sent_by = user
+                            req.sent_date = datetime.now()
+                            print(f"Setting sent_by={user.name} and sent_date={datetime.now()} for item {req.id}")
+                            
+                        req.save()
+                        
+                        # Only update inventory if additional quantity is being sent
+                        if additional_sent > 0:
+                            try:
+                                # Use case-insensitive lookup for client_id
+                                inventory = Inventory.objects.filter(client_id__iexact=req.client_item).first()
+                                if inventory:
+                                    # Update inventory with additional sent quantity - use hotel_warehouse_quantity
+                                    current_warehouse_qty = inventory.hotel_warehouse_quantity or 0
+                                    inventory.hotel_warehouse_quantity = max(0, current_warehouse_qty - additional_sent)
+                                    inventory.save()
+                                    print(f"Updated inventory for {req.client_item}: warehouse quantity from {current_warehouse_qty} to {inventory.hotel_warehouse_quantity}")
+                            except Exception as inv_error:
+                                messages.warning(request, f"Error updating inventory for {req.client_item}: {str(inv_error)}")
+                    
+                    requests_updated = len(requests)
+                    
+                    if requests_updated > 0:
+                        messages.success(request, f"Updated {requests_updated} items for floor {floor_number}!")
+                    else:
+                        messages.warning(request, f"No items found for floor {floor_number}")
+                        
+            except Exception as e:
+                messages.error(request, f"Error updating quantities: {str(e)}")
+            
+            return redirect('hotel_warehouse')
+    
+    # Get warehouse requests grouped by floor
+    warehouse_data = []
+    
+    # Get unique floor numbers
+    floor_numbers = WarehouseRequest.objects.filter(sent=False).values_list('floor_number', flat=True).distinct()
+    
+    for floor_number in floor_numbers:
+        # Get only PENDING requests for this floor (sent=False)
+        floor_requests = WarehouseRequest.objects.filter(floor_number=floor_number, sent=False)
+        
+        # Skip empty floors
+        if not floor_requests.exists():
+            continue
+            
+        # Get the first request to use for requested_by
+        first_request = floor_requests.first()
+        requested_by_name = first_request.requested_by.name if first_request.requested_by else 'Unknown'
+        
+        # Calculate totals - ONLY for pending requests
+        item_count = floor_requests.count()
+        quantity_requested = sum(req.quantity_requested for req in floor_requests)
+        quantity_sent = sum(req.quantity_sent for req in floor_requests)
+        
+        # A floor is sent only if all items have quantity_received matching quantity_requested
+        all_sent = all(req.quantity_received == req.quantity_requested for req in floor_requests)
+        
+        warehouse_data.append({
+            'floor_number': floor_number,
+            'requested_by': requested_by_name,
+            'item_count': item_count,
+            'quantity_requested': quantity_requested,
+            'quantity_sent': quantity_sent,
+            'sent': True if all_sent else False
+        })
+    
+    return render(request, 'hotel_warehouse.html', {
+        "previous_submissions": previous_submissions,
+        "floor_data": floor_data,
+        "warehouse_requests": warehouse_data
     })
 
 @session_login_required
@@ -1740,32 +3109,59 @@ def save_product_data(request):
         print("hhhhhhhh", post_data)
 
         product_id = post_data.get("product_id")
+        image = request.FILES.get('image')
         item = post_data.get("item", "").strip()
         client_id = post_data.get("client_id", "").strip()
         description = post_data.get("description") or 0
 
         supplier = post_data.get("supplier")
         client_selected = post_data.get("client_selected") or 0
+        image = request.FILES.get('image')
         try:
             if product_id:
                 print("inside")
                 installation = ProductData.objects.get(id=product_id)
+                if request.POST.get('delete_image') == '1':
+                    if installation.image:
+                        installation.image.delete(save=False)
+                        installation.image = None  
                 installation.product_id = product_id
                 installation.item = item
                 installation.client_id = client_id
                 installation.description = description
                 installation.supplier = supplier
                 installation.client_selected = client_selected
+                if image:  # Only update if a new image is uploaded
+                    installation.image = image
                 installation.save()
+
             else:
                 print("Adding new row")
-                ProductData.objects.create(
+                new_product = ProductData.objects.create(
                     item=item,
                     client_id=client_id,
                     description=description,
                     supplier=supplier,
                     client_selected=client_selected,
+                    image=image,
                 )
+                # Auto-add to Inventory if not already present
+                from hotel_bot_app.models import Inventory
+                if item and client_id:
+                    if not Inventory.objects.filter(client_id__iexact=client_id).exists():
+                        Inventory.objects.create(
+                            item=item,
+                            client_id=client_id,
+                            shipped_to_hotel_quantity=0,
+                            received_at_hotel_quantity=0,
+                            damaged_quantity_at_hotel=0,
+                            hotel_warehouse_quantity=0,
+                            floor_quantity=0,
+                            quantity_installed=0,
+                            qty_received=0,
+                            damaged_quantity=0,
+                            quantity_available=0,
+                        )
 
             return JsonResponse({"success": True})
 
@@ -1832,7 +3228,7 @@ def home(request):
         request.session['user_roles'] = user_roles 
 
         return render(
-            request, "home.html", {"name": user.name, "roles": user_roles}
+            request, "home.html", {"user": user, "roles": user_roles}
         )
     except InvitedUser.DoesNotExist:
         # Clear potentially invalid session data if user doesn't exist
@@ -1840,6 +3236,7 @@ def home(request):
         return redirect("user_login")
 
 @login_required
+@admin_required
 def chat_history(request):
     sessions = ChatSession.objects.prefetch_related('chat_history').order_by('-created_at')
     return render(request, 'chat_history.html', {'sessions': sessions})
@@ -1958,7 +3355,12 @@ def delete_product_room_model(request):
 @session_login_required
 def get_floor_products(request):
     floor_number = request.GET.get("floor_number")
+    user_id = request.session.get("user_id")
+
     try:
+        # Get the current user
+        user = get_object_or_404(InvitedUser, id=user_id) if user_id else None
+
         # Use raw SQL query to get products with total quantity needed
         products = ProductData.objects.raw("""
             WITH room_counts AS (
@@ -1972,51 +3374,162 @@ def get_floor_products(request):
                 SELECT client_id, item, SUM(qty_pulled) as total_pulled
                 FROM pull_inventory
                 GROUP BY client_id, item
+            ),
+            warehouse_requests AS (
+                SELECT client_item, SUM(quantity_requested) as total_requested,
+                       SUM(quantity_received) as total_received
+                FROM warehouse_request
+                WHERE floor_number = %s
+                GROUP BY client_item
             )
             SELECT pd.id, pd.item, pd.client_id, pd.description, pd.supplier,
                    SUM(prm.quantity * rc.room_count) AS total_quantity_needed,
                    COALESCE(inv.quantity_installed, 0) AS quantity_installed,
                    COALESCE(inv.quantity_available, 0) AS available_qty,
-                   COALESCE(pq.total_pulled, 0) AS pulled_quantity
+                   COALESCE(inv.hotel_warehouse_quantity, 0) AS hotel_warehouse_quantity,
+                   COALESCE(pq.total_pulled, 0) AS pulled_quantity,
+                   COALESCE(wr.total_requested, 0) AS requested_quantity,
+                   COALESCE(wr.total_received, 0) AS received_quantity
             FROM product_room_model prm
             JOIN product_data pd ON prm.product_id = pd.id
             JOIN room_counts rc ON prm.room_model_id = rc.room_model_id
             LEFT JOIN inventory inv ON pd.client_id = inv.client_id
             LEFT JOIN pulled_quantities pq ON pd.client_id = pq.client_id AND pd.item = pq.item
-            GROUP BY pd.id, pd.client_id, pd.description, pd.supplier, inv.quantity_installed, inv.quantity_available, pq.total_pulled
+            LEFT JOIN warehouse_requests wr ON pd.client_id = wr.client_item
+            GROUP BY pd.id, pd.client_id, pd.description, pd.supplier, inv.quantity_installed,
+                     inv.quantity_available, inv.hotel_warehouse_quantity, pq.total_pulled,
+                     wr.total_requested, wr.total_received
             ORDER BY pd.client_id
-        """, [floor_number])
-        
+        """, [floor_number, floor_number])
+
+        # Also get specific warehouse request items for this floor
+        # Also get specific warehouse request items for this floor - try both string and int matching
+        # First try with string comparison
+        warehouse_requests_str = WarehouseRequest.objects.filter(
+            floor_number=str(floor_number),
+            sent=False
+        ).select_related('requested_by')
+
+        # Then try with integer comparison
+        try:
+            floor_number_int = int(floor_number)
+            warehouse_requests_int = WarehouseRequest.objects.filter(
+                floor_number=floor_number_int,
+                sent=False
+            ).select_related('requested_by')
+
+            # Combine both querysets
+            warehouse_requests = warehouse_requests_str | warehouse_requests_int
+            warehouse_requests = warehouse_requests.distinct()
+        except ValueError:
+            # If floor_number can't be converted to int, just use the string results
+            warehouse_requests = warehouse_requests_str
+
+        # Debug info
+        print(f"Found {warehouse_requests.count()} warehouse requests for floor {floor_number}")
+
+        # If no requests were found, log more information for debugging
+        if warehouse_requests.count() == 0:
+
+            # Print all unsent warehouse requests for debugging
+            all_unsent = WarehouseRequest.objects.filter(sent=False)
+            print(f"Total unsent warehouse requests in system: {all_unsent.count()}")
+            for req in all_unsent:
+                print(f"Unsent request: floor={req.floor_number}, client_item={req.client_item}, requested={req.quantity_requested}")
+
+        # Print details of each warehouse request
+        for i, req in enumerate(warehouse_requests):
+            print(f"  Request #{i+1}: ID={req.id}, floor={req.floor_number}, client_item={req.client_item}, quantity_requested={req.quantity_requested}, quantity_received={req.quantity_received}")
+
+        # Create lists to store all warehouse requests and a mapping dictionary
+        all_warehouse_requests = []
+        warehouse_requests_dict = {}
+
+        for req in warehouse_requests:
+            # Try to find the matching product for this client item
+            product = ProductData.objects.filter(client_id__iexact=req.client_item).first()
+
+            request_data = {
+                'id': req.id,
+                'client_item': req.client_item,
+                'product_id': product.id if product else None,
+                'description': product.description if product else f"Unknown Product ({req.client_item})",
+                'quantity_requested': req.quantity_requested,
+                'quantity_received': req.quantity_received,
+                'requested_by': req.requested_by.name if req.requested_by else 'Unknown',
+                'sent': req.sent
+            }
+
+            # Add to the all_warehouse_requests list
+            all_warehouse_requests.append(request_data)
+
+            # If we found a product, add to the product-specific dictionary too
+            if product:
+                key = f"{product.id}_{req.client_item}"
+                if key not in warehouse_requests_dict:
+                    warehouse_requests_dict[key] = []
+
+                warehouse_requests_dict[key].append(request_data)
+
         result_products = []
         for product in products:
             # Calculate remaining quantity needed after subtracting already pulled quantity
             remaining_quantity = max(0, product.total_quantity_needed - product.pulled_quantity)
-            
+
+            # Get warehouse requests for this product using the product_id+client_id key
+            key = f"{product.id}_{product.client_id}"
+            product_requests = warehouse_requests_dict.get(key, [])
+
             result_products.append({
                 "id": product.id,
                 "client_id": product.client_id,
                 "description": product.description,
                 "quantity": remaining_quantity,  # Use remaining quantity instead of total
                 "available_qty": product.available_qty,
+                "hotel_warehouse_quantity": product.hotel_warehouse_quantity,
                 "supplier": product.supplier,
-                "quantity_installed": product.quantity_installed,  # Add quantity already pulled
-                "total_quantity_needed": product.total_quantity_needed,  # Keep original total for reference
-                "pulled_quantity": product.pulled_quantity  # Add pulled quantity
+                "quantity_installed": product.quantity_installed,
+                "total_quantity_needed": product.total_quantity_needed,
+                "pulled_quantity": product.pulled_quantity,
+                "requested_quantity": getattr(product, 'requested_quantity', 0),
+                "received_quantity": getattr(product, 'received_quantity', 0),
+                "warehouse_requests": product_requests  # Add specific request items
             })
-            
+
+        # Add standalone warehouse requests for items without matching products
+        for request in all_warehouse_requests:
+            if request['product_id'] is None:
+                # Create a dummy product entry for this request
+                result_products.append({
+                    "id": f"dummy_{request['id']}",  # Create a unique ID
+                    "client_id": request['client_item'],
+                    "description": request['description'],
+                    "quantity": 0,
+                    "available_qty": 0,
+                    "hotel_warehouse_quantity": 0,
+                    "supplier": "",
+                    "quantity_installed": 0,
+                    "total_quantity_needed": 0,
+                    "pulled_quantity": 0,
+                    "requested_quantity": request['quantity_requested'],
+                    "received_quantity": request['quantity_received'],
+                    "warehouse_requests": [request]  # Include this single request
+            })
+
         return JsonResponse({
             "success": True,
-            "products": result_products
+            "products": result_products,
+            "all_warehouse_requests": all_warehouse_requests
         })
     except Exception as e:
         return JsonResponse({
             "success": False,
             "error": str(e)
         })
-
+        
 # Helper function to generate XLS response
 def _generate_xls_response(data, filename, sheet_name="Sheet1"):
-    response = HttpResponse(content_type='application/ms-excel')
+    response = HttpResponse(content_type='application/vnd.ms-excel')
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
 
     wb = xlwt.Workbook(encoding='utf-8')
@@ -2058,33 +3571,39 @@ def _get_floor_products_data(floor_number):
         with connection.cursor() as cursor:
 
             sql_query = """
-             WITH room_counts AS (
+             WITH             room_counts AS (
                 SELECT rm.id AS room_model_id, COUNT(*) AS room_count
                 FROM room_data rd
                 JOIN room_model rm ON rd.room_model_id = rm.id
                 WHERE rd.floor = %s
                 GROUP BY rm.id
             ),
-            pulled_quantities AS (
-                SELECT client_id, item, SUM(qty_pulled) as total_pulled
-                FROM pull_inventory
-                GROUP BY client_id, item
+            floor_installed_quantities AS (
+                SELECT pd.client_id,
+                       SUM(prm.quantity) AS floor_installed_qty
+                FROM room_data rd
+                JOIN install_detail id ON rd.id = id.room_id
+                JOIN product_data pd ON id.product_id = pd.id
+                JOIN product_room_model prm ON pd.id = prm.product_id AND rd.room_model_id = prm.room_model_id
+                WHERE rd.floor = %s AND UPPER(id.status) = 'YES'
+                GROUP BY pd.client_id
             )
             SELECT pd.id, pd.item, pd.client_id, pd.description, pd.supplier,
                    SUM(prm.quantity * rc.room_count) AS total_quantity_needed,
                    COALESCE(inv.quantity_installed, 0) AS quantity_installed,
                    COALESCE(inv.quantity_available, 0) AS available_qty,
-                   COALESCE(pq.total_pulled, 0) AS pulled_quantity
+                   COALESCE(inv.hotel_warehouse_quantity, 0) AS hotel_warehouse_quantity,
+                   COALESCE(fiq.floor_installed_qty, 0) AS floor_installed_quantity
             FROM product_room_model prm
             JOIN product_data pd ON prm.product_id = pd.id
             JOIN room_counts rc ON prm.room_model_id = rc.room_model_id
             LEFT JOIN inventory inv ON pd.client_id = inv.client_id
-            LEFT JOIN pulled_quantities pq ON pd.client_id = pq.client_id AND pd.item = pq.item
-            GROUP BY pd.id, pd.client_id, pd.description, pd.supplier, inv.quantity_installed, inv.quantity_available, pq.total_pulled
+            LEFT JOIN floor_installed_quantities fiq ON pd.client_id = fiq.client_id
+            GROUP BY pd.id, pd.client_id, pd.description, pd.supplier, inv.quantity_installed, inv.quantity_available, inv.hotel_warehouse_quantity, fiq.floor_installed_qty
             ORDER BY pd.client_id"""
             
             print("sql_query",sql_query)
-            cursor.execute(sql_query, [floor_number]) # Pass floor_number twice
+            cursor.execute(sql_query, [floor_number, floor_number])
 
             columns = [col[0] for col in cursor.description]
             products = [dict(zip(columns, row)) for row in cursor.fetchall()]
@@ -2092,8 +3611,8 @@ def _get_floor_products_data(floor_number):
         result_products = []
         for product in products:
             total_needed = product.get('total_quantity_needed', 0) or 0
-            pulled = product.get('pulled_quantity', 0) or 0
-            remaining_quantity = max(0, total_needed - pulled)
+            floor_installed = product.get('floor_installed_quantity', 0) or 0
+            remaining_quantity = max(0, total_needed - floor_installed)
 
             result_products.append({
                 "id": product.get('id'),
@@ -2102,10 +3621,11 @@ def _get_floor_products_data(floor_number):
                 "description": product.get('description'),
                 "supplier": product.get('supplier'),
                 "total_quantity_needed": total_needed,
-                "pulled_quantity": pulled,
-                "remaining_quantity_needed": remaining_quantity, # Renamed from 'quantity' for clarity
+                "remaining_quantity_needed": remaining_quantity, # Total needed - Floor installed
                 "available_qty": product.get('available_qty', 0) or 0,
+                "hotel_warehouse_quantity": product.get('hotel_warehouse_quantity', 0) or 0,
                 "quantity_installed": product.get('quantity_installed', 0) or 0,
+                "floor_installed_quantity": product.get('floor_installed_quantity', 0) or 0,
             })
         return result_products
     except Exception as e:
@@ -2156,8 +3676,20 @@ def floor_products_list(request):
             # Handle XLS download request
             if request.GET.get('download') == 'xls':
                 if product_list:
+                    # Create filtered data for Excel export with only the required columns
+                    excel_data = []
+                    for product in product_list:
+                        excel_data.append({
+                            'Client ID': product.get('client_id', ''),
+                            'Description': product.get('description', ''),
+                            'Total Needed for Floor': product.get('total_quantity_needed', 0),
+                            'Remaining Needed': product.get('remaining_quantity_needed', 0),
+                            'Floor Installed Qty': product.get('floor_installed_quantity', 0),
+                            'Hotel Warehouse Qty': product.get('hotel_warehouse_quantity', 0)
+                        })
+                    
                     filename = f"products_list_for_{floor_number}_floor.xls"
-                    return _generate_xls_response(product_list, filename, sheet_name=f"Floor {floor_number}")
+                    return _generate_xls_response(excel_data, filename, sheet_name=f"Floor {floor_number}")
                 else:
                      # Optionally handle download request when no data
                      messages.warning(request, f"No data to download for floor {floor_number}.")
@@ -2331,7 +3863,28 @@ def issue_detail(request, issue_id):
 
 @session_login_required
 def issue_create(request):
-    user = get_object_or_404(InvitedUser, id=request.session.get("user_id"))
+    user = None
+    invited_user_id = request.session.get("user_id")
+    if invited_user_id:
+        user = InvitedUser.objects.filter(id=invited_user_id).first()
+    if not user and request.user.is_authenticated:
+        user = InvitedUser.objects.filter(email__iexact=request.user.email).first()
+    
+    is_admin = False
+    admin_user = None
+    if not user and request.user.is_authenticated:
+        # Check if this is a Django User with UserProfile and is_administrator
+        try:
+            if hasattr(request.user, 'profile') and request.user.profile.is_administrator:
+                is_admin = True
+                admin_user = request.user
+        except UserProfile.DoesNotExist:
+            pass
+
+    if not user and not is_admin:
+        messages.error(request, "Associated invited user account not found.")
+        return redirect("issue_list")
+
     
     initial_data = {}
     if request.method == 'GET':
@@ -2742,3 +4295,2175 @@ def admin_save_installation_details(request):
             return JsonResponse({"success": False, "message": f"An server error occurred: {str(e)}"}, status=500)
 
     return JsonResponse({"error": "Invalid request method. Only POST is allowed."}, status=405)
+
+@session_login_required
+def get_shipment_details(request):
+    shipment_id = request.GET.get('shipment_id')
+    if not shipment_id:
+        return JsonResponse({'success': False, 'message': 'Shipment ID is required'})
+    
+    try:
+        # Get the reference shipping item
+        reference_item = get_object_or_404(Shipping, id=shipment_id)
+        container_id = reference_item.bol
+        
+        # Get all items with this container ID
+        items = Shipping.objects.filter(bol=container_id)
+        
+        # Format dates for form fields
+        ship_date = reference_item.ship_date.strftime('%Y-%m-%d') if reference_item.ship_date else ''
+        expected_arrival = reference_item.expected_arrival_date.strftime('%Y-%m-%d') if reference_item.expected_arrival_date else ''
+        
+        # Format items for JSON response
+        item_list = []
+        for item in items:
+            # Get product name from ProductData if available
+            try:
+                product = ProductData.objects.get(client_id=item.client_id)
+                product_name = product.description
+            except ProductData.DoesNotExist:
+                product_name = item.item or "Unknown Product"
+            
+            item_list.append({
+                'id': item.id,
+                'client_id': item.client_id,
+                'product_name': product_name,
+                'supplier': item.supplier or "N/A",
+                'quantity': item.ship_qty or 1
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'container_id': container_id,
+            'ship_date': ship_date,
+            'expected_arrival': expected_arrival,
+            'items': item_list
+        })
+    
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': str(e)})
+
+@session_login_required
+def check_container_exists(request):
+    """
+    API endpoint to check if a container ID already exists
+    """
+    container_id = request.GET.get('container_id', '').strip()
+    
+    if not container_id:
+        return JsonResponse({
+            'exists': False,
+            'count': 0
+        })
+    
+    # Count shipping entries with this container ID
+    count = Shipping.objects.filter(bol__iexact=container_id).count()
+    
+    return JsonResponse({
+        'exists': count > 0,
+        'count': count
+    })
+
+@session_login_required
+def get_container_data(request):
+    """
+    API endpoint to get all data for a specific container ID
+    """
+    container_id = request.GET.get('container_id', '').strip()
+    if not container_id:
+        return JsonResponse({
+            'success': False,
+            'message': 'Container ID is required'
+        })
+    container_id_lower = container_id.lower()
+    mode = request.GET.get('mode')
+    
+    # Check if container is received
+    is_received = InventoryReceived.objects.filter(container_id__iexact=container_id).exists()
+    
+    # For view mode, always allow access
+    # For edit mode, allow access even if received (new behavior)
+    if mode == 'view':
+        pass  # Allow view access
+    elif is_received:
+        # Container is received - will be handled in frontend with restrictions
+        pass
+    
+    try:
+        # Get all items with this container ID (case-insensitive)
+        items = Shipping.objects.filter(bol__iexact=container_id_lower)
+        
+        if not items.exists():
+            return JsonResponse({
+                'success': False,
+                'message': f'No items found for container ID: {container_id}'
+            })
+        
+        # Get the first item to extract common data
+        first_item = items.first()
+        
+        # Format dates for form fields
+        ship_date = first_item.ship_date.strftime('%Y-%m-%d') if first_item.ship_date else ''
+        expected_arrival = first_item.expected_arrival_date.strftime('%Y-%m-%d') if first_item.expected_arrival_date else ''
+        
+        # Format items for JSON response
+        item_list = []
+        for item in items:
+            # Get product name from ProductData if available
+            try:
+                # Use case-insensitive lookup to match product data
+                product = ProductData.objects.get(client_id__iexact=item.client_id)
+                # Use description consistently (or fall back to item) - same as get_product_item_num
+                product_name = product.description or product.item or "Unknown Product"
+                print(f"get_container_data - client_id: {item.client_id}, product_name: {product_name}")
+            except ProductData.DoesNotExist:
+                product_name = item.item or "Unknown Product"
+                print(f"Product not found for client_id: {item.client_id}, using item name: {product_name}")
+            
+            item_list.append({
+                'id': item.id,
+                'client_id': item.client_id,
+                'product_name': product_name,
+                'supplier': item.supplier or "N/A",
+                'quantity': item.ship_qty or 1
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'container_id': container_id,
+            'ship_date': ship_date,
+            'expected_arrival': expected_arrival,
+            'items': item_list,
+            'count': len(item_list),
+            'is_received': is_received
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'message': str(e)
+        })
+
+@session_login_required
+def get_container_received_items(request):
+    """API endpoint to get all received items for a specific container ID"""
+    container_id = request.GET.get('container_id')
+    if not container_id:
+        return JsonResponse({'success': False, 'message': 'Container ID is required'})
+    container_id_lower = container_id.lower()
+    try:
+        # Debug info
+        print(f"Fetching received items for container_id: {container_id_lower}")
+        # Get all inventory received records for this container (case-insensitive)
+        received_items = InventoryReceived.objects.filter(container_id__iexact=container_id_lower).order_by('client_id')
+        if not received_items.exists():
+            return JsonResponse({'success': False, 'message': f'No received items found for container {container_id}'})
+
+        # Build a map of shipped quantities from Shipping table for this container
+        shipped_map = {}
+        for ship in Shipping.objects.filter(bol__iexact=container_id_lower):
+            shipped_map[(ship.client_id or '').lower()] = ship.ship_qty
+
+        # Get the received date from the first item
+        first_item = received_items.first()
+        received_date = first_item.received_date.strftime('%Y-%m-%d') if first_item.received_date else ''
+
+        # Format items for response
+# Get all shipped items for this container
+        shipped_items = list(Shipping.objects.filter(bol__iexact=container_id_lower))
+
+        # Build a map of received items by client_id
+        received_map = {}
+        for rec in InventoryReceived.objects.filter(container_id__iexact=container_id_lower):
+            received_map[(rec.client_id or '').strip().lower()] = rec
+
+        items_data = []
+        for ship in shipped_items:
+            key = (ship.client_id or '').strip().lower()
+            rec = received_map.get(key)
+            # Get product name from ProductData if available
+            try:
+                product = ProductData.objects.get(client_id__iexact=ship.client_id)
+                product_name = product.description or product.item or ship.item
+            except ProductData.DoesNotExist:
+                product_name = ship.item or "Unknown Product"
+            items_data.append({
+                'id': rec.id if rec else None,
+                'client_id': ship.client_id,
+                'product_name': product_name,
+                'received_qty': rec.received_qty if rec else 0,
+                'damaged_qty': rec.damaged_qty if rec else 0,
+                'shipped_qty': ship.ship_qty,
+                'checked_by': rec.checked_by.name if rec and rec.checked_by else 'Unknown'
+            })
+
+        print(f"Found {len(items_data)} received items")
+
+        return JsonResponse({
+            'success': True,
+            'container_id': container_id,
+            'items': items_data,
+            'received_date': received_date
+        })
+    except Exception as e:
+        print(f"Error in get_container_received_items: {e}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({'success': False, 'message': str(e)})
+
+@session_login_required
+def hotel_inventory(request):
+    """
+    View for displaying hotel warehouse inventory in a dedicated page (same table as warehouse_receiver).
+    """
+    hotel_warehouse_inventory = Inventory.objects.all()
+    context = {
+        "hotel_warehouse_inventory": hotel_warehouse_inventory,
+    }
+    return render(request, "hotel_inventory.html", context)
+
+
+@session_login_required
+def warehouse_receiver(request):
+    """
+    View for receiving warehouse shipments.
+    """
+    # Only update inventory quantities when submitting form, not on every page load
+    
+    user_id = request.session.get("user_id")
+    user = None
+    
+    if user_id:
+        try:
+            user = InvitedUser.objects.get(id=user_id)
+        except InvitedUser.DoesNotExist:
+            pass
+    
+    if request.method == "POST":
+        try:
+            # Get form data
+            reference_id = request.POST.get("reference_id", "").strip().lower()
+            received_date_str = request.POST.get("received_date")
+            
+            # Get edit mode flags
+            is_editing = request.POST.get("is_edit_mode") == "1"
+            original_reference_id = request.POST.get("original_reference_id", "").strip().lower()
+            delete_previous_items = request.POST.get("delete_previous_items") == "1"
+            
+            # Log edit mode information
+            print(f"Processing form - is_editing: {is_editing}, original_reference_id: {original_reference_id}, delete_previous: {delete_previous_items}")
+            
+            # Parse the received date
+            received_date = parse_date(received_date_str) if received_date_str else now().date()
+            
+            # Get the arrays of data
+            client_items = request.POST.getlist("client_items[]")
+            quantities = request.POST.getlist("quantities[]")  # Now these are received quantities
+            damaged_quantities = request.POST.getlist("damaged_quantities[]")  # New damaged quantities field
+            product_names = request.POST.getlist("product_names[]")
+            
+            # Validate input
+            if not reference_id:
+                messages.error(request, "Reference ID is required")
+                return redirect("warehouse_receiver")
+            
+            if not client_items:
+                messages.error(request, "No items added to receipt")
+                return redirect("warehouse_receiver")
+            
+            # Enforce 48-hour lock: if any receipt exists for this reference_id and its earliest
+            # creation time is within the last 48 hours, block edits or deletes.
+            existing_items_qs = HotelWarehouse.objects.filter(reference_id__iexact=(original_reference_id or reference_id))
+            if existing_items_qs.exists():
+                earliest_created = existing_items_qs.order_by('created_at').values_list('created_at', flat=True).first()
+                if earliest_created:
+                    if now() - earliest_created < timedelta(hours=48):
+                        messages.error(request, "Edits are locked for 48 hours after the first receipt is created for this reference ID.")
+                        return redirect("warehouse_receiver")
+
+            # Check if we're in edit mode
+            if is_editing and original_reference_id:
+                # If editing and the reference ID has changed, make sure the new one doesn't exist
+                if reference_id != original_reference_id and HotelWarehouse.objects.filter(reference_id__iexact=reference_id).exists():
+                    messages.error(request, f"Cannot change reference ID to '{reference_id}' as it already exists")
+                    return redirect("warehouse_receiver")
+                
+                # Delete previous items if requested
+                if delete_previous_items:
+                    deleted_count = HotelWarehouse.objects.filter(reference_id__iexact=original_reference_id).delete()[0]
+                    print(f"Deleted {deleted_count} previous items for reference ID '{original_reference_id}'")
+            
+            # Create new warehouse receipt entries
+            for i, client_item in enumerate(client_items):
+                received_qty = int(quantities[i]) if i < len(quantities) and quantities[i] else 0
+                damaged_qty = int(damaged_quantities[i]) if i < len(damaged_quantities) and damaged_quantities[i] else 0
+                
+                # Skip if received quantity is 0
+                if received_qty == 0 and damaged_qty == 0:
+                    continue
+                
+                try:
+                    # Create the warehouse receipt
+                    HotelWarehouse.objects.create(
+                        reference_id=reference_id,
+                        client_item=client_item,
+                        quantity_received=received_qty,
+                        damaged_qty=damaged_qty,  # Add the damaged quantity
+                        checked_by=user,
+                        received_date=received_date
+                    )
+                    # Use the recalculate function which handles case insensitivity
+                    recalculate_hotel_warehouse_quantity(client_item)
+                    print(f"Updated hotel warehouse quantity for {client_item} using recalculate_hotel_warehouse_quantity")
+                except Exception as item_error:
+                    print(f"Error creating warehouse receipt for {client_item}: {str(item_error)}")
+                    # Don't raise the exception as we want to continue with other items
+            
+            try:
+                # Call functions to update inventory quantities
+                update_inventory_warehouse_quantities()
+                update_inventory_hotel_warehouse_quantities()  # Also update received and damaged quantities
+            except Exception as update_error:
+                print(f"Error updating inventory quantities: {str(update_error)}")
+                # Don't raise the exception as we want to continue with the response
+            
+            if is_editing:
+                messages.success(request, "Warehouse receipt updated successfully")
+            else:
+                messages.success(request, "Warehouse receipt created successfully")
+            
+            return redirect("warehouse_receiver")
+        
+        except Exception as e:
+            print(f"Error in warehouse_receiver: {e}")
+            messages.error(request, f"Error: {str(e)}")
+            return redirect("warehouse_receiver")
+    
+    # For DataTables: pass all inventory rows (no pagination, no search)
+    hotel_warehouse_inventory = Inventory.objects.all()
+    
+    context = {
+        "user_name": user.name if user else "",
+        "hotel_warehouse_inventory": hotel_warehouse_inventory,
+        "request": request,  # For other template needs
+    }
+    return render(request, "warehouse_receiver.html", context)
+
+from django.views.decorators.http import require_POST
+
+@require_POST
+@session_login_required
+def delete_warehouse_receiver_container(request):
+    reference_id = request.POST.get("reference_id")
+    if not reference_id:
+        return JsonResponse({"success": False, "message": "No reference ID provided."})
+    try:
+        # Enforce 48-hour lock from first receipt creation
+        lock_items = HotelWarehouse.objects.filter(reference_id__iexact=reference_id)
+        if lock_items.exists():
+            earliest_created = lock_items.order_by('created_at').values_list('created_at', flat=True).first()
+            if earliest_created and (now() - earliest_created) < timedelta(hours=48):
+                return JsonResponse({
+                    "success": False,
+                    "message": "Deletion is locked for 48 hours after initial receipt creation for this reference ID."
+                })
+
+        # Get all HotelWarehouse records for this reference_id (case-insensitive)
+        warehouse_items = HotelWarehouse.objects.filter(reference_id__iexact=reference_id)
+        if not warehouse_items.exists():
+            return JsonResponse({"success": False, "message": "Reference ID not found."})
+
+        # For each item, subtract its quantity from Inventory.hotel_warehouse_quantity
+        for item in warehouse_items:
+            try:
+                inventory = Inventory.objects.get(client_id__iexact=item.client_item)
+                # Subtract, but don't go below zero
+                inventory.hotel_warehouse_quantity = max(0, (inventory.hotel_warehouse_quantity or 0) - (item.quantity_received or 0))
+                inventory.damaged_quantity_at_hotel = max(0, (inventory.damaged_quantity_at_hotel or 0) - (item.damaged_qty or 0))
+                inventory.received_at_hotel_quantity = max(0, (inventory.received_at_hotel_quantity or 0) - (item.quantity_received or 0))
+                inventory.save()
+            except Inventory.DoesNotExist:
+                pass  # If inventory record doesn't exist, skip
+
+        # Now delete the HotelWarehouse records
+        deleted_count, _ = warehouse_items.delete()
+        return JsonResponse({"success": True, "message": f"Deleted {deleted_count} items and updated hotel warehouse inventory."})
+    except Exception as e:
+        return JsonResponse({"success": False, "message": str(e)})
+
+@session_login_required
+def get_warehouse_receipt_details(request):
+    """
+    API endpoint to get details of a specific warehouse receipt
+    """
+    # Try to get the reference ID (which is what we want to filter by)
+    # The frontend might send either receipt_id or reference_id
+    reference_id = (request.GET.get('receipt_id') or request.GET.get('reference_id') or '').strip().lower()
+    
+    print(f"get_warehouse_receipt_details - received reference_id: {reference_id}")
+    
+    if not reference_id:
+        return JsonResponse({'success': False, 'message': 'Reference ID is required'})
+    
+    try:
+        # Get all items with this reference ID
+        items = HotelWarehouse.objects.filter(reference_id__iexact=reference_id)
+        itemsqty = WarehouseShipment.objects.filter(reference_id__iexact=reference_id)
+        
+        if not items.exists():
+            return JsonResponse({'success': False, 'message': 'Receipt not found'})
+        
+        # Format receipt data
+        receipt_data = {
+            'id': reference_id,
+            'reference_id': reference_id,
+            'received_date': now().strftime('%Y-%m-%d'),  # Default to current date
+            'received_by': "System"  # Default value
+        }
+        
+        # Get the first item to get more details
+        first_item = items.first()
+        if first_item:
+            # Get user name if available
+            if first_item.checked_by:
+                receipt_data['received_by'] = first_item.checked_by.name
+            
+            # Get received date if available
+            if first_item.received_date:
+                receipt_data['received_date'] = first_item.received_date.strftime('%Y-%m-%d')
+        
+        # Format items data
+        items_data = []
+        for item in items:
+            # Get product name from ProductData or Inventory tables
+            product_name = "Unknown Product"
+            try:
+                # First try to get from ProductData by client_id
+                product = ProductData.objects.filter(client_id__iexact=item.client_item).first()
+                if product and product.description:
+                    product_name = product.description
+                elif product and product.item:
+                    product_name = product.item
+                else:
+                    # If not found, try to get from Inventory
+                    inventory = Inventory.objects.filter(client_id__iexact=item.client_item).first()
+                    if inventory and inventory.item:
+                        # Try to get the description from ProductData using item
+                        prod_from_item = ProductData.objects.filter(item__iexact=inventory.item).first()
+                        if prod_from_item and prod_from_item.description:
+                            product_name = prod_from_item.description
+                        else:
+                            product_name = inventory.item
+            except Exception as e:
+                logger.warning(f"Error looking up product name for {item.client_item}: {e}")
+            
+            # Find the matching shipment item for this warehouse item
+            matching_shipment = itemsqty.filter(client_id__iexact=item.client_item).first()
+            ship_qty = matching_shipment.ship_qty if matching_shipment else 0
+            
+            items_data.append({
+                'id': item.id,
+                'client_item': item.client_item,  # Use consistent field name
+                'product_name': product_name,
+                'ship_qty': ship_qty,  # Use the ship_qty from the matching shipment
+                'quantity_received': item.quantity_received,  # Use field name from the model
+                'damaged_qty': item.damaged_qty  # Add damaged quantity
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'receipt': receipt_data,
+            'items': items_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in get_warehouse_receipt_details: {e}", exc_info=True)
+        return JsonResponse({'success': False, 'message': str(e)})
+
+def update_inventory_warehouse_quantities():
+    """
+    Update all inventory hotel_warehouse_quantity values based on the sum of quantities in HotelWarehouse.
+    Uses case-insensitive matching for client IDs.
+    """
+    try:
+        # Get all unique client items from Inventory
+        inventory_items = Inventory.objects.values_list('client_id', flat=True).distinct()
+        updated_count = 0
+        
+        for inv_client_id in inventory_items:
+            try:
+                # Find all case variations of this client_id in HotelWarehouse
+                warehouse_items = HotelWarehouse.objects.filter(
+                    client_item__iexact=inv_client_id
+                )
+                
+                if warehouse_items.exists():
+                    # Calculate total quantity for all case variations
+                    total_qty = warehouse_items.aggregate(
+                        total=Sum('quantity_received')
+                    )['total'] or 0
+                    
+                    # Update inventory record
+                    Inventory.objects.filter(client_id=inv_client_id).update(hotel_warehouse_quantity=total_qty)
+                    updated_count += 1
+                else:
+                    # If no warehouse items found for this inventory item, set quantity to 0
+                    Inventory.objects.filter(client_id=inv_client_id).update(hotel_warehouse_quantity=0)
+            except Exception as item_error:
+                logger.error(f"Error updating warehouse quantity for {inv_client_id}: {item_error}")
+        
+        # Also update received_at_hotel_quantity and damaged_quantity_at_hotel
+        # Call our dedicated function for those fields
+        update_inventory_hotel_warehouse_quantities()
+        
+        logger.info(f"Updated hotel_warehouse_quantity for {updated_count} inventory items")
+    except Exception as e:
+        logger.error(f"Error updating inventory warehouse quantities: {e}", exc_info=True)
+
+@session_login_required
+def warehouse_request_items(request):
+    """
+    API endpoint to get pending warehouse request items for a specific floor
+    """
+    floor_number = request.GET.get('floor_number')
+    
+    if not floor_number:
+        return JsonResponse({'success': False, 'message': 'Floor number is required'})
+    
+    try:
+        # Get only pending warehouse request items for this floor
+        items = WarehouseRequest.objects.filter(floor_number=floor_number, sent=False)
+        
+        if not items.exists():
+            return JsonResponse({'success': False, 'message': 'No items found for this floor'})
+        
+        # Format items for response
+        items_data = []
+        for item in items:
+            # Get product name from ProductData or Inventory tables
+            product_name = "Unknown Product"
+            try:
+                # First try to get from ProductData by client_id
+                product = ProductData.objects.filter(client_id__iexact=item.client_item).first()
+                if product and product.description:
+                    product_name = product.description
+                elif product and product.item:
+                    product_name = product.item
+                else:
+                    # If not found, try to get from Inventory
+                    inventory = Inventory.objects.filter(client_id__iexact=item.client_item).first()
+                    if inventory and inventory.item:
+                        # Try to get the description from ProductData using item
+                        prod_from_item = ProductData.objects.filter(item__iexact=inventory.item).first()
+                        if prod_from_item and prod_from_item.description:
+                            product_name = prod_from_item.description
+                        else:
+                            product_name = inventory.item
+            except Exception as e:
+                logger.warning(f"Error looking up product name for {item.client_item}: {e}")
+            
+            items_data.append({
+                'id': item.id,  # Include the specific item ID for accurate updates
+                'client_item': item.client_item,
+                'product_name': product_name,
+                'quantity_requested': item.quantity_requested,
+                'quantity_sent': item.quantity_sent,
+                'sent': True if item.sent else False
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'items': items_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in warehouse_request_items: {e}", exc_info=True)
+        return JsonResponse({'success': False, 'message': str(e)})
+
+@session_login_required
+def get_previous_warehouse_requests(request):
+    """
+    API endpoint to get all previous warehouse requests for a specific floor
+    """
+    floor_number = request.GET.get('floor_number')
+    
+    if not floor_number:
+        return JsonResponse({'success': False, 'message': 'Floor number is required'})
+    
+    try:
+        # Get all warehouse request items for this floor
+        items = WarehouseRequest.objects.filter(floor_number=floor_number)
+        
+        if not items.exists():
+            return JsonResponse({'success': False, 'message': 'No items found for this floor'})
+        
+        # Format items for response
+        items_data = []
+        for item in items:
+            # Get product name from ProductData or Inventory tables
+            product_name = "Unknown Product"
+            try:
+                # First try to get from ProductData by client_id
+                product = ProductData.objects.filter(client_id__iexact=item.client_item).first()
+                if product and product.description:
+                    product_name = product.description
+                elif product and product.item:
+                    product_name = product.item
+                else:
+                    # If not found, try to get from Inventory
+                    inventory = Inventory.objects.filter(client_id__iexact=item.client_item).first()
+                    if inventory and inventory.item:
+                        # Try to get the description from ProductData using item
+                        prod_from_item = ProductData.objects.filter(item__iexact=inventory.item).first()
+                        if prod_from_item and prod_from_item.description:
+                            product_name = prod_from_item.description
+                        else:
+                            product_name = inventory.item
+            except Exception as e:
+                logger.warning(f"Error looking up product name for {item.client_item}: {e}")
+            
+            # Get requested_by, sent_by and received_by names
+            requested_by_name = item.requested_by.name if item.requested_by else "Unknown"
+            received_by_name = item.received_by.name if item.received_by else "Not received"
+            
+            # Explicitly debug sent_by and sent_date values
+            print(f"Item {item.id} sent_by_id={item.sent_by_id}, sent_date={item.sent_date}")
+            
+            # Get sent_by name (if exists)
+            sent_by_name = "Not set"
+            if item.sent_by_id:
+                try:
+                    sent_by_user = InvitedUser.objects.get(id=item.sent_by_id)
+                    sent_by_name = sent_by_user.name
+                except:
+                    sent_by_name = f"User ID {item.sent_by_id}"
+            
+            # Format the sent date if available
+            sent_date_str = item.sent_date.strftime("%Y-%m-%d") if item.sent_date else "Not set"
+            
+            print(f"Item {item.id} sent_by_name={sent_by_name}, sent_date_str={sent_date_str}")
+            
+            items_data.append({
+                'id': item.id,
+                'client_item': item.client_item,
+                'product_name': product_name,
+                'quantity_requested': item.quantity_requested,
+                'quantity_sent': item.quantity_sent,
+                'quantity_received': item.quantity_received,
+                'requested_by': requested_by_name,
+                'sent_by': sent_by_name,
+                'sent_date': sent_date_str,
+                'received_by': received_by_name,
+                'sent': item.sent
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'items': items_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in get_previous_warehouse_requests: {e}", exc_info=True)
+        return JsonResponse({'success': False, 'message': str(e)})
+
+@session_login_required
+def get_warehouse_receipts(request):
+    """
+    API endpoint to get paginated warehouse receipts for AJAX loading, with server-side search support
+    """
+    page = request.GET.get('page', 1)
+    search = request.GET.get('search', '').strip()
+
+    try:
+        # More efficient query: Get the most recent receipts first with date ordering
+        recent_receipts = (
+            HotelWarehouse.objects
+            .values('reference_id')
+            .annotate(
+                latest_date=Max('received_date'),
+                items_count=Count('id'),
+                total_quantity=Sum('quantity_received'),
+                first_id=Min('id')
+            )
+            .order_by('-latest_date')
+        )
+
+        # If search is provided, filter the queryset
+        if search:
+            # Find all reference_ids that match the search in reference_id, checked_by__name, or product_name
+            # First, get all reference_ids that match product_name in any HotelWarehouse row
+            product_name_matches = HotelWarehouse.objects.filter(product_name__icontains=search).values_list('reference_id', flat=True)
+            # Get all reference_ids that match checked_by__name
+            checked_by_matches = HotelWarehouse.objects.filter(checked_by__name__icontains=search).values_list('reference_id', flat=True)
+            # Now filter recent_receipts
+            recent_receipts = [r for r in recent_receipts if (
+                search.lower() in r['reference_id'].lower() or
+                r['reference_id'] in product_name_matches or
+                r['reference_id'] in checked_by_matches
+            )]
+
+        # Get the prefetched items in a single query
+        receipt_ids = [r['first_id'] for r in recent_receipts]
+        receipt_items = HotelWarehouse.objects.filter(id__in=receipt_ids).select_related('checked_by')
+        receipt_dict = {item.id: item for item in receipt_items}
+
+        # Process the results without additional queries
+        receipts_list = []
+        for receipt in recent_receipts:
+            ref_id = receipt['reference_id']
+            first_item = receipt_dict.get(receipt['first_id'])
+
+            if first_item:
+                # Get received date
+                received_date = receipt['latest_date'].strftime('%Y-%m-%d') if receipt['latest_date'] else now().strftime('%Y-%m-%d')
+
+                # Get user name if available
+                received_by = "System"  # Default value
+                if first_item.checked_by:
+                    received_by = first_item.checked_by.name
+
+                receipts_list.append({
+                    'id': ref_id,  # Use reference_id as the ID for the receipt
+                    'reference_id': ref_id,
+                    'received_date': received_date,
+                    'items_count': receipt['items_count'],
+                    'total_quantity': receipt['total_quantity'] or 0,
+                    'received_by': received_by
+                })
+
+        # Create paginator
+        paginator = Paginator(receipts_list, 10)  # 10 receipts per page
+
+        try:
+            receipts_page = paginator.page(page)
+        except PageNotAnInteger:
+            receipts_page = paginator.page(1)
+        except EmptyPage:
+            receipts_page = paginator.page(paginator.num_pages)
+
+        # Return paginated data as JSON
+        return JsonResponse({
+            'success': True,
+            'receipts': list(receipts_page),
+            'page': receipts_page.number,
+            'total_pages': paginator.num_pages,
+            'has_previous': receipts_page.has_previous(),
+            'previous_page': receipts_page.previous_page_number() if receipts_page.has_previous() else None,
+            'has_next': receipts_page.has_next(),
+            'next_page': receipts_page.next_page_number() if receipts_page.has_next() else None
+        })
+
+    except Exception as e:
+        logger.error(f"Error in get_warehouse_receipts: {e}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'message': str(e)
+        })
+
+@session_login_required
+def warehouse_shipment(request):
+    user_id = request.session.get("user_id")
+    user_name = ""
+    received_reference_ids = set(
+        HotelWarehouse.objects.values_list('reference_id', flat=True)
+    )
+    received_reference_ids_lower = set(rid.lower() for rid in received_reference_ids if rid)
+
+    # Check if there was an abandoned edit that needs cleanup
+    abandoned_edit_id = request.session.get("editing_warehouse_shipment")
+    if abandoned_edit_id:
+        # Clear the session flag first to prevent loops
+        del request.session["editing_warehouse_shipment"]
+        request.session.save()
+        
+        try:
+            # Revert inventory for this abandoned edit
+            items = WarehouseShipment.objects.filter(reference_id__iexact=abandoned_edit_id)
+            if items.exists():
+                print(f"Found abandoned edit for {abandoned_edit_id}, reverting inventory changes")
+                for item in items:
+                    client_id = item.client_id
+                    ship_qty = item.ship_qty
+                    
+                    # Find inventory item
+                    inventory_item = Inventory.objects.filter(client_id__iexact=client_id).first()
+                    if inventory_item and inventory_item.quantity_available is not None:
+                        # Subtract back the quantity, ensuring we don't go negative
+                        if inventory_item.quantity_available >= ship_qty:
+                            inventory_item.quantity_available -= ship_qty
+                        else:
+                            # If not enough available, just set to 0
+                            inventory_item.quantity_available = 0
+                        
+                        inventory_item.save()
+                        print(f"Reverted inventory for {client_id}, new available: {inventory_item.quantity_available}")
+        except Exception as e:
+            print(f"Error reverting abandoned edit: {str(e)}")
+
+    if user_id:
+        try:
+            user = InvitedUser.objects.get(id=user_id)
+            user_name = user.name
+        except InvitedUser.DoesNotExist:
+            pass
+
+    if request.method == "POST":
+        try:
+            # Get common form fields
+            ship_date_str = request.POST.get("ship_date")
+            expected_arrival_date_str = request.POST.get("expected_arrival_date")
+            tracking_info = request.POST.get("tracking_info")
+
+            if tracking_info and tracking_info.lower() in received_reference_ids_lower:
+                messages.error(request, f"This container (Reference ID '{tracking_info}') has already been received and cannot be edited or deleted.")
+                return redirect("warehouse_shipment")   
+
+
+            # Check if this is an edit operation
+            is_editing = request.POST.get("is_editing") == "1"
+            editing_reference_id = request.POST.get("editing_reference_id", "").strip()
+
+            
+            # Debug logging
+            print(f"Form submission - is_editing value: '{request.POST.get('is_editing')}'")
+            print(f"Form submission - is_editing: {is_editing}, editing_reference_id: '{editing_reference_id}'")
+            print(f"Current tracking_info (Reference ID): '{tracking_info}'")
+            
+            # For editing, temporarily restore the original quantities back to inventory
+            # This ensures we can validate against the correct available quantity
+            if is_editing and editing_reference_id:
+                # Get all existing items for this reference ID
+                existing_items = WarehouseShipment.objects.filter(reference_id__iexact=editing_reference_id)
+                print(f"Found {existing_items.count()} existing items for reference_id '{editing_reference_id}'")
+                
+                # Restore quantities back to inventory
+                for existing_item in existing_items:
+                    client_id = existing_item.client_id
+                    ship_qty = existing_item.ship_qty
+                    
+                    revert_inventory_when_shipping(client_id, ship_qty)
+            
+            # Parse dates
+            if ship_date_str:
+                ship_date = make_aware(datetime.strptime(ship_date_str, "%Y-%m-%d"))
+            else:
+                ship_date = None
+            
+            if expected_arrival_date_str:
+                expected_arrival_date = make_aware(datetime.strptime(expected_arrival_date_str, "%Y-%m-%d"))
+            else:
+                expected_arrival_date = None
+                
+            # Get multiple items data
+            client_items = request.POST.getlist("client_items")
+            product_names = request.POST.getlist("product_names")
+            quantities = request.POST.getlist("quantities")
+            item_ids = request.POST.getlist("item_ids")  # Get the IDs of existing items when editing
+            
+            # Debug logging
+            print(f"Items to process: {len(client_items)}")
+            print(f"Client items: {client_items}")
+            print(f"Item IDs: {item_ids}")
+            
+            # Check if we have items to process
+            if not client_items:
+                # If editing and all items are deleted, delete the container (all items with this reference_id)
+                if is_editing and editing_reference_id:
+                    # Restore inventory for all items before deleting
+                    items_to_delete = WarehouseShipment.objects.filter(reference_id__iexact=editing_reference_id)
+                    for item in items_to_delete:
+                        revert_inventory_when_shipping(item.client_id, item.ship_qty)
+                    # Delete all items for this container
+                    deleted_count, _ = items_to_delete.delete()
+                    messages.success(request, f"All items removed. Container '{editing_reference_id}' deleted successfully.")
+                    # No need to call recalculate_quantity_available_all()
+                    # Clear any editing session data
+                    if request.session.get("editing_warehouse_shipment"):
+                        del request.session["editing_warehouse_shipment"]
+                        request.session.save()
+                    return redirect("warehouse_shipment")
+                else:
+                    messages.error(request, "No items added to shipment.")
+                    return redirect("warehouse_shipment")
+            
+            # Check if this reference ID already exists (regardless of edit flag)
+            container_exists = False
+            if tracking_info and not is_editing:
+                existing_count = WarehouseShipment.objects.filter(reference_id=tracking_info).count()
+                if existing_count > 0:
+                    container_exists = True
+                    print(f"Reference ID '{tracking_info}' already exists with {existing_count} items")
+                    messages.error(request, f"Reference ID '{tracking_info}' already exists. Please use a different ID or edit the existing one.")
+                    return redirect("warehouse_shipment")
+            
+            # Handle editing differently - don't delete and recreate
+            if is_editing and editing_reference_id:
+                # Get existing items
+                existing_items = WarehouseShipment.objects.filter(reference_id=editing_reference_id)
+                existing_item_ids = list(existing_items.values_list('id', flat=True))
+                
+                # If the reference ID has changed, update all existing items
+                if tracking_info != editing_reference_id:
+                    print(f"Reference ID changed from '{editing_reference_id}' to '{tracking_info}'")
+                    # Check if the new reference ID already exists
+                    if WarehouseShipment.objects.filter(reference_id=tracking_info).exists():
+                        messages.error(request, f"Cannot change reference ID to '{tracking_info}' as it already exists.")
+                        return redirect("warehouse_shipment")
+                    
+                    # Update the reference ID for all existing items
+                    existing_items.update(reference_id=tracking_info)
+                
+                # Track which items we've processed to identify which to delete later
+                processed_ids = []
+                
+                # Process each item
+                for i in range(len(client_items)):
+                    client_item = client_items[i]
+                    qty_shipped = int(quantities[i]) if i < len(quantities) and quantities[i] else 0
+                    item_id = item_ids[i] if i < len(item_ids) and item_ids[i] else None
+                    
+                    if item_id and item_id.isdigit():
+                                            # This is an existing item, update it
+                        item_id = int(item_id)
+                        processed_ids.append(item_id)
+                        try:
+                            item = WarehouseShipment.objects.get(id=item_id)
+                            # Store old quantity before updating
+                            old_qty = item.ship_qty
+                            
+                            item.client_id = client_item
+                            item.item = client_item
+                            item.ship_date = ship_date
+                            item.ship_qty = qty_shipped
+                            item.reference_id = tracking_info
+                            item.checked_by = user
+                            item.expected_arrival_date = expected_arrival_date
+                            item.save()
+                            
+                            # Since we've already added back the original quantity to inventory,
+                            # we need to treat this as a new shipment to properly deduct the new quantity
+                            update_inventory_when_shipping(client_item, qty_shipped, is_new=True)
+                            print(f"Updated item ID {item_id}")
+                        except WarehouseShipment.DoesNotExist:
+                                                        # Item ID no longer exists, create a new one
+                            new_item = WarehouseShipment.objects.create(
+                                client_id=client_item,
+                                item=client_item,
+                                ship_date=ship_date,
+                                ship_qty=qty_shipped,
+                                reference_id=tracking_info,
+                                checked_by=user,
+                                expected_arrival_date=expected_arrival_date
+                            )
+                            # Update inventory quantity_available (new item)
+                            update_inventory_when_shipping(client_item, qty_shipped, is_new=True)
+                            processed_ids.append(new_item.id)
+                            print(f"Created new item (ID {new_item.id}) as existing ID {item_id} not found")
+                    else:
+                        # This is a new item added during editing
+                        new_item = WarehouseShipment.objects.create(
+                            client_id=client_item,
+                            item=client_item,
+                            ship_date=ship_date,
+                            ship_qty=qty_shipped,
+                            reference_id=tracking_info,
+                            checked_by=user,
+                            expected_arrival_date=expected_arrival_date
+                        )
+                        # Update inventory quantity_available (new item)
+                        update_inventory_when_shipping(client_item, qty_shipped, is_new=True)
+                        processed_ids.append(new_item.id)
+                        print(f"Added new item with ID {new_item.id}")
+                
+                # Delete items that were removed during editing
+                for item_id in existing_item_ids:
+                    if item_id not in processed_ids:
+                        # Get item details before deleting to update inventory
+                        try:
+                            removed_item = WarehouseShipment.objects.get(id=item_id)
+                            client_id = removed_item.client_id
+                            ship_qty = removed_item.ship_qty
+                            
+                            # Delete the item
+                            removed_item.delete()
+                            
+                            # No need to update inventory here since we've already added back 
+                            # all quantities at the beginning of the edit operation
+                            print(f"Deleted item with ID {item_id} for {client_id} (no inventory update needed)")
+                            
+                            print(f"Deleted item with ID {item_id}")
+                        except WarehouseShipment.DoesNotExist:
+                            print(f"Item with ID {item_id} already deleted")
+                
+                messages.success(request, f"Updated warehouse shipment with {len(client_items)} items successfully!")
+            else:
+                # Not editing - create new items
+                for i in range(len(client_items)):
+                    client_item = client_items[i]
+                    qty_shipped = int(quantities[i]) if i < len(quantities) and quantities[i] else 0
+                    
+                    # Save the warehouse shipment entry
+                    WarehouseShipment.objects.create(
+                        client_id=client_item,
+                        item=client_item,
+                        ship_date=ship_date,
+                        ship_qty=qty_shipped,
+                        reference_id=tracking_info,
+                        checked_by=user,
+                        expected_arrival_date=expected_arrival_date
+                    )
+                    
+                    # Update inventory quantity_available
+                    update_inventory_when_shipping(client_item, qty_shipped, is_new=True)
+                
+                messages.success(request, f"New warehouse shipment with {len(client_items)} items submitted!")
+            
+            
+            # Clear any editing session data
+            if request.session.get("editing_warehouse_shipment"):
+                del request.session["editing_warehouse_shipment"]
+                request.session.save()
+            
+            # Return redirect instead of JSON response to avoid displaying JSON to user
+            return redirect('warehouse_shipment')
+
+        except Exception as e:
+            print("error ::", e)
+            messages.error(request, f"Error submitting warehouse shipment: {str(e)}")
+
+    # Get previous submissions (grouped by reference ID)
+    previous_submissions = []
+    
+    # Use values to get unique reference IDs and annotate to count items and sum quantities
+    container_data = WarehouseShipment.objects.values('reference_id').annotate(
+        product_count=Count('id'),
+        total_quantity=Sum('ship_qty'),
+        id=Min('id')  # Use the lowest ID as a reference
+    ).order_by('-id')  # Sort by newest first
+
+    # For each container, get additional details from a representative item
+    for container in container_data:
+        # Get the first item for this container
+        reference_item = WarehouseShipment.objects.filter(reference_id=container['reference_id']).first()
+
+        if reference_item:
+            previous_submissions.append({
+                'id': reference_item.id,
+                'reference_id': reference_item.reference_id,
+                'ship_date': reference_item.ship_date,
+                'expected_arrival': reference_item.expected_arrival_date,
+                'product_count': container['product_count'],
+                'total_quantity': container['total_quantity'] or 0,
+                'checked_by': reference_item.checked_by.name if reference_item.checked_by else "Unknown"
+            })
+    
+    paginator = Paginator(previous_submissions, 10)  # Show 10 submissions per page
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+    
+    context = {
+        'user_name': user_name,
+        'previous_submissions': page_obj,
+        'is_paginated': page_obj.has_other_pages(),
+        'page_obj': page_obj,
+        'received_reference_ids': received_reference_ids_lower
+    }
+    
+    return render(request, 'warehouse_shipment.html', context)
+
+
+def revert_inventory_when_shipping(client_id, ship_qty):
+    """
+    Add back the shipped quantity to inventory (used when editing or deleting a shipment).
+    Also subtract from shipped_to_hotel_quantity.
+    """
+    try:
+        inventory_item = Inventory.objects.filter(client_id__iexact=client_id).first()
+        if inventory_item and inventory_item.quantity_available is not None:
+            inventory_item.quantity_available += ship_qty
+            # Subtract from shipped_to_hotel_quantity, but don't go below zero
+            inventory_item.shipped_to_hotel_quantity = max(0, (inventory_item.shipped_to_hotel_quantity or 0) - ship_qty)
+            inventory_item.save()
+            print(f"Reverted quantity_available for {client_id}: {inventory_item.quantity_available} (+{ship_qty}), shipped_to_hotel_quantity: {inventory_item.shipped_to_hotel_quantity} (-{ship_qty})")
+        return True
+    except Exception as e:
+        print(f"Error reverting inventory quantity_available for {client_id}: {str(e)}")
+        return False
+
+def available_warehouse_reference_ids(request):
+    term = request.GET.get('term', '').strip().lower()
+    qs = WarehouseShipment.objects.all()
+    if term:
+        qs = qs.filter(reference_id__icontains=term)
+    suggestions = list(qs.values_list('reference_id', flat=True).distinct()[:10])
+    return JsonResponse({'results': suggestions})
+
+
+@session_login_required
+def check_warehouse_container_exists(request):
+    """
+    API to check if a warehouse reference ID exists.
+    Uses case-insensitive matching for consistent results.
+    """
+    reference_id = request.GET.get('reference_id', '')
+    
+    if not reference_id:
+        return JsonResponse({'exists': False, 'count': 0})
+    
+    # Count items with this reference ID (case-insensitive)
+    count = WarehouseShipment.objects.filter(reference_id__iexact=reference_id).count()
+    
+    return JsonResponse({'exists': count > 0, 'count': count})
+
+@session_login_required
+def get_warehouse_container_data(request):
+    """
+    API to get warehouse container details.
+    Uses case-insensitive matching for consistent results.
+    """
+    reference_id = request.GET.get('reference_id')
+    mode = request.GET.get('mode')
+    if not reference_id:
+        return JsonResponse({'success': False, 'message': 'Reference ID is required'})
+
+    if mode != 'view' and HotelWarehouse.objects.filter(reference_id__iexact=reference_id).exists():
+        return JsonResponse({
+            'success': False,
+            'message': 'This container has already been received and cannot be edited or deleted.'
+        })
+    
+    try:
+        # Get all items with this reference ID (case-insensitive)
+        items = WarehouseShipment.objects.filter(reference_id__iexact=reference_id)
+        
+        if not items.exists():
+            return JsonResponse({'success': False, 'message': 'Container not found'})
+        
+        # Get the first item for reference dates
+        reference_item = items.first()
+        
+        # Format dates for form fields
+        ship_date = reference_item.ship_date.strftime('%Y-%m-%d') if reference_item.ship_date else ''
+        expected_arrival = reference_item.expected_arrival_date.strftime('%Y-%m-%d') if reference_item.expected_arrival_date else ''
+        
+        # Format items for JSON response
+        item_list = []
+        for item in items:
+            # Get product name from ProductData if available (case-insensitive)
+            try:
+                product = ProductData.objects.filter(client_id__iexact=item.client_id).first()
+                product_name = product.description if product else None
+                if not product_name:
+                    raise ProductData.DoesNotExist
+            except ProductData.DoesNotExist:
+                product_name = item.item or "Unknown Product"
+            
+            item_list.append({
+                'id': item.id,
+                'client_id': item.client_id,
+                'product_name': product_name,
+                'ship_qty': item.ship_qty or 0
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'reference_id': reference_id,
+            'ship_date': ship_date,
+            'expected_arrival': expected_arrival,
+            'items': item_list
+        })
+    
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': str(e)})
+
+@session_login_required
+def get_warehouse_shipment_items(request):
+    """
+    API to get all items from a warehouse shipment by reference ID.
+    Uses case-insensitive matching for consistent results.
+    """
+    reference_id = request.GET.get('reference_id', '')
+    
+    if not reference_id:
+        return JsonResponse({'success': False, 'message': 'Reference ID is required'})
+    
+    try:
+        # Find all items with the given reference ID (case-insensitive)
+        items = WarehouseShipment.objects.filter(reference_id__iexact=reference_id)
+        
+        if not items.exists():
+            return JsonResponse({'success': False, 'message': 'No items found with this reference ID'})
+        
+        # Format items for response
+        item_list = []
+        for item in items:
+            # Get product name from ProductData if available (case-insensitive)
+            try:
+                product = ProductData.objects.filter(client_id__iexact=item.client_id).first()
+                product_name = product.description if product else None
+                if not product_name:
+                    raise ProductData.DoesNotExist
+            except ProductData.DoesNotExist:
+                product_name = item.item or "Unknown Product"
+            
+            item_list.append({
+                'id': item.id,
+                'client_id': item.client_id,
+                'product_name': product_name,
+                'quantity': item.ship_qty,
+                'ship_qty': item.ship_qty
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'reference_id': reference_id,
+            'items': item_list
+        })
+    
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': str(e)})
+
+def update_inventory_shipped_quantities():
+    """
+    Calculate the sum of shipped quantities from warehouse_shipment table
+    and update the shipped_to_hotel_quantity in inventory table.
+    
+    This function:
+    1. Groups all warehouse shipments by client_id and item (case-insensitive)
+    2. Calculates the total ship_qty for each (client_id, item)
+    3. Updates the shipped_to_hotel_quantity in the inventory table for matching (client_id, item)
+    """
+    from django.db.models import Sum, F
+    from django.db.models.functions import Lower
+    from hotel_bot_app.models import Inventory, WarehouseShipment
+    
+    # Get all warehouse shipments grouped by client_id and item (case-insensitive)
+    shipment_sums = WarehouseShipment.objects.annotate(
+        client_id_lower=Lower('client_id'),
+        item_lower=Lower('item')
+    ).values('client_id_lower', 'item_lower').annotate(
+        total_shipped=Sum('ship_qty'),
+        original_client_id=F('client_id'),
+        original_item=F('item')
+    ).values('client_id_lower', 'item_lower', 'total_shipped', 'original_client_id', 'original_item')
+
+    update_count = 0
+    updated_keys = set()
+    # Update each inventory record with the calculated sum
+    for shipment in shipment_sums:
+        client_id_lower = shipment['client_id_lower']
+        item_lower = shipment['item_lower']
+        total_shipped = shipment['total_shipped']
+        original_client_id = shipment['original_client_id']
+        original_item = shipment['original_item']
+
+        # Update inventory for this (client_id, item) pair (case-insensitive)
+        updated = Inventory.objects.filter(
+            client_id__iexact=original_client_id,
+            item__iexact=original_item
+        ).update(shipped_to_hotel_quantity=total_shipped)
+
+        # If no records found with exact case, try with lowercase comparison
+        if updated == 0:
+            updated = Inventory.objects.filter(
+                client_id__iexact=client_id_lower,
+                item__iexact=item_lower
+            ).update(shipped_to_hotel_quantity=total_shipped)
+
+        update_count += updated
+        updated_keys.add((client_id_lower, item_lower))
+        print(f"Client ID: {original_client_id} (lowercase: {client_id_lower}), Item: {original_item} (lowercase: {item_lower}), Total: {total_shipped}, Updated: {updated} records")
+
+    # Now, set shipped_to_hotel_quantity=0 for any inventory items whose (client_id, item) is not present in any shipment
+    all_inventory = Inventory.objects.values_list('client_id', 'item')
+    all_inventory_keys = set()
+    for cid, item in all_inventory:
+        if cid and item:
+            all_inventory_keys.add((cid.lower(), item.lower()))
+    not_shipped_keys = all_inventory_keys - updated_keys
+    for client_id_lower, item_lower in not_shipped_keys:
+        updated = Inventory.objects.filter(client_id__iexact=client_id_lower, item__iexact=item_lower).update(shipped_to_hotel_quantity=0)
+        if updated:
+            print(f"Client ID: {client_id_lower}, Item: {item_lower} had no shipments, set shipped_to_hotel_quantity=0 for {updated} records")
+        update_count += updated
+
+    print(f"Updated shipped_to_hotel_quantity for {update_count} inventory items based on {len(shipment_sums)} unique (client_id, item) pairs (including zeroed)")
+    return update_count
+
+def update_inventory_hotel_warehouse_quantities():
+    """
+    Calculate the sum of received and damaged quantities from hotel_warehouse table
+    and update the received_at_hotel_quantity and damaged_quantity_at_hotel in inventory table.
+    
+    This function:
+    1. Groups all hotel warehouse records by client_item (case-insensitive)
+    2. Calculates the total quantity_received and damaged_qty for each client_item
+    3. Updates the received_at_hotel_quantity and damaged_quantity_at_hotel in the inventory table
+    """
+    from django.db.models import Sum, F
+    from django.db.models.functions import Lower
+    from hotel_bot_app.models import Inventory, HotelWarehouse
+    
+    # Get all hotel warehouse records grouped by client_item (converted to lowercase for case-insensitive grouping)
+    warehouse_sums = HotelWarehouse.objects.annotate(
+        client_item_lower=Lower('client_item')
+    ).values('client_item_lower').annotate(
+        total_received=Sum('quantity_received'),
+        total_damaged=Sum('damaged_qty'),
+        original_client_item=F('client_item')  # Keep one original client_item for reference
+    ).values('client_item_lower', 'total_received', 'total_damaged', 'original_client_item')
+    
+    update_count = 0
+    # Update each inventory record with the calculated sums
+    for warehouse in warehouse_sums:
+        # Get client_item and totals
+        client_item_lower = warehouse['client_item_lower']
+        total_received = warehouse['total_received']
+        total_damaged = warehouse['total_damaged']
+        original_client_item = warehouse['original_client_item']
+        
+        # Find and update all inventory records with this client_item (case-insensitive)
+        updated = Inventory.objects.filter(
+            client_id__iexact=original_client_item
+        ).update(
+            received_at_hotel_quantity=total_received,
+            damaged_quantity_at_hotel=total_damaged
+        )
+        
+        # If no records found with exact case, try with lowercase comparison
+        if updated == 0:
+            updated = Inventory.objects.filter(
+                client_id__iexact=client_item_lower
+            ).update(
+                received_at_hotel_quantity=total_received,
+                damaged_quantity_at_hotel=total_damaged
+            )
+        
+        update_count += updated
+        print(f"Client Item: {original_client_item}, Received: {total_received}, Damaged: {total_damaged}, Updated: {updated} records")
+        
+    print(f"Updated hotel warehouse quantities for {update_count} inventory items based on {len(warehouse_sums)} unique client items")
+    return update_count
+
+def update_inventory_damaged_quantities():
+    """
+    Calculate the sum of damaged_qty from inventory_received table
+    and update the damaged_quantity column in inventory table.
+    
+    This function:
+    1. Groups all inventory received records by client_id (case-insensitive)
+    2. Calculates the total damaged_qty for each client_id
+    3. Updates the damaged_quantity in the inventory table for matching client_id
+    """
+    from django.db.models import Sum, F
+    from django.db.models.functions import Lower
+    from hotel_bot_app.models import Inventory, InventoryReceived
+    
+    # Get all inventory received records grouped by client_id (converted to lowercase for case-insensitive grouping)
+    damaged_sum = (
+        InventoryReceived.objects
+        .annotate(client_id_lower=Lower('client_id'))
+        .values('client_id_lower')
+        .annotate(total_damaged=Sum('damaged_qty'))
+        .values('client_id_lower', 'total_damaged')
+    )
+    update_count = 0
+    for damaged in damaged_sum:
+        client_id_lower = damaged['client_id_lower']
+        total_damaged = damaged['total_damaged']
+        # Update ALL inventory records matching this client_id (case-insensitive)
+        updated = Inventory.objects.filter(client_id__iexact=client_id_lower).update(damaged_quantity=total_damaged)
+        update_count += updated
+        print(f"Client ID (lowercase): {client_id_lower}, Total Received: {total_damaged}, Updated: {updated} records")
+
+    print(f"Updated qty_damaged for {update_count} inventory items based on {len(damaged_sum)} unique client IDs (case-insensitive)")
+    return update_count
+
+
+def update_inventory_received_quantities():
+    """
+    Calculate the sum of received_qty from inventory_received table
+    and update the qty_received column in inventory table.
+    This function:
+    1. Groups all inventory received records by client_id (case-insensitive)
+    2. Calculates the total received_qty for each client_id (case-insensitive)
+    3. Updates the qty_received in inventory table for ALL matching client_id (case-insensitive)
+    """
+    from django.db.models import Sum
+    from django.db.models.functions import Lower
+    from hotel_bot_app.models import Inventory, InventoryReceived
+
+    # Group received records by lowercased client_id
+    received_sums = (
+        InventoryReceived.objects
+        .annotate(client_id_lower=Lower('client_id'))
+        .values('client_id_lower')
+        .annotate(total_received=Sum('received_qty'))
+        .values('client_id_lower', 'total_received')
+    )
+
+    update_count = 0
+    for received in received_sums:
+        client_id_lower = received['client_id_lower']
+        total_received = received['total_received']
+        # Update ALL inventory records matching this client_id (case-insensitive)
+        updated = Inventory.objects.filter(client_id__iexact=client_id_lower).update(qty_received=total_received)
+        update_count += updated
+        print(f"Client ID (lowercase): {client_id_lower}, Total Received: {total_received}, Updated: {updated} records")
+
+    print(f"Updated qty_received for {update_count} inventory items based on {len(received_sums)} unique client IDs (case-insensitive)")
+    return update_count
+
+@session_login_required
+def get_available_quantity(request):
+    """
+    API endpoint to get the available quantity for a client item from the inventory table.
+    Uses case-insensitive matching to ensure consistent results regardless of case.
+    When for_edit=true, temporarily adds the original quantity back to available.
+    """
+    client_item = request.GET.get('client_item', '')
+    for_edit = request.GET.get('for_edit', 'false').lower() == 'true'
+    edit_quantity = int(request.GET.get('edit_quantity', 0) or 0)
+    
+    if not client_item:
+        return JsonResponse({'success': False, 'message': 'Client item is required'})
+    
+    try:
+        # Use Lower database function to ensure case-insensitive matching
+        from django.db.models.functions import Lower
+        
+        # Find the inventory item with case-insensitive matching
+        # Use annotate to get case-insensitive matching
+        inventory_items = Inventory.objects.annotate(
+            client_id_lower=Lower('client_id')
+        ).filter(
+            client_id_lower=client_item.lower()
+        )
+        
+        # Check if we have multiple items with same client_id but different case
+        if inventory_items.count() > 1:
+            # Find the primary item (first one) and consolidate quantities to it
+            primary_item = inventory_items.first()
+            
+            # Set other items to 0 quantity
+            for item in inventory_items.exclude(id=primary_item.id):
+                if item.quantity_available > 0:
+                    # Transfer any available quantity to primary item
+                    primary_item.quantity_available += (item.quantity_available or 0)
+                    item.quantity_available = 0
+                    item.save()
+                    print(f"Consolidated quantity from {item.client_id} to {primary_item.client_id}")
+            
+            # Save primary item with consolidated quantity
+            primary_item.save()
+            
+            # Continue with just the primary item
+            inventory_item = primary_item
+            quantity_available = inventory_item.quantity_available or 0
+        elif inventory_items.exists():
+            # Just one item found, proceed normally
+            inventory_item = inventory_items.first()
+            # Get the base quantity available
+            quantity_available = inventory_item.quantity_available or 0
+            
+            # We no longer need to add back quantities here since we're
+            # now doing that upfront when editing begins
+            if for_edit:
+                print(f"Edit mode for {client_item}, available quantity: {quantity_available}")
+                # Don't modify the quantity here anymore
+            
+            return JsonResponse({
+                'success': True, 
+                'quantity_available': quantity_available,
+                'client_id': inventory_item.client_id,
+                'is_edit': for_edit,
+                'original_quantity': edit_quantity
+            })
+        else:
+            # Try a fallback approach with iexact if the above fails
+            inventory_item = Inventory.objects.filter(client_id__iexact=client_item).first()
+            if inventory_item:
+                quantity_available = inventory_item.quantity_available or 0
+                
+                # We no longer need to add back quantities here
+                if for_edit:
+                    print(f"Edit mode for {client_item}, available quantity: {quantity_available} (fallback)")
+                    # Don't modify the quantity here anymore
+                
+                return JsonResponse({
+                    'success': True, 
+                    'quantity_available': quantity_available,
+                    'client_id': inventory_item.client_id,
+                    'is_edit': for_edit,
+                    'original_quantity': edit_quantity
+                })
+            return JsonResponse({'success': False, 'message': 'Item not found in inventory'})
+    
+    except Exception as e:
+        print(f"Error in get_available_quantity: {str(e)}")
+        return JsonResponse({'success': False, 'message': str(e)})
+
+def update_inventory_when_shipping(client_id, ship_qty, is_new=True, old_qty=0):
+    inventory_item = Inventory.objects.filter(client_id__iexact=client_id).first()
+    if inventory_item:
+        # Update quantity_available as before
+        if is_new:
+            inventory_item.quantity_available = max(0, (inventory_item.quantity_available or 0) - ship_qty)
+            # Also update shipped_to_hotel_quantity
+            inventory_item.shipped_to_hotel_quantity = (inventory_item.shipped_to_hotel_quantity or 0) + ship_qty
+        else:
+            # For edit: revert old, apply new
+            inventory_item.quantity_available = max(0, (inventory_item.quantity_available or 0) + old_qty - ship_qty)
+            inventory_item.shipped_to_hotel_quantity = max(0, (inventory_item.shipped_to_hotel_quantity or 0) - old_qty + ship_qty)
+        inventory_item.save()
+
+
+
+def update_inventory_when_receiving(client_id, received_qty, damaged_qty, is_new=True, old_received=0, old_damaged=0):
+    """
+    Update the quantity_available in the inventory table when items are received.
+    
+    Args:
+        client_id (str): The client ID of the item being received
+        received_qty (int): The quantity being received (already excludes damaged items)
+        damaged_qty (int): The damaged quantity being received (not used in calculation)
+        is_new (bool): Whether this is a new receipt (True) or an edit (False)
+        old_received (int): If editing, the previous received quantity
+        old_damaged (int): If editing, the previous damaged quantity
+    
+    Returns:
+        bool: True if inventory was updated successfully, False otherwise
+    """
+    try:
+        # Find the inventory record with case-insensitive matching
+        inventory_item = Inventory.objects.filter(client_id__iexact=client_id).first()
+        
+        if inventory_item:
+            if is_new:
+                # For new receipts, simply add the received quantity (already good qty)
+                if inventory_item.quantity_available is not None:
+                    inventory_item.quantity_available += received_qty
+                    inventory_item.save()
+                    print(f"Updated quantity_available for {client_id}: {inventory_item.quantity_available} (+{received_qty})")
+            else:
+                # For edits, just calculate the difference in received quantity
+                received_diff = received_qty - old_received
+                
+                if inventory_item.quantity_available is not None:
+                    inventory_item.quantity_available += received_diff
+                    inventory_item.save()
+                    print(f"Updated quantity_available for {client_id} (edit): {inventory_item.quantity_available}, diff: {received_diff}")
+            
+            return True
+        else:
+            print(f"Warning: No inventory record found for client ID {client_id}")
+            return False
+    
+    except Exception as e:
+        print(f"Error updating inventory quantity_available for {client_id}: {str(e)}")
+        return False
+
+@session_login_required
+def restore_warehouse_inventory(request):
+    """
+    API to restore inventory quantities when editing a warehouse shipment.
+    This adds back the shipped quantities to inventory to allow proper editing.
+    """
+    reference_id = request.GET.get('reference_id')
+    if not reference_id:
+        return JsonResponse({'success': False, 'message': 'Reference ID is required'})
+    
+    try:
+        # Save the current edit in the session to handle page reloads
+        request.session["editing_warehouse_shipment"] = reference_id
+        request.session.save()
+        
+        # Get all items with this reference ID (case-insensitive)
+        items = WarehouseShipment.objects.filter(reference_id__iexact=reference_id)
+        
+        if not items.exists():
+            return JsonResponse({'success': False, 'message': 'Shipment not found'})
+        
+        updated_items = []
+        
+        # Add quantities back to inventory
+        for item in items:
+            client_id = item.client_id
+            ship_qty = item.ship_qty
+            
+            # Find inventory item
+            inventory_item = Inventory.objects.filter(client_id__iexact=client_id).first()
+            if inventory_item and inventory_item.quantity_available is not None:
+                # Add back the quantity
+                inventory_item.quantity_available += ship_qty
+                inventory_item.save()
+                
+                updated_items.append({
+                    'client_id': client_id,
+                    'added_quantity': ship_qty,
+                    'new_available': inventory_item.quantity_available
+                })
+                
+                print(f"Restored {ship_qty} to inventory for {client_id}, new available: {inventory_item.quantity_available}")
+        
+        return JsonResponse({
+            'success': True,
+            'reference_id': reference_id,
+            'updated': updated_items
+        })
+    
+    except Exception as e:
+        print(f"Error restoring inventory: {str(e)}")
+        return JsonResponse({'success': False, 'message': str(e)})
+    
+@session_login_required
+def revert_warehouse_inventory(request):
+    """
+    API to revert the inventory quantities after canceling editing a warehouse shipment.
+    This subtracts the shipped quantities from inventory to restore the original state.
+    """
+    reference_id = request.GET.get('reference_id')
+    if not reference_id:
+        return JsonResponse({'success': False, 'message': 'Reference ID is required'})
+    
+    try:
+        # Clear the edit from session
+        if request.session.get("editing_warehouse_shipment") == reference_id:
+            del request.session["editing_warehouse_shipment"]
+            request.session.save()
+        
+        # Get all items with this reference ID (case-insensitive)
+        items = WarehouseShipment.objects.filter(reference_id__iexact=reference_id)
+        
+        if not items.exists():
+            return JsonResponse({'success': False, 'message': 'Shipment not found'})
+        
+        updated_items = []
+        
+        # Subtract quantities from inventory to restore original state
+        for item in items:
+            client_id = item.client_id
+            ship_qty = item.ship_qty
+            
+            # Find inventory item
+            inventory_item = Inventory.objects.filter(client_id__iexact=client_id).first()
+            if inventory_item and inventory_item.quantity_available is not None:
+                # Subtract back the quantity, ensuring we don't go negative
+                if inventory_item.quantity_available >= ship_qty:
+                    inventory_item.quantity_available -= ship_qty
+                else:
+                    # If not enough available, just set to 0
+                    inventory_item.quantity_available = 0
+                
+                inventory_item.save()
+                
+                updated_items.append({
+                    'client_id': client_id,
+                    'subtracted_quantity': ship_qty,
+                    'new_available': inventory_item.quantity_available
+                })
+                
+                print(f"Subtracted {ship_qty} from inventory for {client_id}, new available: {inventory_item.quantity_available}")
+        
+        return JsonResponse({
+            'success': True,
+            'reference_id': reference_id,
+            'updated': updated_items
+        })
+    
+    except Exception as e:
+        print(f"Error reverting inventory: {str(e)}")
+        return JsonResponse({'success': False, 'message': str(e)})
+    
+@login_required
+def create_django_admin_user(request):
+    """Create a Django admin user with is_administrator=True but is_superuser=False
+    
+    This creates users who can access most admin features but can't manage users.
+    """
+    # Only superusers can create Django admin users
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Only superusers can create Django admin users")
+    if request.method == "POST":
+        username = request.POST.get("username")
+        email = request.POST.get("email")
+        password = request.POST.get("password")
+        
+        if not username or not email or not password:
+            messages.error(request, "All fields are required")
+            return render(request, "create_django_admin.html")
+            
+        # Check if user already exists
+        if User.objects.filter(username=username).exists():
+            messages.error(request, "Username already exists")
+            return render(request, "create_django_admin.html")
+            
+        if User.objects.filter(email=email).exists():
+            messages.error(request, "Email already exists")
+            return render(request, "create_django_admin.html")
+            
+        # Create Django user
+        django_user = User.objects.create_user(
+            username=username,
+            email=email,
+            password=password,
+            is_staff=True,
+            is_superuser=False  # Not a superuser, just an administrator
+        )
+        
+        # Set administrator flag
+        django_user.profile.is_administrator = True
+        django_user.profile.save()
+        
+        # Create matching InvitedUser if needed
+        if not InvitedUser.objects.filter(email=email).exists():
+            InvitedUser.objects.create(
+                name=username,
+                email=email,
+                role=['administrator'],
+                is_administrator=True,
+                status='activated',
+                password=bcrypt.hashpw(password.encode(), bcrypt.gensalt())
+            )
+        
+        messages.success(request, f"Administrator user '{username}' created successfully (with is_administrator=True but NOT superuser)")
+        return redirect("user_management")
+        
+    return render(request, "create_django_admin.html")
+    
+# Add this helper function near the other inventory update helpers
+def recalculate_quantity_available(client_id):
+    from django.db.models import Sum
+    from hotel_bot_app.models import InventoryReceived, Inventory
+    # Use iexact to get case-insensitive matches for received quantities
+    total_received = InventoryReceived.objects.filter(client_id__iexact=client_id).aggregate(Sum('received_qty'))['received_qty__sum'] or 0
+    
+    # Find all inventory items that match this client_id (case-insensitive)
+    inventory_items = Inventory.objects.filter(client_id__iexact=client_id)
+    
+    if inventory_items.exists():
+        # If there are multiple inventory items with different case variations
+        if inventory_items.count() > 1:
+            # Keep the first one and update it with the total received quantity
+            primary_item = inventory_items.first()
+            primary_item.quantity_available = total_received
+            primary_item.save()
+            
+            # For all other items (different case variations), set quantity to 0 to avoid confusion
+            for item in inventory_items.exclude(id=primary_item.id):
+                item.quantity_available = 0
+                item.save()
+                print(f"Set quantity to 0 for duplicate inventory item: {item.client_id}")
+        else:
+            # Just one item found, update it normally
+            inventory_item = inventory_items.first()
+            inventory_item.quantity_available = total_received
+            inventory_item.save()
+
+# Add this helper function for hotel warehouse quantities
+def recalculate_hotel_warehouse_quantity(client_id):
+    from django.db.models import Sum
+    from hotel_bot_app.models import HotelWarehouse, Inventory
+    # Use iexact to get case-insensitive matches for hotel warehouse quantities
+    total_received = HotelWarehouse.objects.filter(client_item__iexact=client_id).aggregate(Sum('quantity_received'))['quantity_received__sum'] or 0
+    total_damaged = HotelWarehouse.objects.filter(client_item__iexact=client_id).aggregate(Sum('damaged_qty'))['damaged_qty__sum'] or 0
+    
+    print(f"Recalculating for {client_id}: received={total_received}, damaged={total_damaged}")
+    
+    # Find all inventory items that match this client_id (case-insensitive)
+    inventory_items = Inventory.objects.filter(client_id__iexact=client_id)
+    
+    if inventory_items.exists():
+        # If there are multiple inventory items with different case variations
+        if inventory_items.count() > 1:
+            # Keep the first one and update it with the total received quantity
+            primary_item = inventory_items.first()
+            primary_item.hotel_warehouse_quantity = total_received
+            primary_item.received_at_hotel_quantity = total_received  # Update received_at_hotel_quantity too
+            primary_item.damaged_quantity_at_hotel = total_damaged    # Update damaged_quantity_at_hotel too
+            primary_item.save()
+            
+            # For all other items (different case variations), set quantity to 0 to avoid confusion
+            for item in inventory_items.exclude(id=primary_item.id):
+                item.hotel_warehouse_quantity = 0
+                item.received_at_hotel_quantity = 0     # Set to 0 for duplicate items
+                item.damaged_quantity_at_hotel = 0      # Set to 0 for duplicate items
+                item.save()
+                print(f"Set hotel quantities to 0 for duplicate inventory item: {item.client_id}")
+        else:
+            # Just one item found, update it normally
+            inventory_item = inventory_items.first()
+            inventory_item.hotel_warehouse_quantity = total_received
+            inventory_item.received_at_hotel_quantity = total_received  # Update received_at_hotel_quantity too
+            inventory_item.damaged_quantity_at_hotel = total_damaged    # Update damaged_quantity_at_hotel too
+            inventory_item.save()
+            print(f"Updated hotel quantities for {client_id}: received={total_received}, damaged={total_damaged}")
+
+# ... inside warehouse_receiver view, after each new HotelWarehouse.objects.create(...):
+    HotelWarehouse.objects.create(
+        reference_id=reference_id,
+        client_item=client_item,
+        quantity_received=received_qty,
+        damaged_qty=damaged_qty,  # Add the damaged quantity
+        checked_by=user,
+        received_date=received_date
+    )
+    
+@csrf_exempt
+def delete_warehouse_container(request):
+    if request.method == "POST":
+        reference_id = request.POST.get("reference_id")
+        if not reference_id:
+            return JsonResponse({"success": False, "message": "No reference ID provided."})
+        try:
+            from .models import WarehouseShipment, Inventory
+            # Restore inventory quantities for each item in the container
+            items = WarehouseShipment.objects.filter(reference_id=reference_id)
+            for item in items:
+                client_id = item.client_id
+                ship_qty = item.ship_qty
+                inventory_item = Inventory.objects.filter(client_id__iexact=client_id).first()
+                if inventory_item:
+                    # Add back to available
+                    if inventory_item.quantity_available is not None:
+                        inventory_item.quantity_available += ship_qty
+                    else:
+                        inventory_item.quantity_available = ship_qty
+                    # Subtract from shipped_to_hotel_quantity if present
+                    if inventory_item.shipped_to_hotel_quantity is not None:
+                        inventory_item.shipped_to_hotel_quantity = max(0, inventory_item.shipped_to_hotel_quantity - ship_qty)
+                    inventory_item.save()
+            deleted, _ = items.delete()
+            if deleted:
+                return JsonResponse({"success": True})
+            else:
+                return JsonResponse({"success": False, "message": "Container not found."})
+        except Exception as e:
+            return JsonResponse({"success": False, "message": str(e)})
+    return JsonResponse({"success": False, "message": "Invalid request."})
+    
+@csrf_exempt
+def delete_inventory_container(request):
+    if request.method == "POST":
+        container_id = request.POST.get("container_id")
+        if not container_id:
+            return JsonResponse({"success": False, "message": "No container ID provided."})
+        try:
+            from .models import Shipping
+            deleted, _ = Shipping.objects.filter(bol=container_id).delete()
+            if deleted:
+                return JsonResponse({"success": True})
+            else:
+                return JsonResponse({"success": False, "message": "Container not found."})
+        except Exception as e:
+            return JsonResponse({"success": False, "message": str(e)})
+    return JsonResponse({"success": False, "message": "Invalid request."})
+
+@session_login_required
+def export_warehouse_shipment_excel(request):
+    """
+    Export warehouse shipment data to Excel format.
+    Expects reference_id parameter to identify the specific shipment.
+    """
+    reference_id = request.GET.get('reference_id', '').strip()
+    
+    if not reference_id:
+        return JsonResponse({'success': False, 'message': 'Reference ID is required'})
+    
+    try:
+        # Get all items for this reference ID (case-insensitive)
+        items = WarehouseShipment.objects.filter(reference_id__iexact=reference_id)
+        
+        if not items.exists():
+            return JsonResponse({'success': False, 'message': 'No shipment found with this reference ID'})
+        
+        # Get the first item to get shipment details
+        first_item = items.first()
+        
+        # Prepare data for Excel export
+        export_data = []
+        
+        for item in items:
+            # Get product name from ProductData if available
+            try:
+                product = ProductData.objects.filter(client_id__iexact=item.client_id).first()
+                product_name = product.description if product else None
+                if not product_name:
+                    product_name = item.item or "Unknown Product"
+            except ProductData.DoesNotExist:
+                product_name = item.item or "Unknown Product"
+            
+            export_data.append({
+                'Reference ID': item.reference_id,
+                'Client Item #': item.client_id,
+                'Product Name': product_name,
+                'Ship Date': item.ship_date.strftime('%Y-%m-%d') if item.ship_date else '',
+                'Quantity Shipped': item.ship_qty,
+                'Expected Arrival Date': item.expected_arrival_date.strftime('%Y-%m-%d') if item.expected_arrival_date else '',
+                'Checked By': item.checked_by.name if item.checked_by else ''
+            })
+        
+        # Generate Excel file
+        filename = f"warehouse_shipment_{reference_id}.xls"
+        
+        # Use the existing helper function to generate Excel response
+        return _generate_xls_response(export_data, filename, sheet_name="Warehouse Shipment")
+        
+    except Exception as e:
+        print(f"Error exporting warehouse shipment: {e}")
+        return JsonResponse({'success': False, 'message': f'Error exporting shipment: {str(e)}'})
+
+@session_login_required
+def export_warehouse_receipt_excel(request):
+    """
+    Export warehouse receipt data to Excel format.
+    Expects reference_id parameter to identify the specific receipt.
+    """
+    reference_id = request.GET.get('reference_id', '').strip()
+    
+    if not reference_id:
+        return JsonResponse({'success': False, 'message': 'Reference ID is required'})
+    
+    try:
+        # Get all items for this reference ID (case-insensitive)
+        items = HotelWarehouse.objects.filter(reference_id__iexact=reference_id)
+        
+        if not items.exists():
+            return JsonResponse({'success': False, 'message': 'No receipt found with this reference ID'})
+        
+        # Prepare data for Excel export
+        export_data = []
+        
+        for item in items:
+            # Get product name from ProductData if available
+            try:
+                product = ProductData.objects.filter(client_id__iexact=item.client_item).first()
+                product_name = product.description if product else None
+                if not product_name:
+                    product_name = item.client_item or "Unknown Product"
+            except ProductData.DoesNotExist:
+                product_name = item.client_item or "Unknown Product"
+            
+            # Get shipped quantity from WarehouseShipment
+            shipped_qty = 0
+            try:
+                shipment_item = WarehouseShipment.objects.filter(
+                    reference_id__iexact=reference_id,
+                    client_id__iexact=item.client_item
+                ).first()
+                if shipment_item:
+                    shipped_qty = shipment_item.ship_qty
+            except Exception as e:
+                print(f"Error looking up shipped quantity for {item.client_item}: {e}")
+            
+            export_data.append({
+                'Reference ID': item.reference_id,
+                'Received Date': item.received_date.strftime('%Y-%m-%d') if item.received_date else '',
+                'Client Item #': item.client_item,
+                'Product Name': product_name,
+                'Shipped Quantity': shipped_qty,
+                'Good Received Quantity': item.quantity_received,
+                'Damaged Quantity': item.damaged_qty,
+                'Received By': item.checked_by.name if item.checked_by else ''
+            })
+        
+        # Generate Excel file
+        filename = f"warehouse_receipt_{reference_id}.xls"
+        
+        # Use the existing helper function to generate Excel response
+        return _generate_xls_response(export_data, filename, sheet_name="Warehouse Receipt")
+        
+    except Exception as e:
+        print(f"Error exporting warehouse receipt: {e}")
+        return JsonResponse({'success': False, 'message': f'Error exporting data: {str(e)}'})
+    
+@login_required
+def check_availability(request):
+    """
+    Render the Product Availability report page.
+    """
+    return render(request, "check_availability.html")
+
+@login_required
+def get_install_start_dates(request):
+    # Get unique install start dates, sorted
+    dates = Schedule.objects.values_list('install_starts', flat=True).distinct().order_by('install_starts')
+    # Convert to string for JSON serialization
+    date_list = [d.strftime('%Y-%m-%d') for d in dates if d]
+    return JsonResponse({'dates': date_list})
+
+
+
+@login_required
+def get_availability_data(request):
+    from django.db.models import Sum
+    from django.db.models.functions import Lower
+    dates_param = request.GET.get('dates', '')
+    dates = [d.strip() for d in dates_param.split(',') if d.strip()]
+    if not dates:
+        return JsonResponse({'floors': [], 'items': [], 'shipping_details': {}})
+
+    # Get all floors for these dates
+    floors = list(Schedule.objects.filter(install_starts__in=dates).values_list('floor', flat=True).distinct())
+    floor_list = [f for f in floors if f]
+
+    # Get all rooms on these floors, with their room_model_id
+    rooms = RoomData.objects.filter(floor__in=floors).select_related('room_model_id')
+    room_model_counts = {}
+    for room in rooms:
+        rm_id = room.room_model_id_id
+        if rm_id:
+            room_model_counts[rm_id] = room_model_counts.get(rm_id, 0) + 1
+
+    # Get all ProductRoomModel for these room_model_ids, and count required per product
+    prms = ProductRoomModel.objects.filter(room_model_id__in=room_model_counts.keys()).select_related('product_id')
+    product_required = {}
+    for prm in prms:
+        client_id = prm.product_id.client_id.lower() if prm.product_id and prm.product_id.client_id else None
+        qty_per_room = prm.quantity if hasattr(prm, 'quantity') and prm.quantity else 1
+        total_required = qty_per_room * room_model_counts.get(prm.room_model_id_id, 0)
+        if client_id:
+            product_required[client_id] = product_required.get(client_id, 0) + total_required
+
+    client_ids = list(product_required.keys())
+
+    # Inventory: sum qty_ordered for all client_ids (case-insensitive, using Lower for both filter and aggregation)
+    inventory_agg = (
+        Inventory.objects
+        .annotate(client_id_lower=Lower('client_id'))
+        .filter(client_id_lower__in=client_ids)
+        .values('client_id_lower')
+        .annotate(total=Sum('qty_ordered'))
+    )
+    inventory_map = {row['client_id_lower']: row['total'] or 0 for row in inventory_agg}
+
+    # Shipping: sum ship_qty for all client_ids (case-insensitive, using Lower for both filter and aggregation)
+    shipping_agg = (
+        Shipping.objects
+        .annotate(client_id_lower=Lower('client_id'))
+        .filter(client_id_lower__in=client_ids)
+        .values('client_id_lower')
+        .annotate(total=Sum('ship_qty'))
+    )
+    shipping_map = {row['client_id_lower']: row['total'] or 0 for row in shipping_agg}
+
+    # ProductData: get descriptions for all client_ids (lowercase)
+    productdata_qs = ProductData.objects.all()
+    productdata_map = {p.client_id.lower(): p.client_id for p in productdata_qs if p.client_id}
+
+
+    # --- Shipping details for tooltip, now with expected_arrival_date, received_date, received_qty ---
+    shipping_details_qs = (
+        Shipping.objects
+        .annotate(client_id_lower=Lower('client_id'))
+        .filter(client_id_lower__in=client_ids)
+        .values('client_id_lower', 'bol', 'client_id', 'ship_qty', 'expected_arrival_date')
+    )
+    # Preload all InventoryReceived for these containers and client_ids
+    from collections import defaultdict
+    inventory_received_map = defaultdict(dict)  # { (container_id, client_id_lower): {received_date, received_qty} }
+    invrec_qs = (
+        InventoryReceived.objects
+        .annotate(client_id_lower=Lower('client_id'))
+        .filter(client_id_lower__in=client_ids)
+        .values('container_id', 'client_id', 'client_id_lower', 'received_date', 'received_qty')
+    )
+    for rec in invrec_qs:
+        # Ensure both container_id and client_id are compared as strings, case-insensitive, and whitespace-insensitive
+        container_id_str = str(rec['container_id']).strip().lower() if rec['container_id'] is not None else ''
+        client_id_lower = rec['client_id_lower'].strip().lower() if rec['client_id_lower'] else ''
+        inventory_received_map[(container_id_str, client_id_lower)] = {
+            'received_date': rec['received_date'].strftime('%Y-%m-%d') if rec['received_date'] else '-',
+            'received_qty': rec['received_qty'] if rec['received_qty'] is not None else '-',
+        }
+
+    shipping_details = {}
+    # For each client_id, track on-time and late container quantities
+    ontime_qty_map = {}  # client_id_lower -> sum of ship_qty for on-time containers
+    late_container_map = {}  # client_id_lower -> True if any late container exists
+    latest_install_date = None
+    if dates:
+        try:
+            latest_install_date = max([datetime.strptime(d, '%Y-%m-%d').date() for d in dates])
+        except Exception:
+            latest_install_date = None
+
+    for row in shipping_details_qs:
+        cid = row['client_id_lower'].strip().lower() if row['client_id_lower'] else ''
+        if cid not in shipping_details:
+            shipping_details[cid] = []
+        # Only show received info if BOTH container_id (InventoryReceived) matches bol (Shipping) AND client_id matches (case-insensitive)
+        bol_str = str(row['bol']).strip().lower() if row['bol'] is not None else ''
+        invrec = inventory_received_map.get((bol_str, cid), None)
+        received_date = '-'
+        received_qty = '-'
+        if invrec:
+            received_date = invrec['received_date']
+            received_qty = invrec['received_qty']
+        shipping_details[cid].append({
+            'bol': row['bol'],
+            'client_id': row['client_id'],
+            'ship_qty': row['ship_qty'],
+            'expected_arrival_date': row.get('expected_arrival_date').strftime('%Y-%m-%d') if row.get('expected_arrival_date') else '-',
+            'received_date': received_date,
+            'received_qty': received_qty,
+        })
+        # Check if this container is late or on-time
+        arrival_date = row.get('expected_arrival_date')
+        ship_qty = row.get('ship_qty') or 0
+        is_late = False
+        if latest_install_date and arrival_date:
+            try:
+                if isinstance(arrival_date, str):
+                    arrival_date_dt = datetime.strptime(arrival_date, '%Y-%m-%d').date()
+                elif isinstance(arrival_date, datetime):
+                    arrival_date_dt = arrival_date.date()
+                else:
+                    arrival_date_dt = arrival_date
+                if arrival_date_dt > latest_install_date:
+                    late_container_map[cid] = True
+                    is_late = True
+            except Exception:
+                pass
+        if not is_late:
+            ontime_qty_map[cid] = ontime_qty_map.get(cid, 0) + (ship_qty or 0)
+
+    # Build the result
+    items = []
+    for client_id, required in product_required.items():
+        product_ordered = inventory_map.get(client_id, 0)
+        expected_arrival_qty = shipping_map.get(client_id, 0)
+        item_name = productdata_map.get(client_id, client_id)
+        difference = expected_arrival_qty - required
+        # Mark as red if sum of on-time container qty < required
+        ontime_qty = ontime_qty_map.get(client_id, 0)
+        mark_red = ontime_qty < required
+        items.append({
+            'item': item_name,
+            'product_ordered': product_ordered,
+            'product_required': required,
+            'expected_arrival_qty': expected_arrival_qty,
+            'difference': difference,
+            'client_id': client_id,  # Add client_id for tooltip lookup
+            'mark_red': mark_red,
+        })
+
+    return JsonResponse({'floors': floor_list, 'items': items, 'shipping_details': shipping_details})
+
+def recalculate_quantity_available_all():
+    """
+    For all Inventory rows, set quantity_available = qty_received - shipped_to_hotel_quantity.
+    This ensures quantity_available is always correct after receiving or shipping.
+    """
+    from hotel_bot_app.models import Inventory
+    update_count = 0
+    for inventory in Inventory.objects.all():
+        qty_received = inventory.qty_received or 0
+        shipped_to_hotel_quantity = inventory.shipped_to_hotel_quantity or 0
+        new_quantity_available = qty_received - shipped_to_hotel_quantity
+        if inventory.quantity_available != new_quantity_available:
+            inventory.quantity_available = new_quantity_available
+            inventory.save(update_fields=["quantity_available"])
+            update_count += 1
+    print(f"Recalculated quantity_available for {update_count} inventory items.")
+    return update_count

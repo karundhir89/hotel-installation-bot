@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'admin_dashboard',
     'hotel_bot_app',
+    'auditlog',
     'crispy_forms',
     'crispy_bootstrap5',
     'widget_tweaks',
@@ -54,6 +55,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+      'auditlog.middleware.AuditlogMiddleware'
     # 'Add debug_toolbar.middleware.DebugToolbarMiddleware',
 ]
 
@@ -78,7 +80,8 @@ TEMPLATES = [
 WSGI_APPLICATION = 'admin.wsgi.application'
 ASGI_APPLICATION = 'admin.asgi.application'
 
-
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 # Database
 # https://docs.djangoproject.com/en/3.2/ref/settings/#databases
 

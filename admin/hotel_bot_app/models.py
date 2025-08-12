@@ -4,6 +4,13 @@ from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
+from django.contrib.auth.models import User
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from PIL import Image
+from django.core.exceptions import ValidationError
+import os
+from auditlog.registry import auditlog
 
 class InvitedUser(models.Model):
     id = models.AutoField(primary_key=True)
@@ -11,6 +18,7 @@ class InvitedUser(models.Model):
     role = ArrayField(models.CharField(max_length=100), blank=True, default=list)
     last_login = models.DateTimeField(null=True, blank=True)  # Allow null values
     email = models.EmailField(unique=True)
+    is_administrator = models.BooleanField(default=False)
     status = models.CharField(max_length=50, default='activated', null=False, blank=True)  # ✅ Add default
     password = models.BinaryField()
 
@@ -62,15 +70,60 @@ class Inventory(models.Model):
     item = models.TextField(null=True, blank=True)
     client_id = models.TextField(null=True, blank=True)
     qty_ordered = models.IntegerField(null=True, blank=True)
+    quantity_shipped = models.IntegerField(null=True, blank=True, default=0)
     qty_received = models.IntegerField(null=True, blank=True)
-    quantity_installed = models.IntegerField(null=True, blank=True)
+    damaged_quantity = models.IntegerField(null=True, blank=True, default=0)
     quantity_available = models.IntegerField(null=True, blank=True)
-
+    shipped_to_hotel_quantity = models.IntegerField(null=True, blank=True)
+    received_at_hotel_quantity = models.IntegerField(null=True, blank=True)
+    damaged_quantity_at_hotel = models.IntegerField(null=True, blank=True)
+    hotel_warehouse_quantity = models.IntegerField(null=True, blank=True, default=0)
+    floor_quantity = models.IntegerField(null=True, blank=True, default=0)
+    quantity_installed = models.IntegerField(null=True, blank=True)
     class Meta:
         db_table = 'inventory'  # Ensure this matches the actual table name in PostgreSQL
 
     def __str__(self):
         return f"Item: {self.item} - Available: {self.quantity_available}"
+auditlog.register(Inventory)
+
+class HotelWarehouse(models.Model):
+    id = models.AutoField(primary_key=True)
+    reference_id = models.CharField(max_length=255)  # Warehouse Container ID 
+    client_item = models.CharField(max_length=255)
+    quantity_received = models.PositiveIntegerField(default=0)
+    damaged_qty = models.PositiveIntegerField(default=0)
+    checked_by = models.ForeignKey('InvitedUser', on_delete=models.SET_NULL, null=True, blank=True)
+    received_date = models.DateField(null=True, blank=True)
+    # Timestamp when the receipt row was created; used to enforce edit/delete locks
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.reference_id} - {self.client_item} ({self.quantity_received})"
+
+    class Meta:
+        db_table = "hotel_warehouse"
+
+auditlog.register(HotelWarehouse)
+
+class WarehouseRequest(models.Model):
+    id = models.AutoField(primary_key=True)
+    floor_number = models.IntegerField()
+    client_item = models.CharField(max_length=255)
+    requested_by = models.ForeignKey('InvitedUser', on_delete=models.SET_NULL, null=True, blank=True)
+    received_by = models.ForeignKey('InvitedUser', null=True, blank=True, on_delete=models.SET_NULL , related_name='received_requests')
+    sent_by = models.ForeignKey('InvitedUser', null=True, blank=True, on_delete=models.SET_NULL, related_name='sent_requests')
+    quantity_requested = models.PositiveIntegerField(default=0)
+    quantity_received = models.PositiveIntegerField(default=0)
+    quantity_sent = models.PositiveIntegerField(default=0)
+    sent = models.BooleanField(default=False)  # True for Yes, False for No
+    sent_date = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Floor {self.floor_number} - {self.client_item} (Requested: {self.quantity_requested}, Sent: {self.quantity_sent})"
+
+    class Meta:
+        db_table = "warehouse_request"
     
 class RoomModel(models.Model):
     id = models.AutoField(primary_key=True)  # Serial (Auto-increment)
@@ -87,9 +140,9 @@ class RoomData(models.Model):
     id = models.AutoField(primary_key=True)  # Serial (Auto-increment)
     room = models.IntegerField(null=True, blank=True)
     floor = models.IntegerField(null=True, blank=True)
-    king = models.TextField(null=True, blank=True)
-    double = models.TextField(null=True, blank=True)
-    exec_king = models.TextField(null=True, blank=True)
+    # king = models.TextField(null=True, blank=True)
+    # double = models.TextField(null=True, blank=True)
+    # exec_king = models.TextField(null=True, blank=True)
     bath_screen = models.TextField(null=True, blank=True)
     room_model = models.TextField(null=True, blank=True)
     room_model_id = models.ForeignKey(RoomModel, on_delete=models.SET_NULL, null=True, blank=True,db_column='room_model_id')
@@ -97,6 +150,7 @@ class RoomData(models.Model):
     right_desk = models.TextField(null=True, blank=True)
     to_be_renovated = models.TextField(null=True, blank=True)
     description = models.TextField(null=True, blank=True)  # Fixed column name typo from "descripton"
+    bed = models.CharField(max_length=100, null=True, blank=True)  # Add this field if not present
 
     class Meta:
         db_table = 'room_data'  # Ensure this matches the actual table name in PostgreSQL
@@ -169,12 +223,28 @@ class ProductData(models.Model):
     description = models.TextField(null=True, blank=True)
     client_selected = models.TextField(null=True, blank=True)
     supplier = models.TextField(null=True, blank=True)
+    image = models.ImageField(upload_to='product_images/', null=True, blank=True)
 
     class Meta:
         db_table = 'product_data'  # Ensures it maps to the correct table
 
     def __str__(self):
         return f"ProductData - Item: {self.item}, Client: {self.client_id}"
+    def save(self, *args, **kwargs):
+        # Check format
+        if self.image:
+            ext = os.path.splitext(self.image.name)[1].lower()
+            if ext not in ['.jpg', '.jpeg', '.png', '.webp']:
+                raise ValidationError(f'Unsupported file format: {ext}')
+
+        super().save(*args, **kwargs)  # Save first to ensure file exists
+
+        # Resize image
+        if self.image:
+            img = Image.open(self.image.path)
+            if img.height > 1200 or img.width > 1200:
+                img.thumbnail((1200, 1200))
+                img.save(self.image.path)    
 
 class Prompt(models.Model):
     id = models.AutoField(primary_key=True)
@@ -216,6 +286,25 @@ class Shipping(models.Model):
         return f"Shipment {self.bol} - {self.item} to Client {self.client_id}"
     class Meta:
         db_table = "shipping"
+auditlog.register(Shipping)
+
+
+class WarehouseShipment(models.Model):
+    client_id = models.CharField(max_length=255)
+    item = models.CharField(max_length=255)
+    ship_date = models.DateField()
+    ship_qty = models.PositiveIntegerField()
+    reference_id = models.CharField(max_length=100)
+    checked_by = models.ForeignKey(InvitedUser, on_delete=models.SET_NULL, null=True, blank=True)
+    expected_arrival_date = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Warehouse Shipment {self.reference_id} - {self.item}"
+    
+    class Meta:
+        db_table = "warehouse_shipment"
+auditlog.register(WarehouseShipment)
+
 
 class PullInventory(models.Model):
     client_id =  models.CharField(max_length=255)
@@ -264,12 +353,14 @@ class InventoryReceived(models.Model):
     received_qty = models.PositiveIntegerField()
     damaged_qty = models.PositiveIntegerField()
     checked_by = models.ForeignKey(InvitedUser, on_delete=models.SET_NULL, null=True, blank=True)
+    container_id = models.CharField(max_length=255, null=True, blank=True)
 
     def __str__(self):
         return f"Received {self.received_qty} of {self.item} for {self.client_id}"
 
     class Meta:
         db_table = "inventory_received"
+auditlog.register(InventoryReceived)
 
 class IssueStatus(models.TextChoices):
     OPEN = 'OPEN', _('Open')
@@ -430,3 +521,21 @@ issue2 = Issue.objects.create(
 
 )
 """
+
+# New UserProfile model for Django User
+class UserProfile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
+    is_administrator = models.BooleanField(default=False)
+    
+    def __str__(self):
+        return f"{self.user.username}'s profile"
+
+# Signal to create UserProfile when User is created
+@receiver(post_save, sender=User)
+def create_user_profile(sender, instance, created, **kwargs):
+    if created:
+        UserProfile.objects.create(user=instance)
+
+@receiver(post_save, sender=User)
+def save_user_profile(sender, instance, **kwargs):
+    instance.profile.save()

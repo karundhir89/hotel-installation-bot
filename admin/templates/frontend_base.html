@@ -52,6 +52,7 @@
       background-image: url("data:image/svg+xml;utf8,<svg viewBox='0 0 30 30' xmlns='http://www.w3.org/2000/svg'><path stroke='rgba(0, 0, 0, 0.5)' stroke-width='2' stroke-linecap='round' d='M4 7h22M4 15h22M4 23h22'/></svg>");
     }
   </style>
+
 </head>
 
 <body style="background-color: #f7f7f7; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
@@ -68,7 +69,7 @@
               aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
       </button>
-      {% if request.session.user_id and 'inventory' in request.session.user_roles %}
+      {% if request.session.user_id and 'inventory' in request.session.user_roles or 'hotel_warehouse' in request.session.user_roles or 'installation' in request.session.user_roles or 'floormanager' in request.session.user_roles %}
       <div class="collapse navbar-collapse" id="navbarSupportedContent">
         <ul class="navbar-nav ml-auto">
           <li class="nav-item">

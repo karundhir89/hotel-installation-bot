@@ -28,7 +28,92 @@ from django.db import connection # Added for raw SQL
 from django.db.models import Min, Max
 
 
+import uuid
 # Create your views here.
+
+@login_required
+@user_passes_test(is_staff_user)
+def admin_issue_create(request):
+	import uuid
+	available_users = InvitedUser.objects.all()
+	is_ajax = request.headers.get('x-requested-with') == 'XMLHttpRequest'
+	if request.method == 'POST':
+		form = IssueForm(request.POST, request.FILES)
+		if form.is_valid():
+			issue = form.save(commit=False)
+			# Always assign a valid InvitedUser to issue.created_by
+			invited_user = InvitedUser.objects.filter(email__iexact=request.user.email).first()
+
+# If not found, fallback to a default system admin invited user
+			if not invited_user:
+				invited_user, _ = InvitedUser.objects.get_or_create(
+					email="system_admin@internal.local",
+					defaults={"name": "System Admin", "password": b"", "status": "activated"}
+					)
+			issue.created_by = invited_user
+
+			issue.save()
+			form.save_m2m()
+
+			# Handle observers
+			observer_ids = request.POST.getlist('observers')
+			if observer_ids:
+				issue.observers.set(InvitedUser.objects.filter(id__in=observer_ids))
+
+			# --- Process images and video like normal user flow ---
+			media_info = []
+			images = form.cleaned_data.get('images', [])
+			video = form.cleaned_data.get('video')
+			for img in images:
+				if img.size > 4 * 1024 * 1024:
+					continue
+				file_name = default_storage.save(f"issues/comments/admin/{issue.id}/{uuid.uuid4()}_{img.name}", img)
+				media_info.append({
+					"type": "image",
+					"url": default_storage.url(file_name),
+					"name": img.name,
+					"size": img.size
+				})
+			if video:
+				if video.size <= 100 * 1024 * 1024:
+					file_name = default_storage.save(f"issues/comments/admin/{issue.id}/{uuid.uuid4()}_{video.name}", video)
+					media_info.append({
+						"type": "video",
+						"url": default_storage.url(file_name),
+						"name": video.name,
+						"size": video.size
+					})
+
+			# Always create initial comment (even if no media) so chat is not empty
+			Comment.objects.create(
+				issue=issue,
+				commenter=request.user,
+				text_content=form.cleaned_data.get('description', ''),
+				media=media_info
+			)
+
+			success_message = f"Issue #{issue.id} created successfully."
+			if is_ajax:
+				return JsonResponse({
+					'success': True,
+					'message': success_message,
+					'redirect_url': reverse('admin_dashboard:admin_issue_detail', args=[issue.id])
+				})
+			messages.success(request, success_message)
+			return redirect('admin_dashboard:admin_issue_detail', issue_id=issue.id)
+		else:
+			error_message = "Please correct the errors below."
+			if is_ajax:
+				return JsonResponse({'success': False, 'errors': form.errors, 'message': error_message}, status=400)
+			messages.error(request, error_message)
+	else:
+		form = IssueForm()
+	context = {
+		'form': form,
+		'available_users': available_users,
+		'form_action': reverse('admin_dashboard:admin_issue_create'),
+	}
+	return render(request, 'admin_dashboard/issues/admin_issue_create.html', context)
 @login_required
 def my_view(request):
 	try:
@@ -39,10 +124,10 @@ def my_view(request):
 		if user is not None:
 			if user.is_active:
 				login(request, user)
-				return HttpResponseRedirect("admin_dashboard:dashboard")
+				return redirect("admin_dashboard:dashboard")
 	except Exception as e:
 		print("error in my_view :::::::::::",e)
-	return HttpResponseRedirect("/admin/login")
+	return redirect("/admin/login")
 
 @login_required
 def change_password(request):
@@ -71,12 +156,12 @@ def show_login(request):
 	try:
 		print("user id :::: ",request.user)
 		if request.user.id is not None:
-				return HttpResponseRedirect('admin_dashboard:dashboard')
+				return redirect('admin_dashboard:dashboard')
 		else:
-			return HttpResponseRedirect('user_login')
+			return redirect('user_login')
 	except Exception as e:
 		print('error in  show_login',str(e))
-	return HttpResponseRedirect('admin_dashboard:dashboard')
+	return redirect('admin_dashboard:dashboard')
 
 @login_required
 def logout_view(request):
@@ -91,12 +176,17 @@ def logout_view(request):
 def admin_issue_list(request):
 	issues = Issue.objects.all().order_by('-created_at').select_related('created_by', 'assignee')
 
+
 	# Filtering
 	status = request.GET.get('status')
 	issue_type = request.GET.get('type')
 	created_by = request.GET.get('created_by')
 	assignee = request.GET.get('assignee')
 	q = request.GET.get('q')
+
+	# Default to 'OPEN' if no status is provided
+	if status is None or status == '':
+		status = 'OPEN'
 
 	if q:
 		issues = issues.filter(title__icontains=q)
@@ -178,12 +268,17 @@ def admin_issue_edit(request, issue_id):
 	else:
 		form = IssueUpdateForm(instance=issue)
 
+	# Fetch the initial comment (first by created_at) for previewing images/videos
+	initial_comment = issue.comments.order_by('created_at').first()
+	initial_comment_media = initial_comment.media if initial_comment and initial_comment.media else []
+
 	context = {
 		'form': form,
 		'issue': issue,
 		'available_users': available_users,
 		'observers': issue.observers.all(),
 		'form_action': reverse('admin_dashboard:admin_issue_edit', args=[issue.id]),
+		'initial_comment_media': initial_comment_media,
 	}
 	return render(request, 'admin_dashboard/issues/admin_issue_form.html', context)
 
@@ -200,18 +295,50 @@ def admin_issue_detail(request, issue_id):
 
 	comment_form = CommentForm()
 
-	current_user_commenter = request.user  # Assuming User model is used as commenter
+	# Determine both Django User and matching InvitedUser for current user
+	current_user = request.user
+	current_user_invited = None
+	if hasattr(current_user, 'email'):
+		current_user_invited = InvitedUser.objects.filter(email__iexact=current_user.email).first()
 
 	comment_data = []
 	for comment in comments:
 		commenter = comment.commenter
+		is_by_current_user = False
+		# Check by email (case-insensitive) if available, else by PK
+		if commenter is not None:
+			# Check for email match (works for both Django User and InvitedUser)
+			commenter_email = getattr(commenter, 'email', None)
+			current_user_email = getattr(current_user, 'email', None)
+			if commenter_email and current_user_email and commenter_email.lower() == current_user_email.lower():
+				is_by_current_user = True
+			elif current_user_invited:
+				invited_email = getattr(current_user_invited, 'email', None)
+				if commenter_email and invited_email and commenter_email.lower() == invited_email.lower():
+					is_by_current_user = True
+			# Fallback to PK match if email is not available
+			elif hasattr(commenter, 'pk') and hasattr(current_user, 'pk') and commenter.pk == current_user.pk:
+				is_by_current_user = True
+
+		# Unify name for current user's comments: show email, else show name as before
+		if is_by_current_user:
+			# Prefer email if available
+			if hasattr(current_user, 'email') and current_user.email:
+				commenter_name = current_user.email
+			elif current_user_invited and hasattr(current_user_invited, 'email') and current_user_invited.email:
+				commenter_name = current_user_invited.email
+			else:
+				commenter_name = str(current_user)
+		else:
+			commenter_name = str(commenter)
+
 		comment_data.append({
 			"comment_id": comment.id,
 			"text_content": comment.text_content,
 			"media": comment.media,
 			"commenter_id": getattr(commenter, "id", None),
-			"commenter_name": str(commenter),
-			"is_by_current_user": commenter == current_user_commenter
+			"commenter_name": commenter_name,
+			"is_by_current_user": is_by_current_user
 		})
 
 	context = {
@@ -297,28 +424,43 @@ def _prepare_floor_progress_data():
 	pending_floor_numbers = []
 
 	sql_query = """
+		WITH room_installs AS (
+			-- Get all rooms that have products installed
+			SELECT 
+				rd.id AS room_data_id,
+				rd.room AS room_number,
+				rd.floor AS floor_number,
+				i.id AS install_id,
+				i.prework_check_on,
+				i.day_install_complete,
+				i.post_work_check_on,
+				(SELECT COUNT(*) FROM install_detail WHERE installation_id = i.id AND status = 'YES') AS installed_products_count
+			FROM
+				room_data rd
+			LEFT JOIN
+				install i ON rd.room = i.room
+			WHERE
+				rd.floor IS NOT NULL
+		)
 		SELECT
-			rd.floor AS floor_number,
-			COUNT(rd.id) AS total_rooms_on_floor,
-			COALESCE(SUM(CASE WHEN i.prework_check_on IS NOT NULL THEN 1 ELSE 0 END), 0) AS prework_completed_count,
-			COALESCE(SUM(CASE WHEN i.day_install_complete IS NOT NULL THEN 1 ELSE 0 END), 0) AS install_completed_count,
-			COALESCE(SUM(CASE WHEN i.post_work_check_on IS NOT NULL THEN 1 ELSE 0 END), 0) AS postwork_completed_count,
+			ri.floor_number,
+			COUNT(DISTINCT ri.room_data_id) AS total_rooms_on_floor,
+			COALESCE(SUM(CASE WHEN ri.prework_check_on IS NOT NULL THEN 1 ELSE 0 END), 0) AS prework_completed_count,
+			-- Count a room as having installation completed if it has ANY products installed
+			COALESCE(SUM(CASE WHEN ri.installed_products_count > 0 THEN 1 ELSE 0 END), 0) AS install_completed_count,
+			COALESCE(SUM(CASE WHEN ri.post_work_check_on IS NOT NULL THEN 1 ELSE 0 END), 0) AS postwork_completed_count,
 			COALESCE(SUM(CASE 
-				WHEN i.prework_check_on IS NOT NULL AND 
-					 i.day_install_complete IS NOT NULL AND 
-					 i.post_work_check_on IS NOT NULL 
+				WHEN ri.prework_check_on IS NOT NULL AND 
+					 ri.installed_products_count > 0 AND 
+					 ri.post_work_check_on IS NOT NULL 
 				THEN 1 ELSE 0 
 			END), 0) AS fully_completed_rooms_on_floor
 		FROM
-			room_data rd
-		LEFT JOIN
-			install i ON rd.room = i.room
-		WHERE
-			rd.floor IS NOT NULL
+			room_installs ri
 		GROUP BY
-			rd.floor
+			ri.floor_number
 		ORDER BY
-			rd.floor;
+			ri.floor_number;
 	"""
 
 	with connection.cursor() as cursor:
@@ -342,19 +484,29 @@ def _prepare_floor_progress_data():
 		postwork_status = "Pending"
 
 		if total_rooms_on_floor > 0:
-			percentage_completed_val = (fully_completed_on_floor / total_rooms_on_floor * 100)
-			percentage_completed_str = f"{percentage_completed_val:.0f}%"
+			# Calculate percentage based on total installation progress, not just fully completed rooms
+			# This gives a more accurate progress percentage
+			prework_percentage = (prework_completed / total_rooms_on_floor) if total_rooms_on_floor > 0 else 0
+			install_percentage = (install_completed / total_rooms_on_floor) if total_rooms_on_floor > 0 else 0
+			postwork_percentage = (postwork_completed / total_rooms_on_floor) if total_rooms_on_floor > 0 else 0
+			
+			# Overall progress is weighted average of the three phases
+			# 25% prework + 50% installation + 25% postwork
+			overall_percentage = (0.25 * prework_percentage + 0.5 * install_percentage + 0.25 * postwork_percentage) * 100
+			percentage_completed_str = f"{overall_percentage:.0f}%"
 
-			prework_status = "Completed" if prework_completed == total_rooms_on_floor else "Pending"
+			# Status text for each phase
+			prework_status = "Completed" if prework_completed == total_rooms_on_floor else \
+							 f"{(prework_percentage * 100):.0f}%" if prework_completed > 0 else "Pending"
 			
 			if install_completed == total_rooms_on_floor:
 				install_status_str = "Completed"
 			elif install_completed > 0:
-				install_percentage_val = (install_completed / total_rooms_on_floor * 100)
-				install_status_str = f"{install_percentage_val:.0f}%"
+				install_status_str = f"{(install_percentage * 100):.0f}%"
 			# else install_status_str remains "Pending"
 
-			postwork_status = "Completed" if postwork_completed == total_rooms_on_floor else "Pending"
+			postwork_status = "Completed" if postwork_completed == total_rooms_on_floor else \
+							  f"{(postwork_percentage * 100):.0f}%" if postwork_completed > 0 else "Pending"
 		
 		floor_progress_list.append({
 			'floor_number': current_floor,
@@ -368,9 +520,9 @@ def _prepare_floor_progress_data():
 		if total_rooms_on_floor > 0: # Ensure floor has rooms to be considered
 			if fully_completed_on_floor == total_rooms_on_floor:
 				renovated_floor_numbers.append(current_floor)
-			elif install_completed > 0: # Some installation started, but not all rooms fully completed
+			elif install_completed > 0: # Some products installed, but not all rooms fully completed
 				closed_floor_numbers.append(current_floor)
-			else: # No installation started
+			else: # No products installed
 				pending_floor_numbers.append(current_floor)
 		else: # Floors with no rooms in room_data but potentially in schedule (not covered by this SQL)
 			pending_floor_numbers.append(current_floor) # Or handle as per broader project definition if available
@@ -396,7 +548,48 @@ def _prepare_pie_chart_data(total_project_rooms, total_project_fully_completed_r
 	"""
 	Prepares the data for the overall project completion pie chart.
 	"""
-	overall_completion_percentage = (total_project_fully_completed_rooms / total_project_rooms * 100) if total_project_rooms > 0 else 0
+	# Get additional detailed information about partial completions
+	with connection.cursor() as cursor:
+		cursor.execute("""
+			SELECT
+				-- Count installations that have ANY products installed
+				COUNT(DISTINCT i.id) AS installations_with_products,
+				-- Count installations with completed prework
+				COUNT(DISTINCT CASE WHEN i.prework = 'YES' THEN i.id END) AS prework_completed,
+				-- Count installations with completed postwork
+				COUNT(DISTINCT CASE WHEN i.post_work = 'YES' THEN i.id END) AS postwork_completed
+			FROM
+				install i
+			INNER JOIN
+				install_detail id ON i.id = id.installation_id
+			WHERE
+				id.status = 'YES'
+		""")
+		results = cursor.fetchone()
+		
+		installations_with_products = results[0] if results[0] is not None else 0
+		prework_completed = results[1] if results[1] is not None else 0
+		postwork_completed = results[2] if results[2] is not None else 0
+	
+	# Calculate weighted completion percentage
+	if total_project_rooms > 0:
+		# Phase weighting: 25% prework, 50% installation, 25% postwork
+		prework_weight = 0.25
+		install_weight = 0.50
+		postwork_weight = 0.25
+		
+		prework_percentage = prework_completed / total_project_rooms
+		install_percentage = installations_with_products / total_project_rooms
+		postwork_percentage = postwork_completed / total_project_rooms
+		
+		overall_completion_percentage = (
+			prework_weight * prework_percentage +
+			install_weight * install_percentage +
+			postwork_weight * postwork_percentage
+		) * 100
+	else:
+		overall_completion_percentage = 0
+	
 	pending_completion_percentage = 100 - overall_completion_percentage
 
 	return {
@@ -851,115 +1044,138 @@ def hotel_admin_issue_dashboard(request):
 @user_passes_test(is_staff_user)
 def admin_issue_create(request):
 	is_ajax = request.headers.get('x-requested-with') == 'XMLHttpRequest'
-	available_users = InvitedUser.objects.all() # Moved to top, needed for all paths
+	available_users = InvitedUser.objects.all()
 
 	if request.method == 'POST':
-		print(f"DEBUG: POST data for observers: {request.POST.getlist('observers')}") # DEBUG
 		form = IssueUpdateForm(request.POST, request.FILES)
-		if form.is_valid():
-			print(f"DEBUG: Form cleaned_data for observers: {form.cleaned_data.get('observers')}") # DEBUG
-			issue = form.save(commit=False)
-			invited_user_instance = None
-			try:
-				if isinstance(request.user, InvitedUser):
-					invited_user_instance = request.user
-				else:
-					invited_user_instance = InvitedUser.objects.get(id=request.user.id)
-			except InvitedUser.DoesNotExist:
-				messages.error(request, "Associated invited user account not found.")
-				if is_ajax:
-					return JsonResponse({'success': False, 'message': "Associated invited user account not found."}, status=400)
-				# Non-AJAX falls through to render form with errors.
+		try:
+			if form.is_valid():
+				issue = form.save(commit=False)
 
-			if invited_user_instance:
-				issue.created_by = invited_user_instance
-				issue.save() # Save the main issue instance first
-				print(f"DEBUG: Issue PK after save: {issue.pk}") # DEBUG
+				# Determine creator (InvitedUser)
+				invited_user_instance = None
+				try:
+					if isinstance(request.user, InvitedUser):
+						invited_user_instance = request.user
+					else:
+						invited_user_instance = InvitedUser.objects.filter(id=request.user.id).first()
+						if not invited_user_instance:
+							invited_user_instance = InvitedUser.objects.filter(email__iexact=request.user.email).first()
 
-				# Explicitly handle saving observers from cleaned_data
+					if not invited_user_instance:
+						error_msg = "Associated invited user account not found."
+						if is_ajax:
+							return JsonResponse({'success': False, 'message': error_msg}, status=400)
+						messages.error(request, error_msg)
+						return render(request, 'admin_dashboard/issues/admin_issue_form.html', {
+							'form': form,
+							'is_admin': True,
+							'form_action': reverse('admin_dashboard:admin_issue_create'),
+							'available_users': available_users,
+							'observers': [],
+						})
+
+					issue.created_by = invited_user_instance
+				except Exception as e:
+					error_msg = f"Error finding associated invited user: {str(e)}"
+					if is_ajax:
+						return JsonResponse({'success': False, 'message': error_msg}, status=400)
+					messages.error(request, error_msg)
+					return render(request, 'admin_dashboard/issues/admin_issue_form.html', {
+						'form': form,
+						'is_admin': True,
+						'form_action': reverse('admin_dashboard:admin_issue_create'),
+						'available_users': available_users,
+						'observers': [],
+					})
+
+				issue.save()
+				form.save_m2m()
+
+				# Set observers
 				if 'observers' in form.cleaned_data:
 					selected_observers = form.cleaned_data['observers']
-					print(f"DEBUG: Selected observers for .set(): {selected_observers}") # DEBUG
-					if selected_observers is not None: # Ensure it's not None before .set()
+					if selected_observers:
 						issue.observers.set(selected_observers)
-						print(f"DEBUG: Issue observers after .set(): {list(issue.observers.all())}") # DEBUG
 
-				form.save_m2m() # Save other M2M fields (like related_rooms, related_product)
-				print(f"DEBUG: Issue observers after save_m2m: {list(issue.observers.all())}") # DEBUG
+				# Ensure creator is observer
+				issue.observers.add(invited_user_instance)
+
+				# Process media files
+				media_urls = []
+				images = form.cleaned_data.get('images', [])
+				video = form.cleaned_data.get('video')
+
+				for image in images:
+					file_name = default_storage.save(f"issues/images/{uuid.uuid4()}_{image.name}", image)
+					file_url = default_storage.url(file_name)
+					media_urls.append({
+						'type': 'image',
+						'url': file_url,
+						'size': image.size,
+						'name': image.name
+					})
+
+				if video:
+					file_name = default_storage.save(f"issues/videos/{uuid.uuid4()}_{video.name}", video)
+					file_url = default_storage.url(file_name)
+					media_urls.append({
+						'type': 'video',
+						'url': file_url,
+						'size': video.size,
+						'name': video.name
+					})
+
+				# Create initial comment if media exists
+				if media_urls:
+					Comment.objects.create(
+						issue=issue,
+						commenter=invited_user_instance,
+						text_content=form.cleaned_data.get('description', ''),
+						media=media_urls
+					)
 
 				success_message = f"Issue #{issue.id} created successfully."
-				messages.success(request, success_message)
 				if is_ajax:
 					return JsonResponse({
 						'success': True,
 						'message': success_message,
 						'redirect_url': reverse('admin_dashboard:admin_issue_detail', args=[issue.id])
 					})
+				messages.success(request, success_message)
 				return redirect('admin_dashboard:admin_issue_detail', issue_id=issue.id)
-			else:
-				# This else handles invited_user_instance being None after try-except (e.g., non-AJAX InvitedUser.DoesNotExist)
-				# Message already added. For AJAX, this path is less likely due to earlier return.
-				if is_ajax: # Safeguard
-					return JsonResponse({'success': False, 'message': "Could not assign creator to the issue."}, status=400)
-				# Non-AJAX falls through to render form with errors.
 
-		# Form is invalid OR invited_user_instance was not found (for non-AJAX)
-		error_message = "Please correct the errors below."
-		# Add general error message only if no specific one (like 'user not found') was already added by messages.error
-		# and the form itself doesn't have errors that would make this redundant.
-		if not form.errors and not any(m.level == messages.ERROR for m in messages.get_messages(request)):
-			messages.error(request, error_message)
-		elif form.errors and not any(messages.get_messages(request)): # if form has errors but no message yet
+			# Form is invalid
+			error_message = "Please correct the errors below."
+			if is_ajax:
+				return JsonResponse({'success': False, 'errors': form.errors, 'message': error_message}, status=400)
 			messages.error(request, error_message)
 
-		if is_ajax:
-			return JsonResponse({'success': False, 'errors': form.errors, 'message': error_message}, status=400)
-		# Non-AJAX will fall through to render the form with errors (context setup below)
-	else: # GET request
-		form_initial_data = {}
-		current_user_as_observer_obj_list = [] # For context['observers']
+		except Exception as e:
+			if is_ajax:
+				return JsonResponse({'success': False, 'message': f"An unexpected error occurred. ({str(e)})"}, status=500)
+			messages.error(request, f"An unexpected error occurred. ({str(e)})")
+			form = IssueUpdateForm(request.POST, request.FILES)  # Re-init for rendering
+	else:
+		form = IssueUpdateForm()
 
-		if request.user.is_authenticated:
-			try:
-				invited_user_for_creator = None
-				if isinstance(request.user, InvitedUser):
-					invited_user_for_creator = request.user
-				else:
-					invited_user_for_creator = InvitedUser.objects.get(id=request.user.id)
-				
-				if invited_user_for_creator:
-					form_initial_data['observers'] = [invited_user_for_creator.pk]
-					current_user_as_observer_obj_list = [invited_user_for_creator]
-			except (InvitedUser.DoesNotExist, AttributeError, TypeError):
-				# Handles cases like user not being an InvitedUser, or not having 'id' (though login_required should prevent anon)
-				pass
-		form = IssueUpdateForm(initial=form_initial_data) # Changed to IssueUpdateForm
-
-	# Context setup for both GET and POST (when form is invalid)
+	# Populate observer users on error or GET
 	context_data_observers = []
-	if request.method == 'GET':
-		context_data_observers = current_user_as_observer_obj_list # From GET logic above
-	else: # POST request with errors
-		# For POST errors, populate from submitted data if possible, for display consistency.
-		# The form itself (in context.form) will render selections based on POST data.
+	if request.method != 'GET':
 		observer_pks_from_post = request.POST.getlist('observers')
 		if observer_pks_from_post:
 			try:
-				# Filter out empty strings or invalid PKs before querying
 				valid_pks = [pk for pk in observer_pks_from_post if pk.isdigit()]
 				if valid_pks:
 					context_data_observers = list(InvitedUser.objects.filter(pk__in=valid_pks))
-			except ValueError: # Handles if pk__in receives non-integer values after filtering
+			except ValueError:
 				context_data_observers = []
-		# If no observers in POST or error, it remains empty list.
 
 	context = {
 		'form': form,
-		'is_admin': True, # Can be used in template to differentiate create/edit views
+		'is_admin': True,
 		'form_action': reverse('admin_dashboard:admin_issue_create'),
-		'available_users': available_users, # For populating choices in select fields
-		'observers': context_data_observers, # List of InvitedUser objects for display
-		# 'issue' is not set for create mode; template should handle {% if issue %}
+		'available_users': available_users,
+		'observers': context_data_observers,
 	}
 	return render(request, 'admin_dashboard/issues/admin_issue_form.html', context)
-
