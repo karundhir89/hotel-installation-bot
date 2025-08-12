@@ -96,7 +96,8 @@ class HotelWarehouse(models.Model):
     damaged_qty = models.PositiveIntegerField(default=0)
     checked_by = models.ForeignKey('InvitedUser', on_delete=models.SET_NULL, null=True, blank=True)
     received_date = models.DateField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)    
+    # Timestamp when the receipt row was created; used to enforce edit/delete locks
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
 
     def __str__(self):
         return f"{self.reference_id} - {self.client_item} ({self.quantity_received})"

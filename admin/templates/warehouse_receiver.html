@@ -474,6 +474,7 @@ $(document).ready(function() {
               return;
             }
             
+
             // This is an existing warehouse receipt - load it directly
             // Use the provided reference ID as is (server handles case insensitivity)
             loadExistingReceipt(null, reference_id);
@@ -487,6 +488,17 @@ $(document).ready(function() {
           $('#load-items-btn').html('<span class="material-icons">search</span>');
           $('#load-items-btn').prop('disabled', false);
           toastr.error('Error checking reference ID');
+          // Show error
+              var resp = {};
+              try { resp = JSON.parse(xhr.responseText); } catch (e) {}
+              if (resp && resp.message) {
+                toastr.error(resp.message);
+              } else {
+                toastr.error('Error checking warehouse receipts: ' + error);
+              }
+          
+          // Try warehouse shipment as fallback
+          checkWarehouseShipment(reference_id, originalBtn);
         }
       });
     });
