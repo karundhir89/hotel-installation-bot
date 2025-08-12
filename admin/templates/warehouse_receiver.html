@@ -1042,7 +1042,7 @@ $(document).ready(function() {
     });
     
     // Function to check if a receipt is locked (older than 48 hours)
-    function isReceiptLocked(receipt_id, reference_id) {
+    window.isReceiptLocked = function(receipt_id, reference_id) {
       // Check if the receipt exists in the current table and get its lock status
       var row = $('tr').filter(function() {
         return $(this).find('td:first').text() === reference_id;
@@ -1057,7 +1057,7 @@ $(document).ready(function() {
     }
     
     // Check if current user is admin/superuser (bypasses 48-hour lock)
-    function isUserAdmin() {
+    window.isUserAdmin = function() {
       // Check if user has admin privileges from hidden input field
       return $('#user_is_admin').val() === '1';
     }
