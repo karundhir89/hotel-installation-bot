@@ -136,6 +136,19 @@
     background-size: 16px 16px;
     padding-right: 30px;
   }
+  
+  /* Locked receipt styles */
+  .receipt-locked {
+    background-color: #f8f9fa;
+  }
+  
+  .receipt-locked td {
+    color: #6c757d;
+  }
+  
+  .btn:disabled {
+    cursor: not-allowed;
+  }
 </style>
 
 <!-- Ensure Bootstrap JS is loaded -->
@@ -156,6 +169,8 @@
       <h3 class="mb-2 text-center text-secondary py-4">Receiver at Hotel</h3>
       <h4 class="mb-4 text-secondary">Received Shipment</h4>
       
+
+      
       <form method="post" action="{% url 'warehouse_receiver' %}" id="warehouse-receiver-form">
         {% csrf_token %}
         
@@ -164,6 +179,7 @@
         <input type="hidden" id="original_reference_id" name="original_reference_id" value="">
         <input type="hidden" id="receipt_id" name="receipt_id" value="">
         <input type="hidden" id="delete_previous_items" name="delete_previous_items" value="0">
+        <input type="hidden" id="user_is_admin" name="user_is_admin" value="{% if user and user.is_administrator %}1{% else %}{% if user and user.role and 'administrator' in user.role %}1{% else %}{% if is_django_superuser %}1{% else %}0{% endif %}{% endif %}{% endif %}">
         
         <!-- Reference ID -->
         <div class="row mb-4">
@@ -342,6 +358,8 @@
 <script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.html5.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.3/jszip.min.js"></script>
 <script>
+// User admin status will be read from hidden input field
+
 $(document).ready(function() {
     // DataTables for Hotel Warehouse table
     $('#hotel-warehouse-table').DataTable({
@@ -422,46 +440,54 @@ $(document).ready(function() {
       enforceConstraints(row);
     });
 
-    // Load items from a reference ID
+    // Load items button click handler
     $('#load-items-btn').on('click', function() {
-      const reference_id = $('#reference_id').val().trim();
+      var reference_id = $('#reference_id').val().trim();
       
       if (!reference_id) {
-        toastr.error('Please enter a Reference ID');
+        toastr.error('Please enter a reference ID first');
         return;
       }
       
-      // Store the original button HTML
-      const originalBtn = $(this).html();
+      // Show loading state
+      $('#load-items-btn').html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Loading...');
+      $('#load-items-btn').prop('disabled', true);
       
-      // Show loading indicator
-      $(this).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Loading...');
-      $(this).prop('disabled', true);
-      
-      // First check if this is an existing warehouse receipt
+      // Make AJAX call to check if this reference ID exists
       $.ajax({
-        url: "{% url 'get_warehouse_receipt_details' %}",
-        method: 'GET',
+        url: '{% url "get_warehouse_receipt_details" %}',
+        type: 'GET',
         data: { reference_id: reference_id },
         success: function(data) {
-          // Always restore button state first
-          $('#load-items-btn').html(originalBtn);
+          // Restore button state
+          $('#load-items-btn').html('<span class="material-icons">search</span>');
           $('#load-items-btn').prop('disabled', false);
           
-              if (data.success && data.items && data.items.length > 0) {
+          if (data.success && data.items && data.items.length > 0) {
+            // Check if the receipt is locked before allowing edit (unless user is admin)
+            if (data.receipt && data.receipt.is_locked && !isUserAdmin()) {
+              toastr.error('This receipt is locked and cannot be edited. Receipts are locked after 48 hours.');
+              
+              // Remove any border styling and reset form
+              $('#reference_id').removeClass('border-info border-warning');
+              $('#clear-form-btn').click();
+              return;
+            }
+            
+
             // This is an existing warehouse receipt - load it directly
             // Use the provided reference ID as is (server handles case insensitivity)
             loadExistingReceipt(null, reference_id);
           } else {
-            // Check if this is a warehouse shipment
-            checkWarehouseShipment(reference_id, originalBtn);
+            // This is a new reference ID - show autocomplete suggestions
+            showAutocompleteSuggestions(reference_id);
           }
         },
-        error: function(xhr, status, error) {
+        error: function() {
           // Restore button state
-          $('#load-items-btn').html(originalBtn);
+          $('#load-items-btn').html('<span class="material-icons">search</span>');
           $('#load-items-btn').prop('disabled', false);
-          
+          toastr.error('Error checking reference ID');
           // Show error
               var resp = {};
               try { resp = JSON.parse(xhr.responseText); } catch (e) {}
@@ -638,67 +664,68 @@ $(document).ready(function() {
 
     // Handle form submission
     $('#warehouse-receiver-form').on('submit', function(e) {
-      // Add item IDs to form for edit mode
-      if ($('#is_edit_mode').val() === '1') {
-        console.log("Submitting in edit mode with receipt ID:", $('#receipt_id').val());
-        
-        // We need to preserve the edit mode and receipt ID during submission
-        const receiptId = $('#receipt_id').val();
-        const isEditMode = $('#is_edit_mode').val();
-        const originalReferenceId = $('#original_reference_id').val();
-        
-        // Check if we have a valid receipt ID for edit mode
-        if (!receiptId) {
-          e.preventDefault();
-          toastr.error("Cannot update: Receipt ID is missing");
-          return false;
-        }
-        
-        console.log("Form is being submitted in edit mode:", {
-          receiptId: receiptId,
-          isEditMode: isEditMode,
-          originalReferenceId: originalReferenceId
-        });
+      var receiptId = $('#receipt_id').val();
+      var originalReferenceId = $('#original_reference_id').val();
+      var isEditMode = $('#is_edit_mode').val();
+      
+      if (isEditMode && !receiptId) {
+        e.preventDefault();
+        toastr.error("Cannot update: Receipt ID is missing");
+        return false;
       }
+      
+      // Check if the receipt is locked before allowing edit submission (unless user is admin)
+      if (isEditMode && isReceiptLocked(receiptId, originalReferenceId) && !isUserAdmin()) {
+        e.preventDefault();
+        toastr.error('This receipt is locked and cannot be edited. Receipts are locked after 48 hours.');
+        
+        // Remove any border styling and reset form
+        $('#reference_id').removeClass('border-info border-warning');
+        $('#clear-form-btn').click();
+        return false;
+      }
+      
+      console.log("Form is being submitted in edit mode:", {
+        receiptId: receiptId,
+        isEditMode: isEditMode,
+        originalReferenceId: originalReferenceId
+      });
     });
 
-    // Check reference ID when it loses focus
+    // Reference ID blur event - check if it exists
     $('#reference_id').on('blur', function() {
-      const reference_id = $(this).val().trim();
-      if (reference_id) {
-        // Check if this is an existing warehouse receipt reference ID
-        $.ajax({
-          url: "{% url 'get_warehouse_receipt_details' %}",
-          method: 'GET',
-          data: { reference_id: reference_id },
-          success: function(data) {
-            if (data.success && data.items && data.items.length > 0) {
+      var reference_id = $(this).val().trim();
+      
+      if (!reference_id) {
+        return;
+      }
+      
+      // Check if this reference ID exists
+      $.ajax({
+        url: '{% url "get_warehouse_receipt_details" %}',
+        type: 'GET',
+        data: { reference_id: reference_id },
+        success: function(data) {
+          if (data.success && data.items && data.items.length > 0) {
+            // Check if the receipt is locked
+            if (data.receipt && data.receipt.is_locked && !isUserAdmin()) {
+              toastr.warning('This reference ID exists but is locked for editing (older than 48 hours).');
+              $('#reference_id').addClass('border-warning');
+            } else {
               // Show notification that this is an existing reference ID
               toastr.info('This reference ID exists. Click "Load Items" to edit it.');
               
               // Add a visual indicator
               $('#reference_id').addClass('border-info');
-              
-              // Store the actual reference ID with correct case
-              if (data.receipt && data.receipt.reference_id) {
-                // Just keep the user's input - backend will handle case-insensitive matching
-                console.log("Found existing reference ID with original case:", data.receipt.reference_id);
-              }
-            } else {
-              // Remove visual indicator if it was previously set
-              $('#reference_id').removeClass('border-info');
-              
-              // Reset edit mode hidden fields
-              $('#is_edit_mode').val('0');
-              $('#original_reference_id').val('');
-              $('#delete_previous_items').val('0');
-              
-              // Reset form button text
-              $('button[type="submit"]').text('Submit');
+            }
+            
+            // Store the actual reference ID with correct case
+            if (data.receipt && data.receipt.reference_id) {
+              $('#original_reference_id').val(data.receipt.reference_id);
             }
           }
-        });
-      }
+        }
+      });
     });
     
     // Autocomplete for Reference ID (Warehouse Receiver)
@@ -741,22 +768,19 @@ $(document).ready(function() {
       }, 300);
     });
     
-    // When a suggestion is clicked, fill the input
-    $(document).on('click', '.suggestion-item', function(e) {
-      e.preventDefault();
-      e.stopPropagation();
-      
+    // Autocomplete suggestion click handler
+    $(document).on('click', '.suggestion-item', function() {
       isSelectingSuggestion = true;
-      const selectedValue = $(this).data('value') || $(this).text();
+      var selectedValue = $(this).data('value') || $(this).text();
       
+      // Check if this is a locked receipt before allowing selection
+      // We'll need to check the lock status when the load items button is clicked
       $('#reference_id').val(selectedValue);
       $('#reference-id-suggestions').empty().hide();
+      isSelectingSuggestion = false;
       
-      // Optionally trigger the load items button click
-      setTimeout(function() {
-        $('#load-items-btn').click();
-        isSelectingSuggestion = false;
-      }, 100);
+      // Trigger blur event to check if this reference ID exists
+      $('#reference_id').trigger('blur');
     });
     
     // Hide suggestions when clicking outside
@@ -833,22 +857,36 @@ $(document).ready(function() {
               `);
             } else {
               data.receipts.forEach(function(receipt) {
-                tableBody.append(`
-                  <tr>
-                    <td>${receipt.reference_id}</td>
-                    <td>${receipt.received_date}</td>
-                    <td>${receipt.items_count}</td>
-                    <td>${receipt.total_quantity}</td>
-                    <td>${receipt.received_by}</td>
-                    <td>
-                      <div class="d-flex flex-row gap-2">
-                        <button type="button" class="btn btn-secondary btn-sm w-100 edit-receipt mr-2" data-id="${receipt.id}" data-reference="${receipt.reference_id}">Edit</button>
-                        <button type="button" class="btn btn-success btn-sm w-100 export-receipt mr-2 " data-reference="${receipt.reference_id}">Export</button>
-                        <button type="button" class="btn btn-danger btn-sm w-100 delete-receipt-btn" data-reference="${receipt.reference_id}">Delete</button>
-                      </div>
-                    </td>
-                  </tr>
-                `);
+                // Check if the receipt is locked (older than 48 hours)
+                var isLocked = receipt.is_locked || false;
+                
+                var rowClass = isLocked ? 'receipt-locked' : '';
+                var row = '<tr class="' + rowClass + '">' +
+                  '<td>' + receipt.reference_id + '</td>' +
+                  '<td>' + receipt.received_date + '</td>' +
+                  '<td>' + receipt.items_count + '</td>' +
+                  '<td>' + receipt.total_quantity + '</td>' +
+                  '<td>' + receipt.received_by + '</td>' +
+                  '<td>';
+                
+                if (isLocked && !isUserAdmin()) {
+                  // Regular users see locked buttons for old receipts
+                  row += '<div class="d-flex flex-row gap-2">' +
+                    '<button type="button" class="btn btn-secondary btn-sm w-100 mr-2" disabled title="Editing is locked after 48 hours">Edit</button>' +
+                    '<button type="button" class="btn btn-success btn-sm w-100 export-receipt mr-2" data-reference="' + receipt.reference_id + '">Export</button>' +
+                    '<button type="button" class="btn btn-danger btn-sm w-100" disabled title="Deletion is locked after 48 hours">Delete</button>' +
+                    '</div>';
+                } else {
+                  // Admins can always edit/delete, regular users can edit/delete recent receipts
+                  row += '<div class="d-flex flex-row gap-2">' +
+                    '<button type="button" class="btn btn-secondary btn-sm w-100 edit-receipt mr-2" data-id="' + receipt.id + '" data-reference="' + receipt.reference_id + '">Edit</button>' +
+                    '<button type="button" class="btn btn-success btn-sm w-100 export-receipt mr-2" data-reference="' + receipt.reference_id + '">Export</button>' +
+                    '<button type="button" class="btn btn-danger btn-sm w-100 delete-receipt-btn" data-reference="' + receipt.reference_id + '">Delete</button>' +
+                    '</div>';
+                }
+                
+                row += '</td></tr>';
+                tableBody.append(row);
               });
             }
             
@@ -979,7 +1017,7 @@ $(document).ready(function() {
       $('#received_date').val(today);
       
       // Clear existing rows except the first
-      const firstRow = $('#items-container .item-row').first();
+      var firstRow = $('#items-container .item-row').first();
       $('#items-container .item-row').not(firstRow).remove();
       
       // Clear inputs in the first row
@@ -999,38 +1037,71 @@ $(document).ready(function() {
       // Reset form button text
       $('button[type="submit"]').text('Submit');
       
+      // Remove any border styling from reference ID
+      $('#reference_id').removeClass('border-info border-warning');
+      
       toastr.info('Form has been cleared');
     });
+    
+    // Function to check if a receipt is locked (older than 48 hours)
+    function isReceiptLocked(receipt_id, reference_id) {
+      // Check if the receipt exists in the current table and get its lock status
+      var row = $('tr').filter(function() {
+        return $(this).find('td:first').text() === reference_id;
+      });
+      
+      if (row.length > 0) {
+        var editButton = row.find('.edit-receipt');
+        return editButton.length === 0 || editButton.prop('disabled');
+      }
+      
+      return false; // If we can't determine, assume not locked
+    }
+    
+    // Check if current user is admin/superuser (bypasses 48-hour lock)
+    function isUserAdmin() {
+      // Check if user has admin privileges from hidden input field
+      return $('#user_is_admin').val() === '1';
+    }
     
     // Function to load an existing warehouse receipt for editing
     function loadExistingReceipt(receipt_id, reference_id) {
       console.log("Loading receipt with ID:", receipt_id, "and reference ID:", reference_id);
       
+      // Check if the receipt is locked before allowing edit (unless user is admin)
+      if (isReceiptLocked(receipt_id, reference_id) && !isUserAdmin()) {
+        toastr.error('This receipt is locked and cannot be edited. Receipts are locked after 48 hours.');
+        
+        // Remove any border styling and reset form
+        $('#reference_id').removeClass('border-info border-warning');
+        $('#clear-form-btn').click();
+        return;
+      }
+      
       // Show loading indicator
       $('#load-items-btn').html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Loading...');
       $('#load-items-btn').prop('disabled', true);
       
-      // Create the API request params
-      const params = {};
-      if (receipt_id) {
-        params.receipt_id = receipt_id;
-      } 
-      if (reference_id) {
-        params.reference_id = reference_id;
-      }
-      
-      console.log("API request params:", params);
-      
-      // Make API call
+      // Make AJAX call to get receipt details
       $.ajax({
-        url: "{% url 'get_warehouse_receipt_details' %}",
-        method: 'GET',
-        data: params,
+        url: '{% url "get_warehouse_receipt_details" %}',
+        type: 'GET',
+        data: { reference_id: reference_id },
         success: function(data) {
-          console.log("Raw API response:", data);
-          
           // Check if we have valid data
           if (data.success) {
+            // Check if the receipt is locked on the server side (unless user is admin)
+            if (data.receipt && data.receipt.is_locked && !isUserAdmin()) {
+              toastr.error('This receipt is locked and cannot be edited. Receipts are locked after 48 hours.');
+              $('#load-items-btn').html('Load Items');
+              $('#load-items-btn').prop('disabled', false);
+              
+              // Remove any border styling and reset form
+              $('#reference_id').removeClass('border-info border-warning');
+              $('#clear-form-btn').click();
+              return;
+            }
+            
             // Clear form first
             $('#clear-form-btn').click();
             
@@ -1222,13 +1293,19 @@ $(document).ready(function() {
     });
 
     // Delete button handler
-// With this:
     $(document).on('click', '.delete-receipt-btn', function() {
       const referenceId = $(this).data('reference');
       if (!referenceId) {
         toastr.error('Reference ID not found.');
         return;
       }
+      
+      // Check if the receipt is locked before allowing deletion (unless user is admin)
+      if (isReceiptLocked(null, referenceId) && !isUserAdmin()) {
+        toastr.error('This receipt is locked and cannot be deleted. Receipts are locked after 48 hours.');
+        return;
+      }
+      
       if (!confirm('Are you sure you want to delete this receipt and all its items? This action cannot be undone.')) {
         return;
       }

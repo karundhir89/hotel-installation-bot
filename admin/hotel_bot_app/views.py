@@ -1,4 +1,6 @@
 import ast
+from django.utils import timezone
+from datetime import timedelta
 import json
 import random
 import string
@@ -69,9 +71,16 @@ User = InvitedUser # Or User = get_user_model()
 def session_login_required(view_func):
     @wraps(view_func)
     def wrapper(request, *args, **kwargs):
-        if not request.session.get("user_id"):
-            return redirect("user_login")
-        return view_func(request, *args, **kwargs)
+        # Check if user is authenticated through Django auth (superuser/staff)
+        if request.user.is_authenticated:
+            return view_func(request, *args, **kwargs)
+        
+        # Check if user is authenticated through session (InvitedUser)
+        if request.session.get("user_id"):
+            return view_func(request, *args, **kwargs)
+        
+        # Neither authentication method worked
+        return redirect("user_login")
     return wrapper
 
 def admin_required(view_func):
@@ -777,8 +786,6 @@ def delete_room(request):
 def room_model_list(request):
     room_models = RoomModel.objects.all()
     return render(request, "room_model_list.html", {"room_models": room_models})
-
-
 @login_required
 def install_list(request):
     # Get all installation records, including related user data
@@ -1362,8 +1369,6 @@ def get_room_type(request):
     # the helper will do get_or_create for the Installation object.
     data = _get_installation_checklist_data(room_number=room_number)
     return JsonResponse(data)
-
-
 def _save_installation_data(request_post_data, user_instance, room_number_str, installation_id_str=None):
     """
     Helper function to save installation data.
@@ -2133,8 +2138,6 @@ def available_container_ids(request):
         qs = qs.filter(bol__icontains=term)
     suggestions = list(qs.values_list('bol', flat=True).distinct()[:10])
     return JsonResponse({'results': suggestions})
-    
-
 @session_login_required
 def get_product_item_num(request):
     clientId = request.GET.get("room_number")
@@ -2767,7 +2770,6 @@ def inventory_pull(request):
         "user_name": user_name,
         "previous_submissions": previous_submissions,
     })
-
 @session_login_required
 def hotel_warehouse(request):
     # Get all previous warehouse submissions
@@ -3564,7 +3566,6 @@ def _generate_xls_response(data, filename, sheet_name="Sheet1"):
 
     wb.save(response)
     return response
-
 # Helper function to get floor products data (extracted SQL)
 def _get_floor_products_data(floor_number):
     try:
@@ -4363,7 +4364,6 @@ def check_container_exists(request):
         'exists': count > 0,
         'count': count
     })
-
 @session_login_required
 def get_container_data(request):
     """
@@ -4523,6 +4523,46 @@ def hotel_inventory(request):
     return render(request, "hotel_inventory.html", context)
 
 
+def is_warehouse_receipt_locked(reference_id, user=None, request=None):
+    """
+    Check if a warehouse receipt is locked (older than 48 hours).
+    Returns True if locked, False if can be edited/deleted.
+    
+    Args:
+        reference_id: The reference ID to check
+        user: The user object (InvitedUser) to check permissions for
+        request: The Django request object to check for Django superuser/staff status
+    """
+    try:
+        # Check if user is Django superuser from request
+        if request and hasattr(request, 'user') and request.user.is_authenticated:
+            if request.user.is_superuser:
+                return False  # Django superusers can always edit/delete
+        
+        # If user is provided, check if they are an InvitedUser administrator
+        if user:
+            # Check if user is InvitedUser with administrator role
+            if hasattr(user, 'is_administrator') and user.is_administrator:
+                return False  # InvitedUser administrators can always edit/delete
+            
+            # Check if user has administrator role in roles array
+            if hasattr(user, 'role') and isinstance(user.role, list) and 'administrator' in user.role:
+                return False  # Users with administrator role can always edit/delete
+        
+        # Get the earliest created_at time for this reference_id
+        earliest_created = HotelWarehouse.objects.filter(
+            reference_id__iexact=reference_id
+        ).order_by('created_at').values_list('created_at', flat=True).first()
+        
+        if earliest_created:
+            # Check if 48 hours have passed since the first receipt was created
+            time_diff = timezone.now() - earliest_created
+            return time_diff >= timedelta(hours=48)
+        
+        return False  # No receipts found, so not locked
+    except Exception:
+        return True  # If there's an error, assume it's locked for safety
+
 @session_login_required
 def warehouse_receiver(request):
     """
@@ -4530,10 +4570,15 @@ def warehouse_receiver(request):
     """
     # Only update inventory quantities when submitting form, not on every page load
     
-    user_id = request.session.get("user_id")
     user = None
+    user_id = request.session.get("user_id")
     
-    if user_id:
+    # Check if user is authenticated through Django auth (superuser/staff)
+    if request.user.is_authenticated:
+        # This is a Django User (superuser/staff)
+        user = None  # We'll use request.user for Django auth checks
+    elif user_id:
+        # This is an InvitedUser
         try:
             user = InvitedUser.objects.get(id=user_id)
         except InvitedUser.DoesNotExist:
@@ -4570,6 +4615,12 @@ def warehouse_receiver(request):
             if not client_items:
                 messages.error(request, "No items added to receipt")
                 return redirect("warehouse_receiver")
+
+            # Enforce 48-hour lock: if any receipt exists for this reference_id and its earliest
+            # creation time is older than 48 hours, block edits or deletes.
+            if is_warehouse_receipt_locked(original_reference_id or reference_id, user, request):
+                messages.error(request, "Edits are locked for 48 hours after the first receipt is created for this reference ID.")
+                return redirect("warehouse_receiver")
             
             # Enforce 48-hour lock: if any receipt exists for this reference_id and its earliest
             # creation time is within the last 48 hours, block edits or deletes.
@@ -4582,6 +4633,16 @@ def warehouse_receiver(request):
                         return redirect("warehouse_receiver")
 
             # Check if we're in edit mode
+            # Preserve the earliest created_at so that the 48-hour lock window cannot be reset by edits
+            earliest_created_to_preserve = None
+            if is_editing and original_reference_id:
+                earliest_created_to_preserve = (
+                    HotelWarehouse.objects
+                    .filter(reference_id__iexact=original_reference_id)
+                    .order_by('created_at')
+                    .values_list('created_at', flat=True)
+                    .first()
+                )
             if is_editing and original_reference_id:
                 # If editing and the reference ID has changed, make sure the new one doesn't exist
                 if reference_id != original_reference_id and HotelWarehouse.objects.filter(reference_id__iexact=reference_id).exists():
@@ -4594,6 +4655,7 @@ def warehouse_receiver(request):
                     print(f"Deleted {deleted_count} previous items for reference ID '{original_reference_id}'")
             
             # Create new warehouse receipt entries
+
             for i, client_item in enumerate(client_items):
                 received_qty = int(quantities[i]) if i < len(quantities) and quantities[i] else 0
                 damaged_qty = int(damaged_quantities[i]) if i < len(damaged_quantities) and damaged_quantities[i] else 0
@@ -4618,6 +4680,14 @@ def warehouse_receiver(request):
                 except Exception as item_error:
                     print(f"Error creating warehouse receipt for {client_item}: {str(item_error)}")
                     # Don't raise the exception as we want to continue with other items
+
+            # After recreating items, re-apply the original earliest created_at (if any) to prevent lock reset
+            try:
+                if earliest_created_to_preserve:
+                    HotelWarehouse.objects.filter(reference_id__iexact=reference_id).update(created_at=earliest_created_to_preserve)
+            except Exception as _e:
+                # Non-fatal: if updating timestamps fails, continue without blocking the flow
+                pass
             
             try:
                 # Call functions to update inventory quantities
@@ -4643,9 +4713,11 @@ def warehouse_receiver(request):
     hotel_warehouse_inventory = Inventory.objects.all()
     
     context = {
-        "user_name": user.name if user else "",
+        "user_name": user.name if user else (request.user.username if request.user.is_authenticated else ""),   
         "hotel_warehouse_inventory": hotel_warehouse_inventory,
         "request": request,  # For other template needs
+        "user": user,  # Pass the InvitedUser object for admin checks
+        "is_django_superuser": request.user.is_superuser if request.user.is_authenticated else False,
     }
     return render(request, "warehouse_receiver.html", context)
 
@@ -4659,6 +4731,26 @@ def delete_warehouse_receiver_container(request):
         return JsonResponse({"success": False, "message": "No reference ID provided."})
     try:
         # Enforce 48-hour lock from first receipt creation
+        # Get user from session to check permissions
+        user = None
+        user_id = request.session.get("user_id")
+        
+        # Check if user is authenticated through Django auth (superuser/staff)
+        if request.user.is_authenticated:
+            # This is a Django User (superuser/staff)
+            user = None  # We'll use request.user for Django auth checks
+        elif user_id:
+            # This is an InvitedUser
+            try:
+                user = InvitedUser.objects.get(id=user_id)
+            except InvitedUser.DoesNotExist:
+                pass
+        
+        if is_warehouse_receipt_locked(reference_id, user, request):
+            return JsonResponse({
+                "success": False,
+                "message": "Deletion is locked for 48 hours after initial receipt creation for this reference ID."
+            })
         lock_items = HotelWarehouse.objects.filter(reference_id__iexact=reference_id)
         if lock_items.exists():
             earliest_created = lock_items.order_by('created_at').values_list('created_at', flat=True).first()
@@ -4713,12 +4805,31 @@ def get_warehouse_receipt_details(request):
         if not items.exists():
             return JsonResponse({'success': False, 'message': 'Receipt not found'})
         
+        # Check if the receipt is locked (older than 48 hours)
+        # Get user from session to check permissions
+        user = None
+        user_id = request.session.get("user_id")
+        
+        # Check if user is authenticated through Django auth (superuser/staff)
+        if request.user.is_authenticated:
+            # This is a Django User (superuser/staff)
+            user = None  # We'll use request.user for Django auth checks
+        elif user_id:
+            # This is an InvitedUser
+            try:
+                user = InvitedUser.objects.get(id=user_id)
+            except InvitedUser.DoesNotExist:
+                pass
+        
+        is_locked = is_warehouse_receipt_locked(reference_id, user, request)
+        
         # Format receipt data
         receipt_data = {
             'id': reference_id,
             'reference_id': reference_id,
             'received_date': now().strftime('%Y-%m-%d'),  # Default to current date
-            'received_by': "System"  # Default value
+            'received_by': "System",  # Default value
+            'is_locked': is_locked
         }
         
         # Get the first item to get more details
@@ -5022,13 +5133,32 @@ def get_warehouse_receipts(request):
                 if first_item.checked_by:
                     received_by = first_item.checked_by.name
 
+                # Check if the receipt is locked (older than 48 hours)
+                # Get user from session to check permissions
+                user = None
+                user_id = request.session.get("user_id")
+                
+                # Check if user is authenticated through Django auth (superuser/staff)
+                if request.user.is_authenticated:
+                    # This is a Django User (superuser/staff)
+                    user = None  # We'll use request.user for Django auth checks
+                elif user_id:
+                    # This is an InvitedUser
+                    try:
+                        user = InvitedUser.objects.get(id=user_id)
+                    except InvitedUser.DoesNotExist:
+                        pass
+                
+                is_locked = is_warehouse_receipt_locked(ref_id, user, request)
+
                 receipts_list.append({
                     'id': ref_id,  # Use reference_id as the ID for the receipt
                     'reference_id': ref_id,
                     'received_date': received_date,
                     'items_count': receipt['items_count'],
                     'total_quantity': receipt['total_quantity'] or 0,
-                    'received_by': received_by
+                    'received_by': received_by,
+                    'is_locked': is_locked
                 })
 
         # Create paginator
@@ -5059,7 +5189,6 @@ def get_warehouse_receipts(request):
             'success': False,
             'message': str(e)
         })
-
 @session_login_required
 def warehouse_shipment(request):
     user_id = request.session.get("user_id")
@@ -5655,7 +5784,7 @@ def update_inventory_damaged_quantities():
     2. Calculates the total damaged_qty for each client_id
     3. Updates the damaged_quantity in the inventory table for matching client_id
     """
-    from django.db.models import Sum, F
+    from django.db.models import Sum
     from django.db.models.functions import Lower
     from hotel_bot_app.models import Inventory, InventoryReceived
     
@@ -5816,9 +5945,6 @@ def update_inventory_when_shipping(client_id, ship_qty, is_new=True, old_qty=0):
             inventory_item.quantity_available = max(0, (inventory_item.quantity_available or 0) + old_qty - ship_qty)
             inventory_item.shipped_to_hotel_quantity = max(0, (inventory_item.shipped_to_hotel_quantity or 0) - old_qty + ship_qty)
         inventory_item.save()
-
-
-
 def update_inventory_when_receiving(client_id, received_qty, damaged_qty, is_new=True, old_received=0, old_damaged=0):
     """
     Update the quantity_available in the inventory table when items are received.

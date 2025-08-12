@@ -87,6 +87,7 @@ class Inventory(models.Model):
         return f"Item: {self.item} - Available: {self.quantity_available}"
 auditlog.register(Inventory)
 
+
 class HotelWarehouse(models.Model):
     id = models.AutoField(primary_key=True)
     reference_id = models.CharField(max_length=255)  # Warehouse Container ID 
