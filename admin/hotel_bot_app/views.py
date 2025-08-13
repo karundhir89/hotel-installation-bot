@@ -4632,7 +4632,13 @@ def warehouse_receiver(request):
                 messages.error(request, "Edits are locked after 48 hours of the first receipt is created for this reference ID.")
                 return redirect("warehouse_receiver")
             
-            # Allow edits within the first 48 hours; only block after 48 hours (handled above)
+            existing_items_qs = HotelWarehouse.objects.filter(reference_id__iexact=(original_reference_id or reference_id))
+            if existing_items_qs.exists():
+                earliest_created = existing_items_qs.order_by('created_at').values_list('created_at', flat=True).first()
+                if earliest_created:
+                    if now() - earliest_created < timedelta(hours=48):
+                        messages.error(request, "Edits are locked for 48 hours after the first receipt is created for this reference ID.")
+                        return redirect("warehouse_receiver")
 
             # Check if we're in edit mode
             # Preserve the earliest created_at so that the 48-hour lock window cannot be reset by edits
