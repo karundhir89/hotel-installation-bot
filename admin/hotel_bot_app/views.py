@@ -4835,20 +4835,20 @@ def get_warehouse_receipt_details(request):
             'is_locked': is_locked
         }
         
-            # Get the first item to get more details
-            first_item = items.first()
-            if first_item:
-                # Get user name if available
-                if first_item.checked_by and getattr(first_item.checked_by, 'name', None):
-                    receipt_data['received_by'] = first_item.checked_by.name
-                elif request.user.is_authenticated:
-                    # Fallback to Django user's name if mapped user missing
-                    fallback_name = request.user.get_full_name() or request.user.username or "System"
-                    receipt_data['received_by'] = fallback_name
-            
-            # Get received date if available
-            if first_item.received_date:
-                receipt_data['received_date'] = first_item.received_date.strftime('%Y-%m-%d')
+        # Get the first item to get more details
+        first_item = items.first()
+        if first_item:
+            # Get user name if available
+            if first_item.checked_by and getattr(first_item.checked_by, 'name', None):
+                receipt_data['received_by'] = first_item.checked_by.name
+            elif request.user.is_authenticated:
+                # Fallback to Django user's name if mapped user missing
+                fallback_name = request.user.get_full_name() or request.user.username or "System"
+                receipt_data['received_by'] = fallback_name
+        
+        # Get received date if available
+        if first_item.received_date:
+            receipt_data['received_date'] = first_item.received_date.strftime('%Y-%m-%d')
         
         # Format items data
         items_data = []
