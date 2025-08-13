@@ -4573,10 +4573,20 @@ def warehouse_receiver(request):
     user = None
     user_id = request.session.get("user_id")
     
-    # Check if user is authenticated through Django auth (superuser/staff)
+    # Check if user is authenticated through Django auth (superuser)
     if request.user.is_authenticated:
-        # This is a Django User (superuser/staff)
-        user = None  # We'll use request.user for Django auth checks
+        # Try to map Django user to an InvitedUser to record who received
+        mapped_invited = None
+        try:
+            if getattr(request.user, 'email', None):
+                mapped_invited = InvitedUser.objects.filter(email__iexact=request.user.email).first()
+            if not mapped_invited:
+                full_name = getattr(request.user, 'get_full_name', lambda: '')() or getattr(request.user, 'username', '')
+                if full_name:
+                    mapped_invited = InvitedUser.objects.filter(name__iexact=full_name).first()
+        except Exception:
+            mapped_invited = None
+        user = mapped_invited  # May remain None if no mapping found
     elif user_id:
         # This is an InvitedUser
         try:
@@ -4619,18 +4629,10 @@ def warehouse_receiver(request):
             # Enforce 48-hour lock: if any receipt exists for this reference_id and its earliest
             # creation time is older than 48 hours, block edits or deletes.
             if is_warehouse_receipt_locked(original_reference_id or reference_id, user, request):
-                messages.error(request, "Edits are locked for 48 hours after the first receipt is created for this reference ID.")
+                messages.error(request, "Edits are locked after 48 hours of the first receipt is created for this reference ID.")
                 return redirect("warehouse_receiver")
             
-            # Enforce 48-hour lock: if any receipt exists for this reference_id and its earliest
-            # creation time is within the last 48 hours, block edits or deletes.
-            existing_items_qs = HotelWarehouse.objects.filter(reference_id__iexact=(original_reference_id or reference_id))
-            if existing_items_qs.exists():
-                earliest_created = existing_items_qs.order_by('created_at').values_list('created_at', flat=True).first()
-                if earliest_created:
-                    if now() - earliest_created < timedelta(hours=48):
-                        messages.error(request, "Edits are locked for 48 hours after the first receipt is created for this reference ID.")
-                        return redirect("warehouse_receiver")
+            # Allow edits within the first 48 hours; only block after 48 hours (handled above)
 
             # Check if we're in edit mode
             # Preserve the earliest created_at so that the 48-hour lock window cannot be reset by edits
@@ -4833,12 +4835,16 @@ def get_warehouse_receipt_details(request):
             'is_locked': is_locked
         }
         
-        # Get the first item to get more details
-        first_item = items.first()
-        if first_item:
-            # Get user name if available
-            if first_item.checked_by:
-                receipt_data['received_by'] = first_item.checked_by.name
+            # Get the first item to get more details
+            first_item = items.first()
+            if first_item:
+                # Get user name if available
+                if first_item.checked_by and getattr(first_item.checked_by, 'name', None):
+                    receipt_data['received_by'] = first_item.checked_by.name
+                elif request.user.is_authenticated:
+                    # Fallback to Django user's name if mapped user missing
+                    fallback_name = request.user.get_full_name() or request.user.username or "System"
+                    receipt_data['received_by'] = fallback_name
             
             # Get received date if available
             if first_item.received_date:
