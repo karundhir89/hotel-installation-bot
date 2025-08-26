@@ -425,42 +425,46 @@ def _prepare_floor_progress_data():
 
 	sql_query = """
 		WITH room_installs AS (
-			-- Get all rooms that have products installed
-			SELECT 
-				rd.id AS room_data_id,
+			SELECT
+				rd.id  AS room_data_id,
 				rd.room AS room_number,
 				rd.floor AS floor_number,
-				i.id AS install_id,
+				i.id   AS install_id,
 				i.prework_check_on,
 				i.day_install_complete,
 				i.post_work_check_on,
-				(SELECT COUNT(*) FROM install_detail WHERE installation_id = i.id AND status = 'YES') AS installed_products_count
-			FROM
-				room_data rd
-			LEFT JOIN
-				install i ON rd.room = i.room
-			WHERE
-				rd.floor IS NOT NULL
+				-- Normalize flags (treat NULL as 'NO')
+				COALESCE(i.install, 'NO') AS install_flag,
+				-- Keep for progress %, but don't use this to mark 'completed'
+				(SELECT COUNT(*) 
+				FROM install_detail 
+				WHERE installation_id = i.id AND status = 'YES') AS installed_products_count
+			FROM room_data rd
+			LEFT JOIN install i
+				ON rd.room = i.room
+			WHERE rd.floor IS NOT NULL
 		)
 		SELECT
-			ri.floor_number,
-			COUNT(DISTINCT ri.room_data_id) AS total_rooms_on_floor,
-			COALESCE(SUM(CASE WHEN ri.prework_check_on IS NOT NULL THEN 1 ELSE 0 END), 0) AS prework_completed_count,
-			-- Count a room as having installation completed if it has ANY products installed
-			COALESCE(SUM(CASE WHEN ri.installed_products_count > 0 THEN 1 ELSE 0 END), 0) AS install_completed_count,
-			COALESCE(SUM(CASE WHEN ri.post_work_check_on IS NOT NULL THEN 1 ELSE 0 END), 0) AS postwork_completed_count,
-			COALESCE(SUM(CASE 
-				WHEN ri.prework_check_on IS NOT NULL AND 
-					 ri.installed_products_count > 0 AND 
-					 ri.post_work_check_on IS NOT NULL 
-				THEN 1 ELSE 0 
-			END), 0) AS fully_completed_rooms_on_floor
-		FROM
-			room_installs ri
-		GROUP BY
-			ri.floor_number
-		ORDER BY
-			ri.floor_number;
+		ri.floor_number,
+		COUNT(DISTINCT ri.room_data_id) AS total_rooms_on_floor,
+		COALESCE(SUM(CASE WHEN ri.prework_check_on IS NOT NULL THEN 1 ELSE 0 END), 0) AS prework_completed_count,
+
+		/* 🔧 FIX: a room is 'install completed' ONLY when the room-level install is confirmed */
+		COALESCE(SUM(CASE 
+			WHEN ri.install_flag = 'YES' OR ri.day_install_complete IS NOT NULL 
+			THEN 1 ELSE 0 END), 0) AS install_completed_count,
+
+		COALESCE(SUM(CASE WHEN ri.post_work_check_on IS NOT NULL THEN 1 ELSE 0 END), 0) AS postwork_completed_count,
+
+		/* Fully completed only if all three checkpoints are met */
+		COALESCE(SUM(CASE 
+			WHEN ri.prework_check_on IS NOT NULL
+			AND (ri.install_flag = 'YES' OR ri.day_install_complete IS NOT NULL)
+			AND ri.post_work_check_on IS NOT NULL
+			THEN 1 ELSE 0 END), 0) AS fully_completed_rooms_on_floor
+		FROM room_installs ri
+		GROUP BY ri.floor_number
+		ORDER BY ri.floor_number;
 	"""
 
 	with connection.cursor() as cursor:
