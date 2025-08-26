@@ -524,7 +524,7 @@ def _prepare_floor_progress_data():
 		if total_rooms_on_floor > 0: # Ensure floor has rooms to be considered
 			if fully_completed_on_floor == total_rooms_on_floor:
 				renovated_floor_numbers.append(current_floor)
-			elif install_completed > 0: # Some products installed, but not all rooms fully completed
+			elif prework_completed > 0: # Some pre work has started, but not all rooms fully completed
 				closed_floor_numbers.append(current_floor)
 			else: # No products installed
 				pending_floor_numbers.append(current_floor)
