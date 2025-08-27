@@ -520,29 +520,47 @@ def _prepare_floor_progress_data():
 			'postwork_status': postwork_status,
 		})
 
-		# --- Categorize floors for summary --- 
-		if total_rooms_on_floor > 0: # Ensure floor has rooms to be considered
-			if fully_completed_on_floor == total_rooms_on_floor:
-				renovated_floor_numbers.append(current_floor)
-			elif prework_completed > 0: # Some pre work has started, but not all rooms fully completed
-				closed_floor_numbers.append(current_floor)
-			else: # No products installed
-				pending_floor_numbers.append(current_floor)
-		else: # Floors with no rooms in room_data but potentially in schedule (not covered by this SQL)
-			pending_floor_numbers.append(current_floor) # Or handle as per broader project definition if available
+		# Track floors that are fully completed (renovated) based on installation data
+		if total_rooms_on_floor > 0 and fully_completed_on_floor == total_rooms_on_floor:
+			renovated_floor_numbers.append(current_floor)
 	
+	# --- Determine floor status summary from schedule table ---
+	# Closed floors are now driven by schedule.floor_closes presence
+	schedule_floors_with_close = set()
+	schedule_floors_all = set()
+	with connection.cursor() as cursor:
+		cursor.execute("""
+			SELECT DISTINCT floor
+			FROM schedule
+			WHERE floor IS NOT NULL
+		""")
+		for row in cursor.fetchall():
+			schedule_floors_all.add(row[0])
+		cursor.execute("""
+			SELECT DISTINCT floor
+			FROM schedule
+			WHERE floor IS NOT NULL AND floor_closes IS NOT NULL
+		""")
+		for row in cursor.fetchall():
+			schedule_floors_with_close.add(row[0])
+
+	renovated_set = set(renovated_floor_numbers)
+	closed_set = set(f for f in schedule_floors_with_close if f not in renovated_set)
+	# Pending are scheduled floors that are neither renovated nor marked closed
+	pending_set = set(f for f in schedule_floors_all if f not in renovated_set and f not in closed_set)
+
 	floor_status_summary = {
 		'renovated': {
-			'count': len(renovated_floor_numbers),
-			'numbers': sorted(list(set(renovated_floor_numbers))) # Ensure unique and sorted
+			'count': len(renovated_set),
+			'numbers': sorted(list(renovated_set))
 		},
 		'closed': {
-			'count': len(closed_floor_numbers),
-			'numbers': sorted(list(set(closed_floor_numbers)))
+			'count': len(closed_set),
+			'numbers': sorted(list(closed_set))
 		},
 		'pending': {
-			'count': len(pending_floor_numbers),
-			'numbers': sorted(list(set(pending_floor_numbers)))
+			'count': len(pending_set),
+			'numbers': sorted(list(pending_set))
 		}
 	}
 	
@@ -626,28 +644,38 @@ def _prepare_efficiency_data():
 
 	# 1. Calculate Room-Level Average Durations
 	room_sql_query = """
+		WITH per_install AS (
+			SELECT
+				i.id AS install_id,
+				s.floor_closes AS pre_start,
+				i.prework_check_on AS pre_end,
+				-- Derive install start/end using install_detail fallbacks
+				COALESCE(i.day_install_began, MIN(id.installed_on)) AS install_start,
+				COALESCE(i.day_install_complete, MAX(id.installed_on)) AS install_end,
+				i.post_work_check_on AS post_end
+			FROM install i
+			JOIN room_data r ON r.room = i.room
+			JOIN schedule s ON s.floor = r.floor
+			LEFT JOIN install_detail id ON id.installation_id = i.id
+			GROUP BY i.id, s.floor_closes, i.prework_check_on, i.day_install_began, i.day_install_complete, i.post_work_check_on
+		)
 		SELECT
 			AVG(CASE
-				WHEN i.prework_check_on IS NOT NULL AND s.floor_closes IS NOT NULL AND i.prework_check_on >= s.floor_closes
-				THEN EXTRACT(EPOCH FROM (i.prework_check_on - s.floor_closes)) / 86400.0
+				WHEN pre_end IS NOT NULL AND pre_start IS NOT NULL AND pre_end >= pre_start
+				THEN EXTRACT(EPOCH FROM (pre_end - pre_start)) / 86400.0
 				ELSE NULL
 			END) AS avg_room_pre_work_duration,
-
 			AVG(CASE
-				WHEN i.day_install_complete IS NOT NULL AND i.prework_check_on IS NOT NULL AND i.day_install_complete >= i.prework_check_on
-				THEN EXTRACT(EPOCH FROM (i.day_install_complete - i.prework_check_on)) / 86400.0
+				WHEN install_end IS NOT NULL AND install_start IS NOT NULL AND install_end >= install_start
+				THEN EXTRACT(EPOCH FROM (install_end - install_start)) / 86400.0
 				ELSE NULL
 			END) AS avg_room_install_duration,
-
 			AVG(CASE
-				WHEN i.post_work_check_on IS NOT NULL AND i.day_install_complete IS NOT NULL AND i.post_work_check_on >= i.day_install_complete
-				THEN EXTRACT(EPOCH FROM (i.post_work_check_on - i.day_install_complete)) / 86400.0
+				WHEN post_end IS NOT NULL AND install_end IS NOT NULL AND post_end >= install_end
+				THEN EXTRACT(EPOCH FROM (post_end - install_end)) / 86400.0
 				ELSE NULL
 			END) AS avg_room_post_work_duration
-
-		FROM install i
-		JOIN room_data r ON r.room = i.room
-		JOIN schedule s ON s.floor = r.floor;
+		FROM per_install;
 	"""
 	with connection.cursor() as cursor:
 		cursor.execute(room_sql_query)
@@ -666,7 +694,9 @@ def _prepare_efficiency_data():
 				rd.floor,
 				s.floor_closes AS actual_floor_pre_work_start,
 				MAX(i.prework_check_on) AS actual_floor_pre_work_end,
-				MAX(i.day_install_complete) AS actual_floor_install_end,
+				-- Derive install start/end across floor using install_detail fallbacks
+				MIN(COALESCE(i.day_install_began, id.installed_on)) AS actual_floor_install_start,
+				MAX(COALESCE(i.day_install_complete, id.installed_on)) AS actual_floor_install_end,
 				MAX(i.post_work_check_on) AS actual_floor_post_work_end
 			FROM
 				install i
@@ -674,6 +704,8 @@ def _prepare_efficiency_data():
 				room_data rd ON i.room = rd.room
 			JOIN
 				schedule s ON rd.floor = s.floor
+			LEFT JOIN
+				install_detail id ON id.installation_id = i.id
 			WHERE 
 				rd.floor IS NOT NULL
 			GROUP BY
@@ -688,8 +720,8 @@ def _prepare_efficiency_data():
 					ELSE NULL 
 				END AS floor_pre_work_duration,
 				CASE
-					WHEN actual_floor_install_end IS NOT NULL AND actual_floor_pre_work_end IS NOT NULL AND actual_floor_install_end >= actual_floor_pre_work_end
-					THEN EXTRACT(EPOCH FROM (actual_floor_install_end - actual_floor_pre_work_end)) / 86400.0
+					WHEN actual_floor_install_end IS NOT NULL AND actual_floor_install_start IS NOT NULL AND actual_floor_install_end >= actual_floor_install_start
+					THEN EXTRACT(EPOCH FROM (actual_floor_install_end - actual_floor_install_start)) / 86400.0
 					ELSE NULL
 				END AS floor_install_duration,
 				CASE
@@ -738,28 +770,37 @@ def _prepare_overall_project_time_data():
 
 	# Reusing the same SQL logic for average room times
 	room_sql_query = """
+		WITH per_install AS (
+			SELECT
+				i.id AS install_id,
+				s.floor_closes AS pre_start,
+				i.prework_check_on AS pre_end,
+				COALESCE(i.day_install_began, MIN(id.installed_on)) AS install_start,
+				COALESCE(i.day_install_complete, MAX(id.installed_on)) AS install_end,
+				i.post_work_check_on AS post_end
+			FROM install i
+			JOIN room_data r ON r.room = i.room
+			JOIN schedule s ON s.floor = r.floor
+			LEFT JOIN install_detail id ON id.installation_id = i.id
+			GROUP BY i.id, s.floor_closes, i.prework_check_on, i.day_install_began, i.day_install_complete, i.post_work_check_on
+		)
 		SELECT
 			AVG(CASE
-				WHEN i.prework_check_on IS NOT NULL AND s.floor_closes IS NOT NULL AND i.prework_check_on >= s.floor_closes
-				THEN EXTRACT(EPOCH FROM (i.prework_check_on - s.floor_closes)) / 86400.0
+				WHEN pre_end IS NOT NULL AND pre_start IS NOT NULL AND pre_end >= pre_start
+				THEN EXTRACT(EPOCH FROM (pre_end - pre_start)) / 86400.0
 				ELSE NULL
 			END) AS avg_room_pre_work_duration,
-
 			AVG(CASE
-				WHEN i.day_install_complete IS NOT NULL AND i.prework_check_on IS NOT NULL AND i.day_install_complete >= i.prework_check_on
-				THEN EXTRACT(EPOCH FROM (i.day_install_complete - i.prework_check_on)) / 86400.0
+				WHEN install_end IS NOT NULL AND install_start IS NOT NULL AND install_end >= install_start
+				THEN EXTRACT(EPOCH FROM (install_end - install_start)) / 86400.0
 				ELSE NULL
 			END) AS avg_room_install_duration,
-
 			AVG(CASE
-				WHEN i.post_work_check_on IS NOT NULL AND i.day_install_complete IS NOT NULL AND i.post_work_check_on >= i.day_install_complete
-				THEN EXTRACT(EPOCH FROM (i.post_work_check_on - i.day_install_complete)) / 86400.0
+				WHEN post_end IS NOT NULL AND install_end IS NOT NULL AND post_end >= install_end
+				THEN EXTRACT(EPOCH FROM (post_end - install_end)) / 86400.0
 				ELSE NULL
 			END) AS avg_room_post_work_duration
-
-		FROM install i
-		JOIN room_data r ON r.room = i.room
-		JOIN schedule s ON s.floor = r.floor;
+		FROM per_install;
 
 	"""
 	with connection.cursor() as cursor:
