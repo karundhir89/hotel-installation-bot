@@ -19,6 +19,9 @@ from hotel_bot_app.forms import IssueUpdateForm, CommentForm, IssueForm
 import logging
 logger = logging.getLogger(__name__)
 
+from django.utils import timezone
+import datetime
+
 # Define a check for staff users (Django's concept of admin users)
 def is_staff_user(user):
 	return user.is_authenticated and user.is_staff # or user.is_superuser
@@ -429,29 +432,36 @@ def _prepare_floor_progress_data():
 				rd.id  AS room_data_id,
 				rd.room AS room_number,
 				rd.floor AS floor_number,
+				rd.to_be_renovated AS renovation_required,
 				i.id   AS install_id,
 				i.prework_check_on,
 				i.day_install_complete,
 				i.post_work_check_on,
-				-- Normalize flags (treat NULL as 'NO')
-				COALESCE(i.install, 'NO') AS install_flag,
-				-- Keep for progress %, but don't use this to mark 'completed'
+				-- Count total required products for this room model
 				(SELECT COUNT(*) 
-				FROM install_detail 
-				WHERE installation_id = i.id AND status = 'YES') AS installed_products_count
+				FROM product_room_model prm
+				JOIN room_data rd2 ON rd2.room_model_id = prm.room_model_id
+				WHERE rd2.room = rd.room) AS total_required_products,
+				-- Count actually installed products for this room
+				(SELECT COUNT(*) 
+				FROM install_detail id
+				WHERE id.installation_id = i.id AND id.status = 'YES') AS installed_products_count
 			FROM room_data rd
 			LEFT JOIN install i
 				ON rd.room = i.room
 			WHERE rd.floor IS NOT NULL
+			AND rd.to_be_renovated = 'YES'  -- Only consider rooms marked for renovation
 		)
 		SELECT
 		ri.floor_number,
 		COUNT(DISTINCT ri.room_data_id) AS total_rooms_on_floor,
 		COALESCE(SUM(CASE WHEN ri.prework_check_on IS NOT NULL THEN 1 ELSE 0 END), 0) AS prework_completed_count,
 
-		/* 🔧 FIX: a room is 'install completed' ONLY when the room-level install is confirmed */
+		/* 🔧 FIX: a room is 'install completed' ONLY when ALL required products are installed */
 		COALESCE(SUM(CASE 
-			WHEN ri.install_flag = 'YES' OR ri.day_install_complete IS NOT NULL 
+			WHEN ri.installed_products_count > 0 
+			AND ri.total_required_products > 0
+			AND ri.installed_products_count >= ri.total_required_products
 			THEN 1 ELSE 0 END), 0) AS install_completed_count,
 
 		COALESCE(SUM(CASE WHEN ri.post_work_check_on IS NOT NULL THEN 1 ELSE 0 END), 0) AS postwork_completed_count,
@@ -459,7 +469,9 @@ def _prepare_floor_progress_data():
 		/* Fully completed only if all three checkpoints are met */
 		COALESCE(SUM(CASE 
 			WHEN ri.prework_check_on IS NOT NULL
-			AND (ri.install_flag = 'YES' OR ri.day_install_complete IS NOT NULL)
+			AND ri.installed_products_count > 0 
+			AND ri.total_required_products > 0
+			AND ri.installed_products_count >= ri.total_required_products
 			AND ri.post_work_check_on IS NOT NULL
 			THEN 1 ELSE 0 END), 0) AS fully_completed_rooms_on_floor
 		FROM room_installs ri
@@ -525,29 +537,41 @@ def _prepare_floor_progress_data():
 			renovated_floor_numbers.append(current_floor)
 	
 	# --- Determine floor status summary from schedule table ---
-	# Closed floors are now driven by schedule.floor_closes presence
-	schedule_floors_with_close = set()
+	# Closed floors are now driven by schedule.floor_closes date relative to today
 	schedule_floors_all = set()
+	closed_by_date_set = set()
+	pending_by_date_set = set()
+	# Use real date objects for comparison; avoid string formatting issues
+	today_date = datetime.date.today()
 	with connection.cursor() as cursor:
 		cursor.execute("""
-			SELECT DISTINCT floor
+			SELECT DISTINCT floor, floor_closes
 			FROM schedule
 			WHERE floor IS NOT NULL
 		""")
 		for row in cursor.fetchall():
-			schedule_floors_all.add(row[0])
-		cursor.execute("""
-			SELECT DISTINCT floor
-			FROM schedule
-			WHERE floor IS NOT NULL AND floor_closes IS NOT NULL
-		""")
-		for row in cursor.fetchall():
-			schedule_floors_with_close.add(row[0])
+			floor_value = row[0]
+			floor_closes_date = row[1]
+			# Normalize potential datetime to date for safe comparison
+			if hasattr(floor_closes_date, 'date'):
+				try:
+					floor_closes_date = floor_closes_date.date()
+				except Exception:
+					pass
+			schedule_floors_all.add(floor_value)
+			if floor_closes_date is None:
+				# Treat missing close date as pending
+				pending_by_date_set.add(floor_value)
+			elif floor_closes_date > today_date:
+				pending_by_date_set.add(floor_value)
+			else:
+				# floor_closes_date <= today_date
+				closed_by_date_set.add(floor_value)
 
 	renovated_set = set(renovated_floor_numbers)
-	closed_set = set(f for f in schedule_floors_with_close if f not in renovated_set)
-	# Pending are scheduled floors that are neither renovated nor marked closed
-	pending_set = set(f for f in schedule_floors_all if f not in renovated_set and f not in closed_set)
+	# Exclude renovated floors from both closed and pending
+	closed_set = set(f for f in closed_by_date_set if f not in renovated_set)
+	pending_set = set(f for f in pending_by_date_set if f not in renovated_set)
 
 	floor_status_summary = {
 		'renovated': {
@@ -570,27 +594,47 @@ def _prepare_pie_chart_data(total_project_rooms, total_project_fully_completed_r
 	"""
 	Prepares the data for the overall project completion pie chart.
 	"""
-	# Get additional detailed information about partial completions
+	# Get additional detailed information about partial completions using the same logic
 	with connection.cursor() as cursor:
 		cursor.execute("""
+			WITH room_install_status AS (
 			SELECT
-				-- Count installations that have ANY products installed
-				COUNT(DISTINCT i.id) AS installations_with_products,
-				-- Count installations with completed prework
-				COUNT(DISTINCT CASE WHEN i.prework = 'YES' THEN i.id END) AS prework_completed,
-				-- Count installations with completed postwork
-				COUNT(DISTINCT CASE WHEN i.post_work = 'YES' THEN i.id END) AS postwork_completed
-			FROM
-				install i
-			INNER JOIN
-				install_detail id ON i.id = id.installation_id
-			WHERE
-				id.status = 'YES'
+					rd.room AS room_number,
+					rd.floor AS floor_number,
+					i.id AS install_id,
+					i.prework_check_on,
+					i.post_work_check_on,
+					-- Count total required products for this room model
+					(SELECT COUNT(*) 
+					FROM product_room_model prm
+					JOIN room_data rd2 ON rd2.room_model_id = prm.room_model_id
+					WHERE rd2.room = rd.room) AS total_required_products,
+					-- Count actually installed products for this room
+					(SELECT COUNT(*) 
+					FROM install_detail id
+					WHERE id.installation_id = i.id AND id.status = 'YES') AS installed_products_count
+				FROM room_data rd
+				LEFT JOIN install i ON rd.room = i.room
+				WHERE rd.floor IS NOT NULL
+				AND rd.to_be_renovated = 'YES'  -- Only consider rooms marked for renovation
+			)
+			SELECT
+				-- Count rooms with completed prework
+				COUNT(DISTINCT CASE WHEN prework_check_on IS NOT NULL THEN room_number END) AS prework_completed,
+				-- Count rooms with ALL required products installed
+				COUNT(DISTINCT CASE 
+					WHEN installed_products_count > 0 
+					AND total_required_products > 0
+					AND installed_products_count >= total_required_products
+					THEN room_number END) AS install_completed,
+				-- Count rooms with completed postwork
+				COUNT(DISTINCT CASE WHEN post_work_check_on IS NOT NULL THEN room_number END) AS postwork_completed
+			FROM room_install_status
 		""")
 		results = cursor.fetchone()
 		
-		installations_with_products = results[0] if results[0] is not None else 0
-		prework_completed = results[1] if results[1] is not None else 0
+		prework_completed = results[0] if results[0] is not None else 0
+		install_completed = results[1] if results[1] is not None else 0
 		postwork_completed = results[2] if results[2] is not None else 0
 	
 	# Calculate weighted completion percentage
@@ -601,7 +645,7 @@ def _prepare_pie_chart_data(total_project_rooms, total_project_fully_completed_r
 		postwork_weight = 0.25
 		
 		prework_percentage = prework_completed / total_project_rooms
-		install_percentage = installations_with_products / total_project_rooms
+		install_percentage = install_completed / total_project_rooms
 		postwork_percentage = postwork_completed / total_project_rooms
 		
 		overall_completion_percentage = (
@@ -657,6 +701,7 @@ def _prepare_efficiency_data():
 			JOIN room_data r ON r.room = i.room
 			JOIN schedule s ON s.floor = r.floor
 			LEFT JOIN install_detail id ON id.installation_id = i.id
+			WHERE r.to_be_renovated = 'YES'  -- Only consider rooms marked for renovation
 			GROUP BY i.id, s.floor_closes, i.prework_check_on, i.day_install_began, i.day_install_complete, i.post_work_check_on
 		)
 		SELECT
@@ -708,6 +753,7 @@ def _prepare_efficiency_data():
 				install_detail id ON id.installation_id = i.id
 			WHERE 
 				rd.floor IS NOT NULL
+				AND rd.to_be_renovated = 'YES'  -- Only consider rooms marked for renovation
 			GROUP BY
 				rd.floor, s.floor_closes
 		),
@@ -780,8 +826,9 @@ def _prepare_overall_project_time_data():
 				i.post_work_check_on AS post_end
 			FROM install i
 			JOIN room_data r ON r.room = i.room
-			JOIN schedule s ON s.floor = r.floor
+			JOIN schedule s ON r.floor = s.floor
 			LEFT JOIN install_detail id ON id.installation_id = i.id
+			WHERE r.to_be_renovated = 'YES'  -- Only consider rooms marked for renovation
 			GROUP BY i.id, s.floor_closes, i.prework_check_on, i.day_install_began, i.day_install_complete, i.post_work_check_on
 		)
 		SELECT
