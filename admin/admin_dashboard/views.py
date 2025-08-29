@@ -423,7 +423,7 @@ def _prepare_floor_progress_data():
 	total_project_fully_completed_rooms_accumulator = 0
 
 	renovated_floor_numbers = []
-	closed_floor_numbers = [] # Floors in progress
+	closed_floor_numbers = []   # Floors in progress
 	pending_floor_numbers = []
 
 	sql_query = """
@@ -437,159 +437,194 @@ def _prepare_floor_progress_data():
 				i.prework_check_on,
 				i.day_install_complete,
 				i.post_work_check_on,
-				-- Count total required products for this room model
-				(SELECT COUNT(*) 
-				FROM product_room_model prm
-				JOIN room_data rd2 ON rd2.room_model_id = prm.room_model_id
-				WHERE rd2.room = rd.room) AS total_required_products,
+				i.retouching_check_on,
+				-- Sum total required quantity for this room's room_model (treat NULL quantity as 1)
+				(SELECT COALESCE(SUM(COALESCE(prm.quantity, 1)), 0)
+				 FROM product_room_model prm
+				 WHERE prm.room_model_id = rd.room_model_id) AS total_required_products,
 				-- Count actually installed products for this room
 				(SELECT COUNT(*) 
-				FROM install_detail id
-				WHERE id.installation_id = i.id AND id.status = 'YES') AS installed_products_count
+				 FROM install_detail id
+				 WHERE id.installation_id = i.id AND id.status = 'YES') AS installed_products_count
 			FROM room_data rd
 			LEFT JOIN install i
 				ON rd.room = i.room
 			WHERE rd.floor IS NOT NULL
-			AND rd.to_be_renovated = 'YES'  -- Only consider rooms marked for renovation
+			  AND rd.to_be_renovated = 'YES'  -- Only consider rooms marked for renovation
 		)
-		SELECT
-		ri.floor_number,
-		COUNT(DISTINCT ri.room_data_id) AS total_rooms_on_floor,
-		COALESCE(SUM(CASE WHEN ri.prework_check_on IS NOT NULL THEN 1 ELSE 0 END), 0) AS prework_completed_count,
-
-		/* 🔧 FIX: a room is 'install completed' ONLY when ALL required products are installed */
-		COALESCE(SUM(CASE 
-			WHEN ri.installed_products_count > 0 
-			AND ri.total_required_products > 0
-			AND ri.installed_products_count >= ri.total_required_products
-			THEN 1 ELSE 0 END), 0) AS install_completed_count,
-
-		COALESCE(SUM(CASE WHEN ri.post_work_check_on IS NOT NULL THEN 1 ELSE 0 END), 0) AS postwork_completed_count,
-
-		/* Fully completed only if all three checkpoints are met */
-		COALESCE(SUM(CASE 
-			WHEN ri.prework_check_on IS NOT NULL
-			AND ri.installed_products_count > 0 
-			AND ri.total_required_products > 0
-			AND ri.installed_products_count >= ri.total_required_products
-			AND ri.post_work_check_on IS NOT NULL
-			THEN 1 ELSE 0 END), 0) AS fully_completed_rooms_on_floor
-		FROM room_installs ri
-		GROUP BY ri.floor_number
-		ORDER BY ri.floor_number;
+		SELECT * FROM room_installs;
 	"""
 
 	with connection.cursor() as cursor:
 		cursor.execute(sql_query)
 		results = _dictfetchall(cursor)
 
+	# Process per floor
+	floor_data_map = {}
+
 	for row in results:
-		current_floor = row['floor_number']
-		total_rooms_on_floor = int(row['total_rooms_on_floor'])
-		prework_completed = int(row['prework_completed_count'])
-		install_completed = int(row['install_completed_count'])
-		postwork_completed = int(row['postwork_completed_count'])
-		fully_completed_on_floor = int(row['fully_completed_rooms_on_floor'])
+		floor = row.get("floor_number")
 
-		total_project_rooms_accumulator += total_rooms_on_floor
-		total_project_fully_completed_rooms_accumulator += fully_completed_on_floor
+		total_products = row.get("total_required_products") or 0
+		installed_products = row.get("installed_products_count") or 0
 
-		percentage_completed_str = "0%"
-		prework_status = "Pending"
-		install_status_str = "Pending"
-		postwork_status = "Pending"
+		# --- Checklist percentages ---
+		# Prework/Postwork as phase percent (0..100) and contribution (0..10)
+		prework_phase_pct = 100.0 if row.get("prework_check_on") else 0.0
+		prework_contribution = (prework_phase_pct / 100.0) * 10.0
+		postwork_phase_pct = 100.0 if row.get("post_work_check_on") else 0.0
+		postwork_contribution = (postwork_phase_pct / 100.0) * 10.0
+		# Retouching contributes 10 (not shown separately)
+		retouch_contribution = 10.0 if row.get("retouching_check_on") else 0.0
 
-		if total_rooms_on_floor > 0:
-			# Calculate percentage based on total installation progress, not just fully completed rooms
-			# This gives a more accurate progress percentage
-			prework_percentage = (prework_completed / total_rooms_on_floor) if total_rooms_on_floor > 0 else 0
-			install_percentage = (install_completed / total_rooms_on_floor) if total_rooms_on_floor > 0 else 0
-			postwork_percentage = (postwork_completed / total_rooms_on_floor) if total_rooms_on_floor > 0 else 0
-			
-			# Overall progress is weighted average of the three phases
-			# 25% prework + 50% installation + 25% postwork
-			overall_percentage = (0.25 * prework_percentage + 0.5 * install_percentage + 0.25 * postwork_percentage) * 100
-			percentage_completed_str = f"{overall_percentage:.0f}%"
+		# --- Installation percentage (out of 70) ---
+		# Compute install as a phase percentage (0..100) and its contribution (0..70)
+		install_done_flag = bool(row.get("day_install_complete"))
+		install_phase_pct = 0.0
+		install_contribution = 0.0
+		if total_products <= 0:
+			# No defined quantities: if install marked complete or any installed units exist, treat phase as complete
+			if installed_products > 0 or install_done_flag:
+				install_phase_pct = 100.0
+				install_contribution = 70.0
+			else:
+				install_phase_pct = 0.0
+				install_contribution = 0.0
+		else:
+			# Per-unit phase percent (each unit = 100 / total_units of the install phase)
+			per_unit_phase_pct = 100.0 / total_products
+			if install_done_flag:
+				install_phase_pct = 100.0
+			else:
+				install_phase_pct = min(installed_products * per_unit_phase_pct, 100.0)
+			# Contribution toward overall progress is 70% max
+			install_contribution = (install_phase_pct / 100.0) * 70.0
 
-			# Status text for each phase
-			prework_status = "Completed" if prework_completed == total_rooms_on_floor else \
-							 f"{(prework_percentage * 100):.0f}%" if prework_completed > 0 else "Pending"
-			
-			if install_completed == total_rooms_on_floor:
-				install_status_str = "Completed"
-			elif install_completed > 0:
-				install_status_str = f"{(install_percentage * 100):.0f}%"
-			# else install_status_str remains "Pending"
+		# --- Room completion percentage ---
+		# Prework 10%, Install 70% (install_contribution is 0..70), Postwork 10%, Retouching 10%
+		# Sum contributions (prework_contribution/postwork_contribution/retouch_contribution)
+		# Each of these are already scaled to their respective max contributions.
+		room_progress = prework_contribution + install_contribution + postwork_contribution + retouch_contribution
 
-			postwork_status = "Completed" if postwork_completed == total_rooms_on_floor else \
-							  f"{(postwork_percentage * 100):.0f}%" if postwork_completed > 0 else "Pending"
-		
+		if floor not in floor_data_map:
+			floor_data_map[floor] = {
+				"rooms": 0,
+				"progress_sum": 0.0,
+				"fully_completed_rooms": 0,
+				"prework": 0.0,
+				"prework_phase": 0.0,
+				"install": 0.0,
+				"install_phase": 0.0,
+				"postwork": 0.0,
+				"postwork_phase": 0.0,
+				"retouch": 0.0,
+			}
+
+		floor_data_map[floor]["rooms"] += 1
+		floor_data_map[floor]["progress_sum"] += room_progress
+		# Note: retouching contributes to completion but is not displayed separately
+		floor_data_map[floor]["prework"] += prework_contribution
+		floor_data_map[floor]["prework_phase"] += prework_phase_pct
+		# store both the install contribution (0..70) and the install phase percent (0..100)
+		floor_data_map[floor]["install"] += install_contribution
+		floor_data_map[floor]["install_phase"] += install_phase_pct
+		floor_data_map[floor]["postwork"] += postwork_contribution
+		floor_data_map[floor]["postwork_phase"] += postwork_phase_pct
+		floor_data_map[floor]["retouch"] += retouch_contribution
+
+		# Use a tolerant threshold to avoid float precision issues
+		if room_progress >= 99.5:
+			floor_data_map[floor]["fully_completed_rooms"] += 1
+
+	# Build final floor progress list
+	for floor, data in floor_data_map.items():
+		total_rooms = data["rooms"]
+		total_project_rooms_accumulator += total_rooms
+		total_project_fully_completed_rooms_accumulator += data["fully_completed_rooms"]
+
+		prework_percentage = data["prework"] / total_rooms if total_rooms else 0
+		# install_percentage = average install contribution (0..70)
+		install_contribution_avg = data["install"] / total_rooms if total_rooms else 0
+		# install_phase_percentage = average install phase percent (0..100) for display
+		install_phase_avg = data.get("install_phase", 0.0) / total_rooms if total_rooms else 0
+		postwork_percentage = data["postwork"] / total_rooms if total_rooms else 0
+		# overall includes retouching (10%) which is already added into progress_sum per room
+		overall_percentage = (data["progress_sum"] / total_rooms) if total_rooms else 0
+
+		# --- Status labels ---
+		# Show prework/postwork as phase percent (0-100); overall uses their 0..10 contribution
+		prework_phase_avg = data.get("prework_phase", 0.0) / total_rooms if total_rooms else 0
+		# Treat very small averages (<= 0.5) as Pending to avoid showing '0%'
+		prework_status = "Pending" if prework_phase_avg <= 0.5 else (
+			"Completed" if prework_phase_avg == 100 else f"{prework_phase_avg:.0f}%"
+		)
+
+		# Show install status as phase percent (0-100)
+		# Treat very small averages (<= 0.5) as Pending to avoid showing '0%'
+		install_status = "Pending" if install_phase_avg <= 0.5 else (
+			"Completed" if install_phase_avg == 100 else f"{install_phase_avg:.0f}%"
+		)
+
+		postwork_phase_avg = data.get("postwork_phase", 0.0) / total_rooms if total_rooms else 0
+		# Treat very small averages (<= 0.5) as Pending to avoid showing '0%'
+		postwork_status = "Pending" if postwork_phase_avg <= 0.5 else (
+			"Completed" if postwork_phase_avg == 100 else f"{postwork_phase_avg:.0f}%"
+		)
+
+		# --- Classify floor ---
+		# Use tolerant checks for classification (avoid exact float equality)
+		# Floors with overall_percentage >= 99.5 are renovated (100% complete)
+		if overall_percentage >= 99.5:
+			renovated_floor_numbers.append(floor)
+		else:
+			# For non-renovated floors, decide Closed vs Pending based on schedule.floor_closes compared to today
+			# Query schedule.floor_closes for this floor (use the schedule table)
+			try:
+				with connection.cursor() as _cursor:
+					_cursor.execute("SELECT floor_closes FROM schedule WHERE floor = %s", [floor])
+					row_cf = _cursor.fetchone()
+				floor_closes = row_cf[0] if row_cf and row_cf[0] is not None else None
+			except Exception:
+				floor_closes = None
+
+			today = timezone.localdate()
+			# If we have a schedule floor_closes date, compare with today's date
+			if floor_closes:
+				# Ensure we compare dates (floor_closes may be datetime)
+				if hasattr(floor_closes, 'date'):
+					fc_date = floor_closes.date()
+				else:
+					fc_date = floor_closes
+
+				if fc_date <= today:
+					closed_floor_numbers.append(floor)
+				else:
+					pending_floor_numbers.append(floor)
+			else:
+				# No schedule info -> classify as pending
+				pending_floor_numbers.append(floor)
+
 		floor_progress_list.append({
-			'floor_number': current_floor,
-			'percentage_completed': percentage_completed_str,
-			'prework_status': prework_status,
-			'install_status': install_status_str,
-			'postwork_status': postwork_status,
+			"floor_number": floor,
+			"percentage_completed": f"{overall_percentage:.0f}%",
+			"prework_status": prework_status,
+			"install_status": install_status,
+			"postwork_status": postwork_status,
 		})
 
-		# Track floors that are fully completed (renovated) based on installation data
-		if total_rooms_on_floor > 0 and fully_completed_on_floor == total_rooms_on_floor:
-			renovated_floor_numbers.append(current_floor)
-	
-	# --- Determine floor status summary from schedule table ---
-	# Closed floors are now driven by schedule.floor_closes date relative to today
-	schedule_floors_all = set()
-	closed_by_date_set = set()
-	pending_by_date_set = set()
-	# Use real date objects for comparison; avoid string formatting issues
-	today_date = datetime.date.today()
-	with connection.cursor() as cursor:
-		cursor.execute("""
-			SELECT DISTINCT floor, floor_closes
-			FROM schedule
-			WHERE floor IS NOT NULL
-		""")
-		for row in cursor.fetchall():
-			floor_value = row[0]
-			floor_closes_date = row[1]
-			# Normalize potential datetime to date for safe comparison
-			if hasattr(floor_closes_date, 'date'):
-				try:
-					floor_closes_date = floor_closes_date.date()
-				except Exception:
-					pass
-			schedule_floors_all.add(floor_value)
-			if floor_closes_date is None:
-				# Treat missing close date as pending
-				pending_by_date_set.add(floor_value)
-			elif floor_closes_date > today_date:
-				pending_by_date_set.add(floor_value)
-			else:
-				# floor_closes_date <= today_date
-				closed_by_date_set.add(floor_value)
-
-	renovated_set = set(renovated_floor_numbers)
-	# Exclude renovated floors from both closed and pending
-	closed_set = set(f for f in closed_by_date_set if f not in renovated_set)
-	pending_set = set(f for f in pending_by_date_set if f not in renovated_set)
-
+ 	# Floor status summary
 	floor_status_summary = {
-		'renovated': {
-			'count': len(renovated_set),
-			'numbers': sorted(list(renovated_set))
-		},
-		'closed': {
-			'count': len(closed_set),
-			'numbers': sorted(list(closed_set))
-		},
-		'pending': {
-			'count': len(pending_set),
-			'numbers': sorted(list(pending_set))
-		}
+		"renovated": {"count": len(renovated_floor_numbers), "numbers": renovated_floor_numbers},
+		"closed": {"count": len(closed_floor_numbers), "numbers": closed_floor_numbers},
+		"pending": {"count": len(pending_floor_numbers), "numbers": pending_floor_numbers},
 	}
-	
-	return floor_progress_list, total_project_rooms_accumulator, total_project_fully_completed_rooms_accumulator, floor_status_summary
 
+	return (
+		floor_progress_list,
+		total_project_rooms_accumulator,
+		total_project_fully_completed_rooms_accumulator,
+		floor_status_summary,
+	)
 def _prepare_pie_chart_data(total_project_rooms, total_project_fully_completed_rooms):
 	"""
 	Prepares the data for the overall project completion pie chart.
