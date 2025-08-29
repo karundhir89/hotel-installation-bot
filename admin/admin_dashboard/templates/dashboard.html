@@ -98,6 +98,18 @@
         background: #e0e0e0;
         font-weight: bold;
     }
+    /* Sticky header for specific data table */
+    .sticky-header-table thead th {
+        position: sticky;
+        top: 0;
+        background: #ffffff;
+        z-index: 2;
+    }
+    /* Ensure all summary cards have equal height */
+    .equal-cards .col-md-4{display:flex}
+    .equal-cards .card{display:flex;flex-direction:column;width:100%}
+    .equal-cards .card .card-body{flex:1 1 auto}
+    .equal-cards .card .card-footer{margin-top:auto}
 </style>
 
 <!-- Loader -->
@@ -120,9 +132,9 @@
                     </div>
                     <div class="card-body">
                         
-                        <!-- Floor Renovation Status Summary -->
+                        <!-- Floor Renovation Status Overview -->
                         <h4 class="mt-3">Floor Renovation Status Overview</h4>
-                        <div class="row mb-4">
+                        <div class="row mb-4 equal-cards">
                             {% if floor_status_summary %}
                             <div class="col-md-4">
                                 <div class="card card-stats">
@@ -155,7 +167,7 @@
                                         <div class="card-icon bg-primary bg-gradient">
                                             <i class="material-icons">construction</i>
                                         </div>
-                                        <p class="card-category text-ok h5 text-secondary" title="When some rooms on a floor are have installation completed, the floor is considered as closed for renovation.">Floors Closed for Renovation</p>
+                                        <p class="card-category text-ok h5 text-secondary" title="A floor is considered closed for renovation when a schedule has a floor_closes date set.">Floors Closed for Renovation</p>
                                         <h3 class="card-title mt-3">{{ floor_status_summary.closed.count }}</h3>
                                     </div>
                                     <div class="card-footer">
@@ -213,7 +225,7 @@
                         <div class="row">
                             <div class="col-md-8">
                                 <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
-                                    <table class="table table-hover">
+                                    <table class="table table-hover sticky-header-table">
                                         <thead class="text-primary">
                                             <tr>
                                             <th>Floor Number</th>
