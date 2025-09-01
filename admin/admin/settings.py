@@ -55,7 +55,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-      'auditlog.middleware.AuditlogMiddleware'
+    'auditlog.middleware.AuditlogMiddleware'
     # 'Add debug_toolbar.middleware.DebugToolbarMiddleware',
 ]
 
@@ -92,7 +92,7 @@ DATABASES = {
         'USER': env('database_user'),
         'PASSWORD': env('database_password'),
         'HOST': env('database_host'),
-        'PORT': env('database_port')
+        'PORT': env('database_port'),
     }
 }
 
