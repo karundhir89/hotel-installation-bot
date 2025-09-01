@@ -192,7 +192,8 @@
             </div>
             <div class="form-group">
                 <label for="received_at_hotel_quantity">Received at Hotel Quantity:</label>
-                <input type="number" id="received_at_hotel_quantity" name="received_at_hotel_quantity" class="form-control">
+                <input type="number" id="received_at_hotel_quantity" name="received_at_hotel_quantity" class="form-control" readonly>
+                <small class="form-text text-muted">Calculated automatically: equals Shipped to Hotel Quantity</small>
             </div>
             <div class="form-group">
                 <label for="damaged_quantity_at_hotel">Damaged Quantity at Hotel:</label>
@@ -200,7 +201,8 @@
             </div>
             <div class="form-group">
                 <label for="hotel_warehouse_quantity">Hotel Warehouse Quantity:</label>
-                <input type="number" id="hotel_warehouse_quantity" name="hotel_warehouse_quantity" class="form-control">
+                <input type="number" id="hotel_warehouse_quantity" name="hotel_warehouse_quantity" class="form-control" readonly>
+                <small class="form-text text-muted">Calculated automatically: Shipped to Hotel - Damaged at Hotel - Quantity Installed</small>
             </div>
             <div class="form-group">
                 <label for="quantity_installed">Quantity Installed:</label>
@@ -323,8 +325,8 @@ $(document).ready(function () {
                     }
 
                     setTimeout(() => {
-                        // Redirect with skip_updates parameter to prevent auto-recalculation
-                        window.location.href = "{% url 'inventory_list' %}?skip_updates=true";
+                        // Redirect to inventory list
+                        window.location.href = "{% url 'inventory_list' %}";
                     }, 1000);
                 } else {
                     toastr.error(response.error || 'Something went wrong!');
@@ -336,6 +338,38 @@ $(document).ready(function () {
     $('#closeModelModal, #modelModalOverlay').click(function () {
         $('#modelModal').fadeOut();
         $('#modelModalOverlay').fadeOut();
+    });
+    
+    // Function to calculate hotel warehouse quantity
+    function calculateHotelWarehouseQuantity() {
+        var shippedToHotel = parseInt($('#shipped_to_hotel_quantity').val()) || 0;
+        var damagedAtHotel = parseInt($('#damaged_quantity_at_hotel').val()) || 0;
+        var quantityInstalled = parseInt($('#quantity_installed').val()) || 0;
+        
+        // Received at hotel should equal shipped to hotel (all shipped items are received)
+        var receivedAtHotel = shippedToHotel;
+        $('#received_at_hotel_quantity').val(receivedAtHotel);
+        
+        var hotelWarehouseQty = receivedAtHotel - damagedAtHotel - quantityInstalled;
+        $('#hotel_warehouse_quantity').val(hotelWarehouseQty);
+    }
+    
+    // Calculate hotel warehouse quantity when related fields change
+    $('#shipped_to_hotel_quantity, #damaged_quantity_at_hotel, #quantity_installed').on('input', function() {
+        calculateHotelWarehouseQuantity();
+    });
+    
+    // Calculate initial hotel warehouse quantity when modal opens
+    $('#addModelBtn').click(function () {
+        setTimeout(function() {
+            calculateHotelWarehouseQuantity();
+        }, 100);
+    });
+    
+    $(document).on('click', '.editModelBtn', function () {
+        setTimeout(function() {
+            calculateHotelWarehouseQuantity();
+        }, 100);
     });
 });
 </script>

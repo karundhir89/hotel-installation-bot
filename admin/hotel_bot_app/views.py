@@ -122,7 +122,6 @@ def get_chat_history_from_db(session_id):
     ]
     return converted_messages
 
-
 @csrf_exempt
 def chatbot_api(request):
     if request.method == "POST":
@@ -4612,17 +4611,16 @@ def warehouse_receiver(request):
                         checked_by=user,
                         received_date=received_date
                     )
-                    # Use the recalculate function which handles case insensitivity
-                    recalculate_hotel_warehouse_quantity(client_item)
-                    print(f"Updated hotel warehouse quantity for {client_item} using recalculate_hotel_warehouse_quantity")
+                    # Note: Global inventory update will handle this automatically
+                    print(f"Created warehouse receipt for {client_item}")
                 except Exception as item_error:
                     print(f"Error creating warehouse receipt for {client_item}: {str(item_error)}")
                     # Don't raise the exception as we want to continue with other items
             
             try:
-                # Call functions to update inventory quantities
-                update_inventory_warehouse_quantities()
-                update_inventory_hotel_warehouse_quantities()  # Also update received and damaged quantities
+                # Call the comprehensive update function to ensure all quantities are correct
+                update_all_inventory_quantities()
+                print("Successfully updated all inventory quantities using comprehensive update")
             except Exception as update_error:
                 print(f"Error updating inventory quantities: {str(update_error)}")
                 # Don't raise the exception as we want to continue with the response
@@ -5618,29 +5616,66 @@ def update_inventory_hotel_warehouse_quantities():
     for warehouse in warehouse_sums:
         # Get client_item and totals
         client_item_lower = warehouse['client_item_lower']
-        total_received = warehouse['total_received']
-        total_damaged = warehouse['total_damaged']
+        total_received = warehouse['total_received'] or 0
+        total_damaged = warehouse['total_damaged'] or 0
         original_client_item = warehouse['original_client_item']
         
-        # Find and update all inventory records with this client_item (case-insensitive)
+        # Compute a hotel_warehouse_quantity using the same deterministic formula as signals:
+        # hotel = total_received - total_damaged - floor_sent - installed_count
+        from hotel_bot_app.models import WarehouseRequest, InstallDetail
+        from django.db.models import Sum
+
+        floor_sent = WarehouseRequest.objects.filter(client_item__iexact=original_client_item).aggregate(s=Sum('quantity_sent'))['s'] or 0
+        installed_count = InstallDetail.objects.filter(product_id__client_id__iexact=original_client_item, status__iexact='YES').count()
+
+        hotel_qty = total_received - total_damaged - floor_sent - installed_count
+        if hotel_qty < 0:
+            hotel_qty = 0
+
+        # Try to update Inventory records matching either item or client_id (case-insensitive)
         updated = Inventory.objects.filter(
-            client_id__iexact=original_client_item
+            item__iexact=original_client_item
         ).update(
             received_at_hotel_quantity=total_received,
-            damaged_quantity_at_hotel=total_damaged
+            damaged_quantity_at_hotel=total_damaged,
+            quantity_installed=installed_count,
+            hotel_warehouse_quantity=hotel_qty
         )
-        
-        # If no records found with exact case, try with lowercase comparison
+
+        if updated == 0:
+            # Try matching client_id field as fallback
+            updated = Inventory.objects.filter(
+                client_id__iexact=original_client_item
+            ).update(
+                received_at_hotel_quantity=total_received,
+                damaged_quantity_at_hotel=total_damaged,
+                quantity_installed=installed_count,
+                hotel_warehouse_quantity=hotel_qty
+            )
+
+        # If still none updated, try using the lowercased grouping key
+        if updated == 0:
+            updated = Inventory.objects.filter(
+                item__iexact=client_item_lower
+            ).update(
+                received_at_hotel_quantity=total_received,
+                damaged_quantity_at_hotel=total_damaged,
+                quantity_installed=installed_count,
+                hotel_warehouse_quantity=hotel_qty
+            )
+
         if updated == 0:
             updated = Inventory.objects.filter(
                 client_id__iexact=client_item_lower
             ).update(
                 received_at_hotel_quantity=total_received,
-                damaged_quantity_at_hotel=total_damaged
+                damaged_quantity_at_hotel=total_damaged,
+                quantity_installed=installed_count,
+                hotel_warehouse_quantity=hotel_qty
             )
-        
+
         update_count += updated
-        print(f"Client Item: {original_client_item}, Received: {total_received}, Damaged: {total_damaged}, Updated: {updated} records")
+        print(f"Client Item: {original_client_item}, Received: {total_received}, Damaged: {total_damaged}, HotelQty: {hotel_qty}, Updated: {updated} records")
         
     print(f"Updated hotel warehouse quantities for {update_count} inventory items based on {len(warehouse_sums)} unique client items")
     return update_count
@@ -6099,15 +6134,7 @@ def recalculate_hotel_warehouse_quantity(client_id):
             inventory_item.save()
             print(f"Updated hotel quantities for {client_id}: received={total_received}, damaged={total_damaged}")
 
-# ... inside warehouse_receiver view, after each new HotelWarehouse.objects.create(...):
-    HotelWarehouse.objects.create(
-        reference_id=reference_id,
-        client_item=client_item,
-        quantity_received=received_qty,
-        damaged_qty=damaged_qty,  # Add the damaged quantity
-        checked_by=user,
-        received_date=received_date
-    )
+# (Duplicate create removed - actual creation happens inside the warehouse_receiver view loop)
     
 @csrf_exempt
 def delete_warehouse_container(request):
@@ -6449,6 +6476,108 @@ def get_availability_data(request):
         })
 
     return JsonResponse({'floors': floor_list, 'items': items, 'shipping_details': shipping_details})
+
+def update_all_inventory_quantities():
+    """
+    Comprehensive function to update all inventory quantities in the correct order
+    """
+    try:
+        print("Starting comprehensive inventory update...")
+        
+        # Get all inventory items
+        inventory_items = Inventory.objects.all()
+        updated_count = 0
+        
+        for item in inventory_items:
+            print(f"Processing inventory item: {item.client_id}")
+            
+            # 1. Update shipped_to_hotel_quantity from WarehouseShipment
+            from .models import WarehouseShipment
+            total_shipped = WarehouseShipment.objects.filter(
+                client_id__iexact=item.client_id
+            ).aggregate(total=Sum('ship_qty'))['total'] or 0
+            
+            if item.shipped_to_hotel_quantity != total_shipped:
+                item.shipped_to_hotel_quantity = total_shipped
+                print(f"Updated {item.client_id}: shipped_to_hotel_quantity = {total_shipped}")
+            
+            # 2. Set received_at_hotel_quantity = shipped_to_hotel_quantity
+            if item.received_at_hotel_quantity != total_shipped:
+                item.received_at_hotel_quantity = total_shipped
+                print(f"Updated {item.client_id}: received_at_hotel_quantity = {total_shipped}")
+            
+            # 3. Update damaged_quantity_at_hotel from HotelWarehouse
+            from .models import HotelWarehouse
+            total_damaged = HotelWarehouse.objects.filter(
+                client_item__iexact=item.client_id
+            ).aggregate(total=Sum('damaged_qty'))['total'] or 0
+            
+            if item.damaged_quantity_at_hotel != total_damaged:
+                item.damaged_quantity_at_hotel = total_damaged
+                print(f"Updated {item.client_id}: damaged_quantity_at_hotel = {total_damaged}")
+            
+            # 4. Update quantity_installed from InstallDetail
+            from .models import InstallDetail, ProductData
+            total_installed = InstallDetail.objects.filter(
+                product_id__client_id__iexact=item.client_id,
+                status="YES"
+            ).count()
+            
+            if item.quantity_installed != total_installed:
+                item.quantity_installed = total_installed
+                print(f"Updated {item.client_id}: quantity_installed = {total_installed}")
+            
+            # 5. Calculate hotel_warehouse_quantity
+            received = item.received_at_hotel_quantity or 0
+            damaged = item.damaged_quantity_at_hotel or 0
+            installed = item.quantity_installed or 0
+            new_warehouse_qty = received - damaged - installed
+            
+            if item.hotel_warehouse_quantity != new_warehouse_qty:
+                item.hotel_warehouse_quantity = new_warehouse_qty
+                print(f"Updated {item.client_id}: hotel_warehouse_quantity = {new_warehouse_qty}")
+            
+            # 6. Update qty_received and damaged_quantity from InventoryReceived
+            from .models import InventoryReceived
+            total_received = InventoryReceived.objects.filter(
+                client_id__iexact=item.client_id
+            ).aggregate(total=Sum('received_qty'))['total'] or 0
+            
+            total_damaged_received = InventoryReceived.objects.filter(
+                client_id__iexact=item.client_id
+            ).aggregate(total=Sum('damaged_qty'))['total'] or 0
+            
+            if item.qty_received != total_received:
+                item.qty_received = total_received
+                print(f"Updated {item.client_id}: qty_received = {total_received}")
+            
+            if item.damaged_quantity != total_damaged_received:
+                item.damaged_quantity = total_damaged_received
+                print(f"Updated {item.client_id}: damaged_quantity = {total_damaged_received}")
+            
+            # 7. Calculate quantity_available
+            qty_received = item.qty_received or 0
+            shipped_to_hotel = item.shipped_to_hotel_quantity or 0
+            new_available_qty = qty_received - shipped_to_hotel
+            
+            if item.quantity_available != new_available_qty:
+                item.quantity_available = new_available_qty
+                print(f"Updated {item.client_id}: quantity_available = {new_available_qty}")
+            
+            # Save all changes
+            item.save()
+            updated_count += 1
+        
+        print(f"Completed comprehensive update for {updated_count} inventory items")
+        
+        # Force refresh from database to ensure changes are visible
+        from django.db import connection
+        connection.close()
+        
+    except Exception as e:
+        print(f"Error in update_all_inventory_quantities: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
 def recalculate_quantity_available_all():
     """
