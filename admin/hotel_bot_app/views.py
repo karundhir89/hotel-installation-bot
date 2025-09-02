@@ -5067,36 +5067,10 @@ def warehouse_shipment(request):
     )
     received_reference_ids_lower = set(rid.lower() for rid in received_reference_ids if rid)
 
-    # Check if there was an abandoned edit that needs cleanup
-    abandoned_edit_id = request.session.get("editing_warehouse_shipment")
-    if abandoned_edit_id:
-        # Clear the session flag first to prevent loops
-        del request.session["editing_warehouse_shipment"]
-        request.session.save()
-        
-        try:
-            # Revert inventory for this abandoned edit
-            items = WarehouseShipment.objects.filter(reference_id__iexact=abandoned_edit_id)
-            if items.exists():
-                print(f"Found abandoned edit for {abandoned_edit_id}, reverting inventory changes")
-                for item in items:
-                    client_id = item.client_id
-                    ship_qty = item.ship_qty
-                    
-                    # Find inventory item
-                    inventory_item = Inventory.objects.filter(client_id__iexact=client_id).first()
-                    if inventory_item and inventory_item.quantity_available is not None:
-                        # Subtract back the quantity, ensuring we don't go negative
-                        if inventory_item.quantity_available >= ship_qty:
-                            inventory_item.quantity_available -= ship_qty
-                        else:
-                            # If not enough available, just set to 0
-                            inventory_item.quantity_available = 0
-                        
-                        inventory_item.save()
-                        print(f"Reverted inventory for {client_id}, new available: {inventory_item.quantity_available}")
-        except Exception as e:
-            print(f"Error reverting abandoned edit: {str(e)}")
+    # NOTE: Do not auto-revert inventory on abandoned edits here.
+    # Reverting inventory during edit-entry caused double-adds when multiple
+    # sessions or page reloads occurred. Inventory should only be adjusted
+    # intentionally on create/update/delete of WarehouseShipment records.
 
     if user_id:
         try:
@@ -5227,8 +5201,8 @@ def warehouse_shipment(request):
                         try:
                             item = WarehouseShipment.objects.get(id=item_id)
                             # Store old quantity before updating
-                            old_qty = item.ship_qty
-                            
+                            old_qty = item.ship_qty or 0
+
                             item.client_id = client_item
                             item.item = client_item
                             item.ship_date = ship_date
@@ -5237,11 +5211,10 @@ def warehouse_shipment(request):
                             item.checked_by = user
                             item.expected_arrival_date = expected_arrival_date
                             item.save()
-                            
-                            # Since we've already added back the original quantity to inventory,
-                            # we need to treat this as a new shipment to properly deduct the new quantity
-                            update_inventory_when_shipping(client_item, qty_shipped, is_new=True)
-                            print(f"Updated item ID {item_id}")
+
+                            # Apply the difference: treat this as edit so function can compute +old - new
+                            update_inventory_when_shipping(client_item, qty_shipped, is_new=False, old_qty=old_qty)
+                            print(f"Updated item ID {item_id} (old_qty={old_qty} -> new_qty={qty_shipped})")
                         except WarehouseShipment.DoesNotExist:
                                                         # Item ID no longer exists, create a new one
                             new_item = WarehouseShipment.objects.create(
@@ -5282,14 +5255,10 @@ def warehouse_shipment(request):
                             client_id = removed_item.client_id
                             ship_qty = removed_item.ship_qty
                             
-                            # Delete the item
+                            # Delete the item and revert its shipped quantity back to inventory
                             removed_item.delete()
-                            
-                            # No need to update inventory here since we've already added back 
-                            # all quantities at the beginning of the edit operation
-                            print(f"Deleted item with ID {item_id} for {client_id} (no inventory update needed)")
-                            
-                            print(f"Deleted item with ID {item_id}")
+                            revert_inventory_when_shipping(client_id, ship_qty)
+                            print(f"Deleted item with ID {item_id} for {client_id} and reverted {ship_qty} to inventory")
                         except WarehouseShipment.DoesNotExist:
                             print(f"Item with ID {item_id} already deleted")
                 
@@ -5368,6 +5337,7 @@ def warehouse_shipment(request):
     }
     
     return render(request, 'warehouse_shipment.html', context)
+
 
 
 def revert_inventory_when_shipping(client_id, ship_qty):
@@ -5775,26 +5745,21 @@ def get_available_quantity(request):
             client_id_lower=client_item.lower()
         )
         
+        # Debug: print requested client_item
+        try:
+            print(f"[DEBUG] get_available_quantity request for: {client_item}, for_edit={for_edit}, edit_quantity={edit_quantity}")
+        except Exception:
+            pass
+
         # Check if we have multiple items with same client_id but different case
         if inventory_items.count() > 1:
-            # Find the primary item (first one) and consolidate quantities to it
+            # Don't perform writes here. Instead compute consolidated available quantity in-memory
             primary_item = inventory_items.first()
-            
-            # Set other items to 0 quantity
-            for item in inventory_items.exclude(id=primary_item.id):
-                if item.quantity_available > 0:
-                    # Transfer any available quantity to primary item
-                    primary_item.quantity_available += (item.quantity_available or 0)
-                    item.quantity_available = 0
-                    item.save()
-                    print(f"Consolidated quantity from {item.client_id} to {primary_item.client_id}")
-            
-            # Save primary item with consolidated quantity
-            primary_item.save()
-            
-            # Continue with just the primary item
+            total_available = 0
+            for it in inventory_items:
+                total_available += (it.quantity_available or 0)
             inventory_item = primary_item
-            quantity_available = inventory_item.quantity_available or 0
+            quantity_available = total_available
         elif inventory_items.exists():
             # Just one item found, proceed normally
             inventory_item = inventory_items.first()
@@ -5807,6 +5772,11 @@ def get_available_quantity(request):
                 print(f"Edit mode for {client_item}, available quantity: {quantity_available}")
                 # Don't modify the quantity here anymore
             
+            try:
+                print(f"[DEBUG] get_available_quantity returning: client_id={inventory_item.client_id}, quantity_available={quantity_available}")
+            except Exception:
+                pass
+
             return JsonResponse({
                 'success': True, 
                 'quantity_available': quantity_available,
@@ -5825,6 +5795,11 @@ def get_available_quantity(request):
                     print(f"Edit mode for {client_item}, available quantity: {quantity_available} (fallback)")
                     # Don't modify the quantity here anymore
                 
+                try:
+                    print(f"[DEBUG] get_available_quantity (fallback) returning: client_id={inventory_item.client_id}, quantity_available={quantity_available}")
+                except Exception:
+                    pass
+
                 return JsonResponse({
                     'success': True, 
                     'quantity_available': quantity_available,
@@ -5911,42 +5886,68 @@ def restore_warehouse_inventory(request):
     try:
         # Save the current edit in the session to handle page reloads
         request.session["editing_warehouse_shipment"] = reference_id
-        request.session.save()
-        
+        # Prepare a snapshot map of original available quantities so we can restore deterministically
+        snapshot_key = f"editing_warehouse_snapshot_{reference_id}"
+        snapshot = request.session.get(snapshot_key, {})
+
         # Get all items with this reference ID (case-insensitive)
         items = WarehouseShipment.objects.filter(reference_id__iexact=reference_id)
-        
+
         if not items.exists():
             return JsonResponse({'success': False, 'message': 'Shipment not found'})
-        
+
         updated_items = []
-        
-        # Add quantities back to inventory
+
+        # Add quantities back to inventory, but first capture snapshot of original available quantities
         for item in items:
             client_id = item.client_id
             ship_qty = item.ship_qty
-            
-            # Find inventory item
+
+            # Normalize key to avoid case mismatches between WarehouseShipment and Inventory
+            client_key = (client_id or '').lower()
+
+            # Find inventory item (case-insensitive)
             inventory_item = Inventory.objects.filter(client_id__iexact=client_id).first()
-            if inventory_item and inventory_item.quantity_available is not None:
-                # Add back the quantity
-                inventory_item.quantity_available += ship_qty
-                inventory_item.save()
-                
+            if not inventory_item:
+                continue
+
+            orig_avail = inventory_item.quantity_available or 0
+            # If we already captured a snapshot for this client (normalized), don't add again
+            if client_key in snapshot:
                 updated_items.append({
                     'client_id': client_id,
-                    'added_quantity': ship_qty,
-                    'new_available': inventory_item.quantity_available
+                    'skipped': True,
+                    'note': 'already restored in session',
+                    'current_available': inventory_item.quantity_available
                 })
-                
-                print(f"Restored {ship_qty} to inventory for {client_id}, new available: {inventory_item.quantity_available}")
-        
+                print(f"Skipping restore for {client_id}; already restored earlier in this session. available: {inventory_item.quantity_available}")
+                continue
+
+            # Save original available quantity in session snapshot using normalized key
+            snapshot[client_key] = orig_avail
+
+            # Compute the restored available quantity but do NOT persist it to DB.
+            # The frontend only needs to show the provisional available value during editing.
+            restored_available = orig_avail + ship_qty
+
+            updated_items.append({
+                'client_id': client_id,
+                'added_quantity': ship_qty,
+                'new_available': restored_available,
+                'orig_available': orig_avail
+            })
+
+            print(f"[INFO] (non-destructive) Restored {ship_qty} to provisional inventory for {client_id}, provisional available: {restored_available} (orig {orig_avail})")
+
+        # Save snapshot back into session so revert can restore original absolute values
+        request.session[snapshot_key] = snapshot
+        request.session.save()
+
         return JsonResponse({
             'success': True,
             'reference_id': reference_id,
             'updated': updated_items
         })
-    
     except Exception as e:
         print(f"Error restoring inventory: {str(e)}")
         return JsonResponse({'success': False, 'message': str(e)})
@@ -5962,11 +5963,14 @@ def revert_warehouse_inventory(request):
         return JsonResponse({'success': False, 'message': 'Reference ID is required'})
     
     try:
-        # Clear the edit from session
+        # Clear the edit from session marker
         if request.session.get("editing_warehouse_shipment") == reference_id:
             del request.session["editing_warehouse_shipment"]
-            request.session.save()
-        
+
+        # Load snapshot if present
+        snapshot_key = f"editing_warehouse_snapshot_{reference_id}"
+        snapshot = request.session.get(snapshot_key, {})
+
         # Get all items with this reference ID (case-insensitive)
         items = WarehouseShipment.objects.filter(reference_id__iexact=reference_id)
         
@@ -5975,29 +5979,43 @@ def revert_warehouse_inventory(request):
         
         updated_items = []
         
-        # Subtract quantities from inventory to restore original state
+        # Restore original absolute quantities from snapshot if available, otherwise subtract shipped qty
         for item in items:
             client_id = item.client_id
             ship_qty = item.ship_qty
-            
+
+            # Normalize client key as used in snapshot
+            client_key = (client_id or '').lower()
+
             # Find inventory item
             inventory_item = Inventory.objects.filter(client_id__iexact=client_id).first()
-            if inventory_item and inventory_item.quantity_available is not None:
-                # Subtract back the quantity, ensuring we don't go negative
-                if inventory_item.quantity_available >= ship_qty:
-                    inventory_item.quantity_available -= ship_qty
-                else:
-                    # If not enough available, just set to 0
-                    inventory_item.quantity_available = 0
-                
+            if not inventory_item:
+                continue
+
+            if client_key in snapshot:
+                # Restore the original absolute value captured on restore
+                orig = snapshot.get(client_key, 0)
+                inventory_item.quantity_available = orig
                 inventory_item.save()
-                
                 updated_items.append({
                     'client_id': client_id,
-                    'subtracted_quantity': ship_qty,
-                    'new_available': inventory_item.quantity_available
+                    'restored_to': orig,
+                    'method': 'snapshot'
                 })
-                
+                print(f"Restored {client_id} to snapshot original available: {orig}")
+            else:
+                # As a fallback, subtract the shipped qty (best-effort)
+                if inventory_item.quantity_available is not None:
+                    if inventory_item.quantity_available >= ship_qty:
+                        inventory_item.quantity_available -= ship_qty
+                    else:
+                        inventory_item.quantity_available = 0
+                    inventory_item.save()
+                    updated_items.append({
+                        'client_id': client_id,
+                        'subtracted_quantity': ship_qty,
+                        'new_available': inventory_item.quantity_available
+                    })
                 print(f"Subtracted {ship_qty} from inventory for {client_id}, new available: {inventory_item.quantity_available}")
         
         return JsonResponse({
@@ -6009,6 +6027,15 @@ def revert_warehouse_inventory(request):
     except Exception as e:
         print(f"Error reverting inventory: {str(e)}")
         return JsonResponse({'success': False, 'message': str(e)})
+    finally:
+        # Clean up snapshot from session if present
+        try:
+            snapshot_key = f"editing_warehouse_snapshot_{reference_id}"
+            if request.session.get(snapshot_key):
+                del request.session[snapshot_key]
+                request.session.save()
+        except Exception:
+            pass
     
 @login_required
 def create_django_admin_user(request):
